@@ -13,6 +13,9 @@ import { clampForDisplay, createSymmetricFinancialScale, formatFinancialAxis, fo
 
 interface IntegratedDealerTerrainProps {
     data: TerrainDataContractV2;
+    selectedStrike?: number | null;
+    selectedDte?: number | null;
+    onSelectStrike?: (strike: number) => void;
     onSelectPoint?: (cell: TerrainSurfaceCell) => void;
 }
 
@@ -31,7 +34,13 @@ const WORLD_DEPTH = 16;
 const WORLD_HEIGHT = 5.2;
 const ZERO_PLANE_OPACITY = 0.18;
 
-export default function IntegratedDealerTerrain({ data, onSelectPoint }: IntegratedDealerTerrainProps) {
+export default function IntegratedDealerTerrain({
+    data,
+    selectedStrike = null,
+    selectedDte = null,
+    onSelectStrike,
+    onSelectPoint,
+}: IntegratedDealerTerrainProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
     const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -43,6 +52,7 @@ export default function IntegratedDealerTerrain({ data, onSelectPoint }: Integra
     const analyticalGridRef = useRef<readonly TerrainSurfaceCell[][]>(data.surfaceGrid);
     const hoverRef = useRef<HoverState | null>(null);
     const onSelectPointRef = useRef<typeof onSelectPoint>(onSelectPoint);
+    const onSelectStrikeRef = useRef<typeof onSelectStrike>(onSelectStrike);
     const latestSceneDataRef = useRef<{
         renderGrid: RenderGrid;
         strikeMapper: LinearMapper;
@@ -63,6 +73,10 @@ export default function IntegratedDealerTerrain({ data, onSelectPoint }: Integra
     useEffect(() => {
         onSelectPointRef.current = onSelectPoint;
     }, [onSelectPoint]);
+
+    useEffect(() => {
+        onSelectStrikeRef.current = onSelectStrike;
+    }, [onSelectStrike]);
 
     const metricConfig = getMetricConfig(metric);
     const metricScale = metricConfig.scale(data);
@@ -165,7 +179,10 @@ export default function IntegratedDealerTerrain({ data, onSelectPoint }: Integra
 
         const handlePointerLeave = () => setHover(null);
         const handleClick = () => {
-            if (hoverRef.current?.cell) onSelectPointRef.current?.(hoverRef.current.cell);
+            const cell = hoverRef.current?.cell;
+            if (!cell) return;
+            onSelectStrikeRef.current?.(cell.strike);
+            onSelectPointRef.current?.(cell);
         };
 
         renderer.domElement.addEventListener('mousemove', handlePointerMove);
@@ -242,7 +259,8 @@ export default function IntegratedDealerTerrain({ data, onSelectPoint }: Integra
             yBound: yScale.bound,
         }));
         rootGroup.add(buildStructuralMarkers(data, strikeMapper));
-    }, [data, dteMapper, dteTicks, metric, renderGrid, showWireframe, strikeMapper, strikeTicks, yScale.bound, yTicks]);
+        rootGroup.add(buildSelectionMarker({ selectedStrike, selectedDte, strikeMapper, dteMapper }));
+    }, [data, dteMapper, dteTicks, metric, renderGrid, selectedDte, selectedStrike, showWireframe, strikeMapper, strikeTicks, yScale.bound, yTicks]);
 
     const setCameraPreset = (mode: CameraMode) => {
         setCameraMode(mode);
@@ -481,6 +499,35 @@ function buildStructuralMarkers(data: TerrainDataContractV2, strikeMapper: Linea
             { color: `#${level.color.toString(16).padStart(6, '0')}`, size: 34 }
         ));
     });
+
+    return group;
+}
+
+function buildSelectionMarker(params: {
+    selectedStrike: number | null;
+    selectedDte: number | null;
+    strikeMapper: LinearMapper;
+    dteMapper: LinearMapper;
+}): THREE.Object3D {
+    const group = new THREE.Group();
+    if (params.selectedStrike === null || !params.strikeMapper.inRange(params.selectedStrike)) return group;
+
+    const x = params.strikeMapper.toWorld(params.selectedStrike);
+    const material = new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.7 });
+    group.add(line([
+        new THREE.Vector3(x, -WORLD_HEIGHT, -WORLD_DEPTH / 2),
+        new THREE.Vector3(x, WORLD_HEIGHT + 0.5, -WORLD_DEPTH / 2),
+    ], material));
+
+    if (params.selectedDte !== null && params.selectedDte >= params.dteMapper.min && params.selectedDte <= params.dteMapper.max) {
+        const z = params.dteMapper.toWorld(params.selectedDte);
+        const point = new THREE.Mesh(
+            new THREE.SphereGeometry(0.14, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xf8fafc })
+        );
+        point.position.set(x, 0, z);
+        group.add(point);
+    }
 
     return group;
 }
