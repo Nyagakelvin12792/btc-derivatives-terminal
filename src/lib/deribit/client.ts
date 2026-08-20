@@ -49,7 +49,16 @@ async function fetchJson(url: string): Promise<unknown> {
         throw new DeribitUpstreamError(`Deribit request failed with ${response.status}`);
     }
 
-    return response.json();
+    const contentType = response.headers.get('content-type') ?? '';
+    if (!contentType.toLowerCase().includes('application/json')) {
+        throw new DeribitUpstreamError('Deribit response was not JSON');
+    }
+
+    try {
+        return await response.json();
+    } catch {
+        throw new DeribitUpstreamError('Deribit response contained invalid JSON');
+    }
 }
 
 export async function fetchDeribitOptionChain(now: Date): Promise<NormalizedDeribitChain> {
@@ -58,7 +67,15 @@ export async function fetchDeribitOptionChain(now: Date): Promise<NormalizedDeri
         fetchJson(BTC_OPTIONS_BOOK_URL),
     ]);
 
-    const spotPrice = normalizeIndexPricePayload(indexResult, FALLBACK_SPOT_PRICE);
+    let spotPrice = FALLBACK_SPOT_PRICE;
+    if (indexResult !== null) {
+        try {
+            spotPrice = normalizeIndexPricePayload(indexResult, FALLBACK_SPOT_PRICE);
+        } catch {
+            spotPrice = FALLBACK_SPOT_PRICE;
+        }
+    }
+
     const bookItems = normalizeBookSummaryPayload(bookPayload);
     const options = normalizeDeribitOptions(bookItems, now);
 

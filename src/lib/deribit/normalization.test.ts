@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+    DeribitValidationError,
     normalizeBookSummaryPayload,
     normalizeDeribitOptions,
     normalizeIndexPricePayload,
@@ -115,9 +116,18 @@ describe('Deribit normalization', () => {
         });
     });
 
-    it('uses fallback spot when the index payload is invalid', () => {
+    it('uses fallback spot when the index result price is invalid', () => {
         expect(normalizeIndexPricePayload({ result: { index_price: 68000 } }, 69000)).toBe(68000);
         expect(normalizeIndexPricePayload({ result: { index_price: -1 } }, 69000)).toBe(69000);
-        expect(normalizeIndexPricePayload({}, 69000)).toBe(69000);
+        expect(normalizeIndexPricePayload({ result: { index_price: '68000' } }, 69000)).toBe(69000);
+    });
+
+    it('rejects malformed Deribit response envelopes', () => {
+        expect(() => normalizeIndexPricePayload({}, 69000)).toThrow(DeribitValidationError);
+        expect(() => normalizeIndexPricePayload({ error: { code: 10000 } }, 69000)).toThrow(
+            DeribitValidationError
+        );
+        expect(() => normalizeBookSummaryPayload({ result: {} })).toThrow(DeribitValidationError);
+        expect(() => normalizeBookSummaryPayload(null)).toThrow(DeribitValidationError);
     });
 });

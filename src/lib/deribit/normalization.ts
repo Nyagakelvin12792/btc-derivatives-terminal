@@ -34,6 +34,34 @@ function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
 }
 
+export class DeribitValidationError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'DeribitValidationError';
+    }
+}
+
+function assertDeribitEnvelope(payload: unknown, expectedResult: 'object' | 'array'): Record<string, unknown> {
+    if (!isRecord(payload)) {
+        throw new DeribitValidationError('Deribit payload must be a JSON object');
+    }
+
+    if ('error' in payload) {
+        throw new DeribitValidationError('Deribit payload contains an error response');
+    }
+
+    const { result } = payload;
+    if (expectedResult === 'array') {
+        if (!Array.isArray(result)) {
+            throw new DeribitValidationError('Deribit result must be an array');
+        }
+    } else if (!isRecord(result)) {
+        throw new DeribitValidationError('Deribit result must be an object');
+    }
+
+    return payload;
+}
+
 export function parseDeribitExpiry(expiryStr: string): Date | null {
     const match = /^(\d{1,2})([A-Z]{3})(\d{2})$/.exec(expiryStr);
     if (!match) return null;
@@ -79,17 +107,19 @@ export function parseDeribitInstrument(instrumentName: unknown): ParsedDeribitIn
 }
 
 export function normalizeIndexPricePayload(payload: unknown, fallbackSpotPrice: number): number {
-    if (!isRecord(payload) || !isRecord(payload.result)) return fallbackSpotPrice;
+    const envelope = assertDeribitEnvelope(payload, 'object');
+    const result = envelope.result as Record<string, unknown>;
 
-    const indexPrice = finiteNumber(payload.result.index_price);
+    const indexPrice = finiteNumber(result.index_price);
     return indexPrice !== null && indexPrice > 0 ? indexPrice : fallbackSpotPrice;
 }
 
 export function normalizeBookSummaryPayload(payload: unknown): DeribitBookSummaryItem[] {
-    if (!isRecord(payload) || !Array.isArray(payload.result)) return [];
+    const envelope = assertDeribitEnvelope(payload, 'array');
+    const result = envelope.result as unknown[];
 
     const normalized: DeribitBookSummaryItem[] = [];
-    for (const item of payload.result) {
+    for (const item of result) {
         if (!isRecord(item)) continue;
 
         const parsed = parseDeribitInstrument(item.instrument_name);
