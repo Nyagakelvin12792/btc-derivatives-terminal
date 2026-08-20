@@ -189,12 +189,14 @@ export function buildTerrainDataContract(params: {
     dataMode: TerrainDataMode;
 }): TerrainDataContractV2 {
     const exposures = params.options.map((option) => calculateContractExposure(option, params.spotPrice));
-    const strikes = sortedUnique(exposures.map(({ option }) => option.strike));
     const expiries = sortedExpiries(exposures.map(({ option }) => ({
         expiry: option.expiryStr,
         expiryDate: option.expiryDate,
         dte: option.dte,
     })));
+    const displayedExpirySet = new Set(expiries.map(({ expiry }) => expiry));
+    const displayedExposures = exposures.filter(({ option }) => displayedExpirySet.has(option.expiryStr));
+    const strikes = sortedUnique(displayedExposures.map(({ option }) => option.strike));
     const dtes = expiries.map((expiry) => round(expiry.dte, 3));
 
     const callWall = calculateCallWall(exposures);
@@ -202,7 +204,7 @@ export function buildTerrainDataContract(params: {
     const maxPainByExpiry = calculateMaxPainByExpiry(params.options);
     const primaryMaxPain = maxPainByExpiry[0] ?? null;
     const gammaFlip = calculatePortfolioGammaFlip(params.options, params.spotPrice);
-    const cellMap = aggregateCells(exposures, params.spotPrice);
+    const cellMap = aggregateCells(displayedExposures, params.spotPrice);
     const scales = calculateScalesFromCells(cellMap);
     const surfaceGrid = buildSurfaceGrid({
         strikes,
@@ -321,7 +323,7 @@ function calculatePutWall(exposures: readonly ContractExposure[]): KeyLevel {
     return { strike: bestStrike, exposure: bestExposure };
 }
 
-function calculatePortfolioGammaFlip(options: readonly NormalizedDeribitOption[], spotPrice: number): GammaFlipLevel {
+export function calculatePortfolioGammaFlip(options: readonly NormalizedDeribitOption[], spotPrice: number): GammaFlipLevel {
     const minSpot = Math.max(1, spotPrice * 0.7);
     const maxSpot = spotPrice * 1.3;
     const steps = 60;

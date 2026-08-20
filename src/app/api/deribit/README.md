@@ -174,6 +174,8 @@ Grid invariants:
 - `surfaceGrid.length === expirations.length`
 - `surfaceGrid[row].length === strikes.length`
 - `dtes[row]` aligns with `expirations[row]`
+- `expirations` is the displayed expiry set: the nearest 10 expiries from the active chain.
+- `strikes` is derived only from contracts inside the displayed expiry set.
 - Missing option buckets are filled with zero exposure and zero OI to keep the mesh rectangular.
 - In `LIVE` and `DEGRADED`, unobserved rectangular cells set `observed: false`, `rawDelta/rawGamma/rawVanna/rawCharm: null`, and `iv: null`.
 - In `DEMO`, cells may contain synthetic analytical raw Greeks and IV because `dataMode` explicitly marks the response synthetic.
@@ -195,7 +197,7 @@ interface TerrainScales {
 }
 ```
 
-Intensity values are 0 to 100 and are scaled by absolute exposure against each metric's own robust absolute maximum calculated from aggregated Strike x Expiry surface cells.
+Intensity values are 0 to 100 and are scaled by absolute exposure against each metric's own robust absolute maximum calculated from aggregated Strike x Expiry surface cells actually displayed on the 3D terrain. Hidden expiries do not affect visible terrain scales.
 
 Bands:
 - 0-24: `LOW`
@@ -215,10 +217,10 @@ interface TerrainKeyLevels {
 ```
 
 Definitions:
-- Call Wall aggregates call-side GEX Exposure by strike and selects the maximum positive call exposure.
-- Put Wall aggregates put-side GEX Exposure by strike and selects the largest absolute put exposure.
+- Call Wall aggregates full-chain call-side GEX Exposure by strike and selects the maximum positive call exposure.
+- Put Wall aggregates full-chain put-side GEX Exposure by strike and selects the largest absolute put exposure.
 - Gamma Flip revalues the full active portfolio across a hypothetical BTC spot grid and interpolates all zero crossings. The primary `strike` is the crossing nearest current `spotPrice`; if no crossing exists, it falls back to the curve point with minimum absolute GEX.
-- Max Pain is calculated per expiry from all strikes in that expiry, not from visualization-sampled strikes.
+- Max Pain is calculated per expiry from the full active chain, not from visualization-sampled expiries or strikes.
 
 ## Vanna Contours
 

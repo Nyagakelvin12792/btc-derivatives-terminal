@@ -9,6 +9,7 @@ import {
     calculateConfluenceScore,
     calculateGexExposureUsdPerOnePercentMove,
     calculateIntensity,
+    calculatePortfolioGammaFlip,
     calculateVannaExposureUsdPerVolPoint,
     buildVannaContours,
     classifyDealerBehavior,
@@ -27,6 +28,7 @@ function option(params: {
     openInterest: number;
     ivPercent?: number;
     expiryStr?: string;
+    expiryDate?: Date;
     dte?: number;
 }): NormalizedDeribitOption {
     const dte = params.dte ?? 85.333;
@@ -35,7 +37,7 @@ function option(params: {
         instrument: params.instrument,
         currency: 'BTC',
         expiryStr: params.expiryStr ?? '27MAR26',
-        expiryDate,
+        expiryDate: params.expiryDate ?? expiryDate,
         strike: params.strike,
         type: params.type,
         dte,
@@ -285,6 +287,72 @@ describe('Terrain Data Contract V2', () => {
         expect(interpolatedPoint?.x).toEqual(expect.any(Number));
         expect(interpolatedPoint?.y).toEqual(expect.any(Number));
     });
+
+    it('scopes displayed axes, cells, and scales to the nearest 10 expiries while structural analytics stay full-chain', () => {
+        const displayedOptions = buildDisplayedScopeOptions();
+        const hiddenOptions = [
+            option({
+                instrument: 'BTC-31DEC27-74000-C',
+                strike: 74000,
+                type: 'call',
+                openInterest: 1_000_000,
+                ivPercent: 80,
+                expiryStr: '31DEC27',
+                expiryDate: dateForDte(720),
+                dte: 720,
+            }),
+            option({
+                instrument: 'BTC-31DEC27-62000-P',
+                strike: 62000,
+                type: 'put',
+                openInterest: 1_000_000,
+                ivPercent: 80,
+                expiryStr: '31DEC27',
+                expiryDate: dateForDte(720),
+                dte: 720,
+            }),
+        ];
+        const visibleOnlyResponse = buildTerrainDataContract({
+            spotPrice: 68000,
+            now,
+            dataMode: 'LIVE',
+            options: displayedOptions,
+        });
+        const fullChainOptions = [...displayedOptions, ...hiddenOptions];
+        const response = buildTerrainDataContract({
+            spotPrice: 68000,
+            now,
+            dataMode: 'LIVE',
+            options: fullChainOptions,
+        });
+        const expectedFullChainGammaFlip = calculatePortfolioGammaFlip(fullChainOptions, 68000);
+
+        expect(response.expirations).toHaveLength(10);
+        expect(response.expirations).toEqual(visibleOnlyResponse.expirations);
+        expect(response.maxPainByExpiry).toHaveLength(11);
+        expect(response.strikes).toEqual(visibleOnlyResponse.strikes);
+        expect(response.strikes).not.toContain(62000);
+        expect(response.strikes).not.toContain(74000);
+        expect(response.surfaceGrid).toHaveLength(response.expirations.length);
+        expect(response.surfaceGrid.every((row) => row.length === response.strikes.length)).toBe(true);
+
+        expect(response.scales.gex).toEqual(visibleOnlyResponse.scales.gex);
+        expect(response.scales.vanna).toEqual(visibleOnlyResponse.scales.vanna);
+        expect(response.scales.charm).toEqual(visibleOnlyResponse.scales.charm);
+        expect(response.scales.openInterest).toEqual(visibleOnlyResponse.scales.openInterest);
+
+        const hiddenCall = response.keyContracts.find((contract) => contract.instrument === 'BTC-31DEC27-74000-C');
+        const hiddenPut = response.keyContracts.find((contract) => contract.instrument === 'BTC-31DEC27-62000-P');
+        expect(Math.abs(hiddenCall?.gexExposure ?? 0)).toBeGreaterThan(response.scales.gex.robustAbsMax);
+        expect(Math.abs(hiddenCall?.vannaExposure ?? 0)).toBeGreaterThan(response.scales.vanna.robustAbsMax);
+        expect(Math.abs(hiddenPut?.charmExposure ?? 0)).toBeGreaterThan(response.scales.charm.robustAbsMax);
+
+        expect(response.keyLevels.callWall.strike).toBe(74000);
+        expect(response.keyLevels.callWall.exposure).toBeGreaterThan(visibleOnlyResponse.keyLevels.callWall.exposure);
+        expect(response.keyLevels.putWall.strike).toBe(62000);
+        expect(Math.abs(response.keyLevels.putWall.exposure)).toBeGreaterThan(Math.abs(visibleOnlyResponse.keyLevels.putWall.exposure));
+        expect(response.keyLevels.gammaFlip).toEqual(expectedFullChainGammaFlip);
+    });
 });
 
 function terrainCell(params: {
@@ -327,4 +395,49 @@ function terrainCell(params: {
         openInterest: 0,
         gamma: 0,
     };
+}
+
+function buildDisplayedScopeOptions(): NormalizedDeribitOption[] {
+    const options: NormalizedDeribitOption[] = [];
+    for (let dte = 1; dte <= 10; dte++) {
+        const expiryStr = `${dte}D`;
+        const expiryDateForOption = dateForDte(dte);
+        options.push(
+            option({
+                instrument: `BTC-${expiryStr}-66000-P`,
+                strike: 66000,
+                type: 'put',
+                openInterest: 12 + dte,
+                ivPercent: 52,
+                expiryStr,
+                expiryDate: expiryDateForOption,
+                dte,
+            }),
+            option({
+                instrument: `BTC-${expiryStr}-68000-C`,
+                strike: 68000,
+                type: 'call',
+                openInterest: 16 + dte,
+                ivPercent: 50,
+                expiryStr,
+                expiryDate: expiryDateForOption,
+                dte,
+            }),
+            option({
+                instrument: `BTC-${expiryStr}-70000-C`,
+                strike: 70000,
+                type: 'call',
+                openInterest: 10 + dte,
+                ivPercent: 54,
+                expiryStr,
+                expiryDate: expiryDateForOption,
+                dte,
+            })
+        );
+    }
+    return options;
+}
+
+function dateForDte(dte: number): Date {
+    return new Date(now.getTime() + dte * 24 * 60 * 60 * 1000);
 }
