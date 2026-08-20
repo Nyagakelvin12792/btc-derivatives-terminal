@@ -1,35 +1,36 @@
 'use client';
 
 import React from 'react';
-import { Info, ShieldCheck, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Info } from 'lucide-react';
 import { DealerEnvironmentSummaryData } from '@/lib/dashboard/types';
-import { formatUsd } from '@/lib/dashboard/adapters';
+import { formatUsd, formatGex } from '@/lib/dashboard/adapters';
 
 interface DealerEnvironmentSummaryProps {
     summary: DealerEnvironmentSummaryData;
+    onSelectStrike?: (strike: number) => void;
 }
 
-export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentSummaryProps) {
+export default function DealerEnvironmentSummary({ summary, onSelectStrike }: DealerEnvironmentSummaryProps) {
     const isLongGamma = summary.dealerRegime === 'LONG_GAMMA';
     const isShortGamma = summary.dealerRegime === 'SHORT_GAMMA';
 
     return (
-        <div className="w-full h-full rounded-xl bg-[#080d16] border border-[#151f30] p-4 flex flex-col justify-between select-none shadow-2xl">
+        <div className="w-full h-full rounded-xl bg-[#080d16] border border-[#151f30] p-3.5 flex flex-col justify-between select-none shadow-2xl">
             <div>
                 {/* Header */}
-                <div className="flex items-center justify-between pb-3 border-b border-[#151f30] mb-3">
+                <div className="flex items-center justify-between pb-2.5 border-b border-[#151f30] mb-2.5">
                     <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-white">
                         DEALER ENVIRONMENT SUMMARY
                     </h2>
                 </div>
 
                 {/* Key Metrics List */}
-                <div className="space-y-2.5 font-mono text-xs">
+                <div className="space-y-2 font-mono text-xs">
                     {/* Net GEX */}
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Net GEX</span>
                         <span className="font-bold text-emerald-400">
-                            {formatUsd(summary.netGex, { showSign: true })}
+                            {formatGex(summary.netGex)}
                         </span>
                     </div>
 
@@ -37,7 +38,7 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Net Vanna</span>
                         <span className="font-bold text-purple-400">
-                            {formatUsd(summary.netVanna, { showSign: true })}
+                            {formatGex(summary.netVanna)}
                         </span>
                     </div>
 
@@ -45,55 +46,71 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Net Charm (1D)</span>
                         <span className="font-bold text-rose-400">
-                            {formatUsd(summary.netCharm, { showSign: true })}/Day
+                            {formatGex(summary.netCharm)}/Day
                         </span>
                     </div>
 
                     {/* Gamma Flip */}
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Gamma Flip</span>
-                        <span className="font-bold text-cyan-400">
+                        <button
+                            onClick={() => onSelectStrike?.(summary.gammaFlip)}
+                            className="font-bold text-cyan-400 hover:underline cursor-pointer"
+                        >
                             {summary.gammaFlip.toLocaleString()}
-                        </span>
+                        </button>
                     </div>
 
                     {/* Call Wall */}
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Call Wall</span>
-                        <span className="font-bold text-emerald-400">
+                        <button
+                            onClick={() => onSelectStrike?.(summary.callWall)}
+                            className="font-bold text-emerald-400 hover:underline cursor-pointer"
+                        >
                             {summary.callWall.toLocaleString()}
-                        </span>
+                        </button>
                     </div>
 
                     {/* Put Wall */}
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Put Wall</span>
-                        <span className="font-bold text-rose-400">
+                        <button
+                            onClick={() => onSelectStrike?.(summary.putWall)}
+                            className="font-bold text-rose-400 hover:underline cursor-pointer"
+                        >
                             {summary.putWall.toLocaleString()}
-                        </span>
+                        </button>
                     </div>
 
                     {/* Max Pain */}
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Max Pain</span>
-                        <span className="font-bold text-amber-400">
+                        <button
+                            onClick={() => onSelectStrike?.(summary.maxPain)}
+                            className="font-bold text-amber-400 hover:underline cursor-pointer"
+                        >
                             {summary.maxPain.toLocaleString()}
-                        </span>
+                        </button>
                     </div>
 
                     {/* Total OI */}
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Total OI</span>
                         <span className="font-bold text-white">
-                            ${(summary.totalOiUsd / 1e9).toFixed(2)}B
+                            {summary.totalOiUsd
+                                ? formatUsd(summary.totalOiUsd)
+                                : summary.totalOiBtc
+                                ? `${summary.totalOiBtc.toLocaleString()} BTC`
+                                : 'N/A'}
                         </span>
                     </div>
                 </div>
             </div>
 
             {/* DEALER REGIME Gauge Card */}
-            <div className="mt-4 p-3.5 rounded-lg bg-[#0c1422] border border-[#1a273b] relative overflow-hidden">
-                <div className="flex items-center justify-between mb-1.5">
+            <div className="mt-3 p-3 rounded-lg bg-[#0c1422] border border-[#1a273b] relative overflow-hidden">
+                <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-1.5">
                         <span className="text-[10px] font-mono font-bold text-zinc-400 uppercase tracking-wider">
                             DEALER REGIME
@@ -109,7 +126,7 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                         }`}>
                             {summary.regimeTitle}
                         </div>
-                        <div className="text-[11px] font-mono text-zinc-300 font-medium">
+                        <div className="text-[10px] font-mono text-zinc-300 font-medium">
                             {summary.regimeSubtitle}
                         </div>
                     </div>
@@ -117,7 +134,6 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                     {/* Radial Speedometer Gauge */}
                     <div className="relative w-16 h-12 flex items-end justify-center shrink-0">
                         <svg viewBox="0 0 100 60" className="w-full h-full overflow-visible">
-                            {/* Gauge Arc Background */}
                             <path
                                 d="M 10 50 A 40 40 0 0 1 90 50"
                                 fill="none"
@@ -125,7 +141,6 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                                 strokeWidth="8"
                                 strokeLinecap="round"
                             />
-                            {/* Gauge Active Colored Arc */}
                             <path
                                 d="M 10 50 A 40 40 0 0 1 90 50"
                                 fill="none"
@@ -133,7 +148,6 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                                 strokeWidth="8"
                                 strokeLinecap="round"
                             />
-                            {/* Gauge Needle */}
                             <line
                                 x1="50"
                                 y1="50"
@@ -155,7 +169,7 @@ export default function DealerEnvironmentSummary({ summary }: DealerEnvironmentS
                     </div>
                 </div>
 
-                <p className="mt-2 text-[10px] font-sans text-zinc-400 leading-relaxed">
+                <p className="mt-1.5 text-[10px] font-sans text-zinc-400 leading-snug">
                     {summary.regimeDescription}
                 </p>
             </div>

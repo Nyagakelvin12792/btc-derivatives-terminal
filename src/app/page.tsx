@@ -11,7 +11,15 @@ import ExpirySliceChart from '@/components/dashboard/ExpirySliceChart';
 import ConfluenceLevelsTable from '@/components/dashboard/ConfluenceLevelsTable';
 import KeyContractsTable from '@/components/dashboard/KeyContractsTable';
 import FooterBar from '@/components/dashboard/FooterBar';
-import { DashboardData } from '@/lib/dashboard/types';
+import {
+    DashboardOverviewView,
+    GexAnalysisView,
+    VannaAnalysisView,
+    CharmAnalysisView,
+    OpenInterestView,
+    PlannedModuleView,
+} from '@/components/dashboard/Workspaces';
+import { DashboardData, DataMode, WorkspaceTab, SelectedAnalyticalState, TerrainGridCell, ConfluenceLevelItem, KeyContractItem } from '@/lib/dashboard/types';
 import { createCanonicalDashboardData, adaptApiResponseToDashboardData } from '@/lib/dashboard/adapters';
 
 // Dynamically import 3D WebGL component to guarantee client-only execution
@@ -31,104 +39,246 @@ const IntegratedDealerTerrain = dynamic(
 );
 
 export default function TerminalPage() {
-    const [data, setData] = useState<DashboardData>(createCanonicalDashboardData());
-    const [activeTab, setActiveTab] = useState('SURFACE MAP');
+    const [dataMode, setDataMode] = useState<DataMode>('DEMO');
+    const [data, setData] = useState<DashboardData>(createCanonicalDashboardData('DEMO'));
+    const [activeTab, setActiveTab] = useState<WorkspaceTab>('SURFACE MAP');
+
+    // Shared analytical selection state across all synchronized components
+    const [selectedState, setSelectedState] = useState<SelectedAnalyticalState>({
+        strike: 67842.5,
+        dte: 30,
+        expiry: '2025-06-27',
+        levelId: null,
+        contractInstrument: null,
+    });
+
+    const handleSelectStrike = useCallback((strike: number) => {
+        setSelectedState((prev) => ({
+            ...prev,
+            strike,
+        }));
+    }, []);
+
+    const handleSelectPoint = useCallback((cell: TerrainGridCell) => {
+        setSelectedState({
+            strike: cell.strike,
+            dte: cell.dte,
+            expiry: cell.expiry,
+            levelId: null,
+            contractInstrument: null,
+        });
+    }, []);
+
+    const handleSelectLevel = useCallback((level: ConfluenceLevelItem) => {
+        setSelectedState({
+            strike: level.strike,
+            dte: 30,
+            expiry: null,
+            levelId: level.id,
+            contractInstrument: null,
+        });
+    }, []);
+
+    const handleSelectContract = useCallback((contract: KeyContractItem) => {
+        setSelectedState({
+            strike: contract.strike,
+            dte: contract.dte,
+            expiry: contract.expiry,
+            levelId: null,
+            contractInstrument: contract.instrument,
+        });
+    }, []);
 
     const fetchLiveFeed = useCallback(async () => {
+        if (dataMode === 'DEMO') {
+            setData(createCanonicalDashboardData('DEMO'));
+            return;
+        }
+
         try {
             const res = await fetch('/api/deribit');
             if (res.ok) {
                 const json = await res.json();
-                const adapted = adaptApiResponseToDashboardData(json);
+                const adapted = adaptApiResponseToDashboardData(json, 'LIVE');
                 setData(adapted);
+            } else {
+                setData(createCanonicalDashboardData('DEGRADED'));
             }
         } catch (e) {
-            // Keep canonical dashboard data on network err
             console.error('Failed to sync live feed:', e);
+            setData(createCanonicalDashboardData('DEGRADED'));
         }
-    }, []);
+    }, [dataMode]);
 
     useEffect(() => {
         fetchLiveFeed();
         const timer = setInterval(() => {
-            fetchLiveFeed();
-        }, 3000); // 3s auto-refresh
+            if (dataMode === 'LIVE') {
+                fetchLiveFeed();
+            }
+        }, 3000);
         return () => clearInterval(timer);
-    }, [fetchLiveFeed]);
+    }, [fetchLiveFeed, dataMode]);
+
+    const handleToggleDataMode = (mode: DataMode) => {
+        setDataMode(mode);
+        if (mode === 'DEMO') {
+            setData(createCanonicalDashboardData('DEMO'));
+        } else {
+            fetchLiveFeed();
+        }
+    };
 
     return (
-        <div className="min-h-screen bg-[#05080f] text-zinc-100 flex flex-row font-sans selection:bg-cyan-500 selection:text-black overflow-hidden">
-            {/* Left Collapsible Navigation Sidebar */}
-            <Sidebar activeTab={activeTab} onSelectTab={setActiveTab} />
+        <div className="min-h-screen bg-[#05080f] text-zinc-100 flex flex-row font-sans selection:bg-cyan-500 selection:text-black overflow-x-hidden">
+            {/* Left Navigation Sidebar */}
+            <Sidebar
+                activeTab={activeTab}
+                onSelectTab={setActiveTab}
+            />
 
-            {/* Main Terminal Viewport Container */}
-            <div className="flex-1 flex flex-col h-screen overflow-y-auto">
+            {/* Main Terminal Workspace */}
+            <div className="flex-1 flex flex-col h-screen overflow-y-auto overflow-x-hidden">
                 {/* Top Ticker Metric Bar */}
-                <TopTickerBar summary={data.summary} />
+                <TopTickerBar
+                    summary={data.summary}
+                    onToggleDataMode={handleToggleDataMode}
+                />
 
-                {/* Main Content Workspace */}
-                <main className="flex-1 p-3.5 space-y-3.5 max-w-[1920px] mx-auto w-full">
-                    {/* Top Row: Dominant 3D Dealer Terrain (75%) + Environment Summary (25%) */}
-                    <div className="grid grid-cols-1 xl:grid-cols-12 gap-3.5">
-                        {/* 3D Dealer Terrain */}
-                        <div className="xl:col-span-9 w-full">
-                            <IntegratedDealerTerrain
-                                surfaceGrid={data.surfaceGrid}
-                                summary={data.summary}
-                                strikes={data.strikes}
-                                expirations={data.expirations}
-                                dtes={data.dtes}
-                            />
+                {/* Dynamic Content Viewport */}
+                <main className="flex-1 p-3 space-y-3 max-w-[1920px] w-full mx-auto">
+                    {/* View 1: Primary Canonical SURFACE MAP */}
+                    {activeTab === 'SURFACE MAP' && (
+                        <div className="space-y-3">
+                            {/* Top Row: Dominant 3D Dealer Terrain (75%) + Environment Summary (25%) */}
+                            <div className="grid grid-cols-1 xl:grid-cols-12 gap-3">
+                                <div className="xl:col-span-9 w-full">
+                                    <IntegratedDealerTerrain
+                                        surfaceGrid={data.surfaceGrid}
+                                        interpolatedGrid={data.interpolatedGrid}
+                                        summary={data.summary}
+                                        scales={data.scales}
+                                        strikes={data.strikes}
+                                        expirations={data.expirations}
+                                        dtes={data.dtes}
+                                        selectedState={selectedState}
+                                        onSelectStrike={handleSelectStrike}
+                                        onSelectPoint={handleSelectPoint}
+                                    />
+                                </div>
+
+                                <div className="xl:col-span-3 w-full">
+                                    <DealerEnvironmentSummary
+                                        summary={data.summary}
+                                        onSelectStrike={handleSelectStrike}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Middle Row: 4 Synchronized Analytical Panels */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3 h-auto min-h-[220px]">
+                                <div className="w-full h-full">
+                                    <GexHeatmap
+                                        surfaceGrid={data.surfaceGrid}
+                                        strikes={data.strikes}
+                                        dtes={data.dtes}
+                                        spotPrice={data.summary.spotPrice}
+                                        scales={data.scales}
+                                        selectedState={selectedState}
+                                        onSelectCell={handleSelectPoint}
+                                    />
+                                </div>
+
+                                <div className="w-full h-full">
+                                    <StrikeSliceChart
+                                        surfaceGrid={data.surfaceGrid}
+                                        strikes={data.strikes}
+                                        spotPrice={data.summary.spotPrice}
+                                        scales={data.scales}
+                                        selectedState={selectedState}
+                                        onSelectStrike={handleSelectStrike}
+                                    />
+                                </div>
+
+                                <div className="w-full h-full">
+                                    <ExpirySliceChart
+                                        surfaceGrid={data.surfaceGrid}
+                                        dtes={data.dtes}
+                                        spotPrice={data.summary.spotPrice}
+                                        scales={data.scales}
+                                        selectedState={selectedState}
+                                        onSelectDte={(d) => setSelectedState(prev => ({ ...prev, dte: d }))}
+                                    />
+                                </div>
+
+                                <div className="w-full h-full">
+                                    <ConfluenceLevelsTable
+                                        levels={data.confluenceLevels}
+                                        selectedState={selectedState}
+                                        onSelectLevel={handleSelectLevel}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Bottom Row: Key Contracts Table */}
+                            <div className="w-full">
+                                <KeyContractsTable
+                                    contracts={data.keyContracts}
+                                    selectedState={selectedState}
+                                    onSelectContract={handleSelectContract}
+                                />
+                            </div>
                         </div>
+                    )}
 
-                        {/* Dealer Environment Summary & Regime Gauge */}
-                        <div className="xl:col-span-3 w-full">
-                            <DealerEnvironmentSummary summary={data.summary} />
-                        </div>
-                    </div>
+                    {/* View 2: DASHBOARD Overview */}
+                    {activeTab === 'DASHBOARD' && (
+                        <DashboardOverviewView
+                            data={data}
+                            selectedState={selectedState}
+                            onSelectStrike={handleSelectStrike}
+                        />
+                    )}
 
-                    {/* Middle Row: 4 Synchronized Analytical Panels */}
-                    <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5 h-auto min-h-[220px]">
-                        {/* 1. GEX Heatmap */}
-                        <div className="w-full h-full">
-                            <GexHeatmap
-                                surfaceGrid={data.surfaceGrid}
-                                strikes={data.strikes}
-                                dtes={data.dtes}
-                                spotPrice={data.summary.spotPrice}
-                            />
-                        </div>
+                    {/* View 3: GEX ANALYSIS */}
+                    {activeTab === 'GEX ANALYSIS' && (
+                        <GexAnalysisView
+                            data={data}
+                            selectedState={selectedState}
+                            onSelectStrike={handleSelectStrike}
+                        />
+                    )}
 
-                        {/* 2. Strike Slice */}
-                        <div className="w-full h-full">
-                            <StrikeSliceChart
-                                surfaceGrid={data.surfaceGrid}
-                                strikes={data.strikes}
-                                spotPrice={data.summary.spotPrice}
-                            />
-                        </div>
+                    {/* View 4: VANNA */}
+                    {activeTab === 'VANNA' && (
+                        <VannaAnalysisView
+                            data={data}
+                            selectedState={selectedState}
+                            onSelectStrike={handleSelectStrike}
+                        />
+                    )}
 
-                        {/* 3. Expiry Slice */}
-                        <div className="w-full h-full">
-                            <ExpirySliceChart
-                                surfaceGrid={data.surfaceGrid}
-                                dtes={data.dtes}
-                                spotPrice={data.summary.spotPrice}
-                            />
-                        </div>
+                    {/* View 5: CHARM */}
+                    {activeTab === 'CHARM' && (
+                        <CharmAnalysisView
+                            data={data}
+                            selectedState={selectedState}
+                        />
+                    )}
 
-                        {/* 4. Confluence Levels */}
-                        <div className="w-full h-full">
-                            <ConfluenceLevelsTable
-                                levels={data.confluenceLevels}
-                            />
-                        </div>
-                    </div>
+                    {/* View 6: OPEN INTEREST */}
+                    {activeTab === 'OPEN INTEREST' && (
+                        <OpenInterestView
+                            data={data}
+                            selectedState={selectedState}
+                            onSelectStrike={handleSelectStrike}
+                        />
+                    )}
 
-                    {/* Bottom Row: Key Contracts Table */}
-                    <div className="w-full">
-                        <KeyContractsTable contracts={data.keyContracts} />
-                    </div>
+                    {/* View 7: Planned Modules */}
+                    {['ALERTS', 'WATCHLIST', 'SCREENER', 'REPORTS', 'SETTINGS'].includes(activeTab) && (
+                        <PlannedModuleView moduleName={activeTab} />
+                    )}
                 </main>
 
                 {/* Footer Bar */}
