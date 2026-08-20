@@ -1,15 +1,14 @@
 ﻿>>> COMPLETED BY: Codex
 >>> STATUS: COMPLETE
 >>> BRANCH: agent/codex
->>> COMMIT: 72c8fde1508b9528f762bd1bede8c0ab6853dc19
->>> TESTS: PASS - npx.cmd vitest run (3 files, 16 tests); PASS - npx.cmd eslint src/app/api/deribit/route.ts src/lib/deribit/client.ts src/lib/deribit/client.test.ts src/lib/deribit/normalization.ts src/lib/deribit/normalization.test.ts src/lib/deribit/types.ts src/lib/quant/engine.ts src/lib/quant/engine.test.ts; PASS - npm.cmd run build
+>>> COMMIT: 66226e7b7fb9961ef479067a00bddb73b76fe5d9
+>>> TESTS: PASS - npx.cmd vitest run (4 files, 17 tests); PASS - npx.cmd eslint src/app/api/deribit/route.ts src/lib/deribit/client.server.ts src/lib/deribit/client.server.test.ts src/lib/deribit/server-boundary.test.ts src/lib/deribit/normalization.ts src/lib/deribit/normalization.test.ts src/lib/deribit/types.ts src/lib/quant/engine.ts src/lib/quant/engine.test.ts; PASS - npm.cmd run build
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review Deribit request caching and in-flight deduplication behavior for Milestone 3 acceptance. No Gemini-owned files were changed and the existing visualization API shape was preserved.
->>> TARGET: src/app/api/deribit/route.ts, src/lib/deribit/client.ts, src/lib/deribit/client.test.ts
+>>> ACTION REQUIRED: Review server/client boundary enforcement for Milestone 3 acceptance. No Gemini-owned files were changed and the existing visualization API shape was preserved.
+>>> TARGET: src/app/api/deribit/route.ts, src/lib/deribit/client.server.ts, src/lib/deribit/client.server.test.ts, src/lib/deribit/server-boundary.test.ts
 
 ## Codex Notes
-- Added a 15-second in-memory Deribit option-chain cache aligned with the existing upstream revalidation window.
-- Added in-flight request sharing so concurrent route calls reuse one Deribit index/book fetch pair instead of multiplying upstream calls.
-- Added successful API response cache-control headers and kept synthetic fallback responses no-store.
-- Added client tests for fresh-cache reuse, cache expiry refresh, and concurrent request sharing.
-- Gemini-facing response fields and units were unchanged; only server-side request behavior changed.
+- Renamed the Deribit upstream HTTP module from client.ts to client.server.ts to make its server-only role explicit.
+- Updated the API route to import the server-scoped Deribit module; browser code continues to fetch only /api/deribit.
+- Added a source-boundary regression test that scans 'use client' modules and fails if they import the Deribit upstream client or quant engine directly.
+- Existing Deribit cache/deduplication behavior, response fields, and quantitative units were unchanged.
