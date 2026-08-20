@@ -5,11 +5,12 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { Eye, RotateCcw } from 'lucide-react';
 import type { TerrainDataContractV2, TerrainSurfaceCell } from '@/lib/terrain/types';
-import { createLinearMapper, generateDteTicks, generateStrikeTicks, type LinearMapper } from './terrain/axes';
+import { createLinearMapperFromDomain, type LinearMapper } from './terrain/axes';
 import { colorForMetricValue, METRIC_PALETTES } from './terrain/colors';
 import { buildInterpolatedRenderGrid, nearestCell, type RenderGrid } from './terrain/interpolation';
 import { getMetricConfig, METRIC_CONFIGS, type TerrainMetric } from './terrain/metric';
-import { clampForDisplay, createSymmetricFinancialScale, formatFinancialAxis, formatStrikeAxis } from './terrain/scales';
+import { clampForDisplay, formatFinancialAxis, formatStrikeAxis } from './terrain/scales';
+import { createTerrainViewportModel, type TerrainViewportModel } from './terrain/viewport';
 
 interface IntegratedDealerTerrainProps {
     data: TerrainDataContractV2;
@@ -17,6 +18,7 @@ interface IntegratedDealerTerrainProps {
     selectedDte?: number | null;
     onSelectStrike?: (strike: number) => void;
     onSelectPoint?: (cell: TerrainSurfaceCell) => void;
+    onViewportChange?: (viewport: TerrainViewportModel) => void;
 }
 
 interface HoverState {
@@ -29,10 +31,10 @@ interface HoverState {
 
 type CameraMode = '3d' | 'top' | 'front';
 
-const WORLD_WIDTH = 28;
-const WORLD_DEPTH = 16;
-const WORLD_HEIGHT = 5.2;
-const ZERO_PLANE_OPACITY = 0.18;
+const WORLD_WIDTH = 30;
+const WORLD_DEPTH = 18;
+const WORLD_HEIGHT = 6.4;
+const ZERO_PLANE_OPACITY = 0.12;
 
 export default function IntegratedDealerTerrain({
     data,
@@ -40,6 +42,7 @@ export default function IntegratedDealerTerrain({
     selectedDte = null,
     onSelectStrike,
     onSelectPoint,
+    onViewportChange,
 }: IntegratedDealerTerrainProps) {
     const containerRef = useRef<HTMLDivElement>(null);
     const sceneRef = useRef<THREE.Scene | null>(null);
@@ -79,30 +82,40 @@ export default function IntegratedDealerTerrain({
     }, [onSelectStrike]);
 
     const metricConfig = getMetricConfig(metric);
-    const metricScale = metricConfig.scale(data);
-    const yScale = useMemo(() => createSymmetricFinancialScale(metricScale.robustAbsMax, 9), [metricScale.robustAbsMax]);
-    const strikeMapper = useMemo(() => createLinearMapper(data.strikes, WORLD_WIDTH), [data.strikes]);
-    const dteMapper = useMemo(() => createLinearMapper(data.dtes, WORLD_DEPTH), [data.dtes]);
+    const viewportModel = useMemo(() => createTerrainViewportModel(data, metric), [data, metric]);
+    const exposureBound = useMemo(() => (
+        Math.max(Math.abs(viewportModel.exposureDomain[0]), Math.abs(viewportModel.exposureDomain[1]))
+    ), [viewportModel.exposureDomain]);
+    const strikeMapper = useMemo(() => createLinearMapperFromDomain(viewportModel.strikeDomain, WORLD_WIDTH), [viewportModel.strikeDomain]);
+    const dteMapper = useMemo(() => createLinearMapperFromDomain(viewportModel.dteDomain, WORLD_DEPTH), [viewportModel.dteDomain]);
     const renderGrid = useMemo(() => {
         const strikeSamples = clampInt(data.strikes.length * 16, 80, 120);
         const dteSamples = clampInt(data.dtes.length * 10, 40, 70);
         return buildInterpolatedRenderGrid(data.surfaceGrid, metricConfig, strikeSamples, dteSamples);
     }, [data.surfaceGrid, data.strikes.length, data.dtes.length, metricConfig]);
-    const yTicks = yScale.ticks;
-    const strikeTicks = useMemo(() => generateStrikeTicks(data.strikes, strikeMapper, 8), [data.strikes, strikeMapper]);
-    const dteTicks = useMemo(() => generateDteTicks(data.dtes, dteMapper, 8), [data.dtes, dteMapper]);
+    const yTicks = viewportModel.exposureTicks.map((tick) => tick.value);
+    const strikeTicks = useMemo(() => (
+        viewportModel.strikeTicks.map((tick) => ({ value: tick.value, world: strikeMapper.toWorld(tick.value) }))
+    ), [strikeMapper, viewportModel.strikeTicks]);
+    const dteTicks = useMemo(() => (
+        viewportModel.dteTicks.map((tick) => ({ value: tick.value, world: dteMapper.toWorld(tick.value) }))
+    ), [dteMapper, viewportModel.dteTicks]);
+
+    useEffect(() => {
+        onViewportChange?.(viewportModel);
+    }, [onViewportChange, viewportModel]);
 
     const applyCamera = useCallback((mode: CameraMode) => {
         const camera = cameraRef.current;
         const controls = controlsRef.current;
         if (!camera || !controls) return;
 
-        if (mode === 'top') camera.position.set(0, 28, 0.01);
-        else if (mode === 'front') camera.position.set(0, 5.5, 28);
-        else camera.position.set(22, 10.5, 20);
+        if (mode === 'top') camera.position.set(0, 40, 0.01);
+        else if (mode === 'front') camera.position.set(0, 8, 42);
+        else camera.position.set(34, 22, 36);
 
-        controls.target.set(0, 0, 0);
-        camera.lookAt(0, 0, 0);
+        controls.target.set(0, 0.15, 0);
+        camera.lookAt(controls.target);
         controls.update();
     }, []);
 
@@ -114,7 +127,7 @@ export default function IntegratedDealerTerrain({
         scene.background = new THREE.Color(0x05080d);
         sceneRef.current = scene;
 
-        const camera = new THREE.PerspectiveCamera(30, container.clientWidth / container.clientHeight, 0.1, 1000);
+        const camera = new THREE.PerspectiveCamera(32, container.clientWidth / container.clientHeight, 0.1, 1000);
         cameraRef.current = camera;
 
         const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
@@ -128,8 +141,8 @@ export default function IntegratedDealerTerrain({
         controls.enableDamping = true;
         controls.dampingFactor = 0.08;
         controls.enablePan = true;
-        controls.minDistance = 14;
-        controls.maxDistance = 48;
+        controls.minDistance = 20;
+        controls.maxDistance = 76;
         controls.maxPolarAngle = Math.PI / 2 - 0.05;
         controlsRef.current = controls;
 
@@ -226,11 +239,11 @@ export default function IntegratedDealerTerrain({
             strikeMapper,
             dteMapper,
             metric,
-            axisBound: yScale.bound,
+            axisBound: exposureBound,
         };
         analyticalGridRef.current = data.surfaceGrid;
 
-        const geometry = buildSurfaceGeometry(renderGrid, strikeMapper, dteMapper, metric, yScale.bound);
+        const geometry = buildSurfaceGeometry(renderGrid, strikeMapper, dteMapper, metric, exposureBound);
         const material = new THREE.MeshStandardMaterial({
             vertexColors: true,
             roughness: 0.72,
@@ -256,11 +269,11 @@ export default function IntegratedDealerTerrain({
             dteTicks,
             strikeMapper,
             dteMapper,
-            yBound: yScale.bound,
+            yBound: exposureBound,
         }));
         rootGroup.add(buildStructuralMarkers(data, strikeMapper));
         rootGroup.add(buildSelectionMarker({ selectedStrike, selectedDte, strikeMapper, dteMapper }));
-    }, [data, dteMapper, dteTicks, metric, renderGrid, selectedDte, selectedStrike, showWireframe, strikeMapper, strikeTicks, yScale.bound, yTicks]);
+    }, [data, dteMapper, dteTicks, exposureBound, metric, renderGrid, selectedDte, selectedStrike, showWireframe, strikeMapper, strikeTicks, yTicks]);
 
     const setCameraPreset = (mode: CameraMode) => {
         setCameraMode(mode);
@@ -333,18 +346,18 @@ export default function IntegratedDealerTerrain({
 
             <div className="absolute bottom-4 left-4 right-4 flex flex-col gap-2 pointer-events-none">
                 <div className="flex items-center justify-center gap-3 rounded-md border border-slate-800 bg-slate-950/82 px-3 py-2 text-[11px] text-slate-300">
-                    <span className="font-mono">{formatFinancialAxis(-yScale.bound)}</span>
+                    <span className="font-mono">{formatFinancialAxis(-exposureBound)}</span>
                     <div
                         className="h-2 w-56 rounded"
                         style={{ background: `linear-gradient(90deg, ${palette.negative}, ${palette.zero}, ${palette.positive})` }}
                     />
                     <span className="font-mono">{formatFinancialAxis(0)}</span>
-                    <span className="font-mono">{formatFinancialAxis(yScale.bound)}</span>
+                    <span className="font-mono">{formatFinancialAxis(exposureBound)}</span>
                 </div>
                 <div className="flex justify-between text-[11px] text-slate-400">
                     <span>Data Mode: <span className="text-emerald-300">{data.dataMode}</span></span>
                     <span>Assumption: {data.assumptionModel}</span>
-                    <span>Scale: +/- {formatFinancialAxis(yScale.bound)}</span>
+                    <span>Scale: +/- {formatFinancialAxis(exposureBound)}</span>
                 </div>
             </div>
 
@@ -446,30 +459,38 @@ function buildAxesGroup(params: {
     yBound: number;
 }): THREE.Object3D {
     const group = new THREE.Group();
-    const axisMaterial = new THREE.LineBasicMaterial({ color: 0x64748b, transparent: true, opacity: 0.75 });
-    const yAxisX = -WORLD_WIDTH / 2 - 1.1;
-    const frontZ = -WORLD_DEPTH / 2 - 0.8;
+    const axisMaterial = new THREE.LineBasicMaterial({ color: 0x94a3b8, transparent: true, opacity: 0.92 });
+    const zeroMaterial = new THREE.LineBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.96 });
+    const guideMaterial = new THREE.LineBasicMaterial({ color: 0x475569, transparent: true, opacity: 0.28 });
+    const frontZ = WORLD_DEPTH / 2 + 0.9;
+    const dteAxisX = WORLD_WIDTH / 2 + 0.35;
+    const yAxisX = WORLD_WIDTH / 2 + 1.45;
     group.add(line([new THREE.Vector3(-WORLD_WIDTH / 2, 0, frontZ), new THREE.Vector3(WORLD_WIDTH / 2, 0, frontZ)], axisMaterial));
-    group.add(line([new THREE.Vector3(-WORLD_WIDTH / 2, 0, -WORLD_DEPTH / 2), new THREE.Vector3(-WORLD_WIDTH / 2, 0, WORLD_DEPTH / 2)], axisMaterial));
+    group.add(line([new THREE.Vector3(dteAxisX, 0, -WORLD_DEPTH / 2), new THREE.Vector3(dteAxisX, 0, WORLD_DEPTH / 2)], axisMaterial));
     group.add(line([new THREE.Vector3(yAxisX, -WORLD_HEIGHT, frontZ), new THREE.Vector3(yAxisX, WORLD_HEIGHT, frontZ)], axisMaterial));
 
     for (const tick of params.yTicks) {
         const y = (tick / params.yBound) * WORLD_HEIGHT;
-        group.add(line([new THREE.Vector3(yAxisX - 0.15, y, frontZ), new THREE.Vector3(yAxisX + 0.15, y, frontZ)], axisMaterial));
-        group.add(makeTextSprite(formatFinancialAxis(tick), new THREE.Vector3(yAxisX - 1.35, y, frontZ), { color: '#cbd5e1', size: 42 }));
+        const isZero = Math.abs(tick) < 0.000001;
+        group.add(line(
+            [new THREE.Vector3(yAxisX - (isZero ? 0.34 : 0.22), y, frontZ), new THREE.Vector3(yAxisX + (isZero ? 0.34 : 0.22), y, frontZ)],
+            isZero ? zeroMaterial : axisMaterial
+        ));
+        group.add(line([new THREE.Vector3(-WORLD_WIDTH / 2, y, frontZ), new THREE.Vector3(WORLD_WIDTH / 2, y, frontZ)], isZero ? zeroMaterial : guideMaterial));
+        group.add(makeTextSprite(formatFinancialAxis(tick), new THREE.Vector3(yAxisX + 1.15, y, frontZ), { color: isZero ? '#ffffff' : '#dbeafe', size: isZero ? 48 : 44 }));
     }
     for (const tick of params.strikeTicks) {
-        group.add(line([new THREE.Vector3(tick.world, 0, frontZ - 0.1), new THREE.Vector3(tick.world, 0, frontZ + 0.25)], axisMaterial));
-        group.add(makeTextSprite(formatStrikeAxis(tick.value), new THREE.Vector3(tick.world, -0.45, frontZ - 0.8), { color: '#cbd5e1', size: 38 }));
+        group.add(line([new THREE.Vector3(tick.world, 0, frontZ - 0.18), new THREE.Vector3(tick.world, 0, frontZ + 0.3)], axisMaterial));
+        group.add(makeTextSprite(formatStrikeAxis(tick.value), new THREE.Vector3(tick.world, -0.65, frontZ + 0.82), { color: '#dbeafe', size: 42 }));
     }
     for (const tick of params.dteTicks) {
-        group.add(line([new THREE.Vector3(-WORLD_WIDTH / 2 - 0.25, 0, tick.world), new THREE.Vector3(-WORLD_WIDTH / 2 + 0.1, 0, tick.world)], axisMaterial));
-        group.add(makeTextSprite(`${tick.value}`, new THREE.Vector3(-WORLD_WIDTH / 2 - 1.15, -0.35, tick.world), { color: '#cbd5e1', size: 36 }));
+        group.add(line([new THREE.Vector3(dteAxisX - 0.3, 0, tick.world), new THREE.Vector3(dteAxisX + 0.22, 0, tick.world)], axisMaterial));
+        group.add(makeTextSprite(`${tick.value}`, new THREE.Vector3(dteAxisX + 1.05, -0.38, tick.world), { color: '#dbeafe', size: 40 }));
     }
 
-    group.add(makeTextSprite('STRIKE PRICE (USD)', new THREE.Vector3(0, -1.05, frontZ - 1.45), { color: '#f8fafc', size: 44 }));
-    group.add(makeTextSprite('DAYS TO EXPIRY', new THREE.Vector3(-WORLD_WIDTH / 2 - 1.8, -0.95, 0), { color: '#f8fafc', size: 44 }));
-    group.add(makeTextSprite('EXPOSURE', new THREE.Vector3(yAxisX - 1.55, WORLD_HEIGHT + 0.7, frontZ), { color: '#f8fafc', size: 44 }));
+    group.add(makeTextSprite('STRIKE PRICE (USD)', new THREE.Vector3(0, -1.25, frontZ + 1.55), { color: '#f8fafc', size: 48 }));
+    group.add(makeTextSprite('DAYS TO EXPIRY', new THREE.Vector3(dteAxisX + 1.55, -1.0, 0), { color: '#f8fafc', size: 46 }));
+    group.add(makeTextSprite('EXPOSURE', new THREE.Vector3(yAxisX + 1.2, WORLD_HEIGHT + 0.9, frontZ), { color: '#f8fafc', size: 48 }));
     return group;
 }
 
@@ -477,26 +498,31 @@ function buildStructuralMarkers(data: TerrainDataContractV2, strikeMapper: Linea
     const group = new THREE.Group();
     const levels = [
         { label: `SPOT ${formatStrikeAxis(data.spotPrice)}`, strike: data.spotPrice, color: 0xffffff, priority: 1 },
-        { label: `GAMMA FLIP ${formatStrikeAxis(data.keyLevels.gammaFlip.strike)}`, strike: data.keyLevels.gammaFlip.strike, color: 0x38bdf8, priority: 2 },
+        { label: `FLIP ${formatStrikeAxis(data.keyLevels.gammaFlip.strike)}`, strike: data.keyLevels.gammaFlip.strike, color: 0x38bdf8, priority: 2 },
         { label: `CALL WALL ${formatStrikeAxis(data.keyLevels.callWall.strike)}`, strike: data.keyLevels.callWall.strike, color: 0x22c55e, priority: 3 },
         { label: `PUT WALL ${formatStrikeAxis(data.keyLevels.putWall.strike)}`, strike: data.keyLevels.putWall.strike, color: 0xef4444, priority: 3 },
         ...(data.keyLevels.primaryMaxPain ? [{ label: `MAX PAIN ${formatStrikeAxis(data.keyLevels.primaryMaxPain.strike)}`, strike: data.keyLevels.primaryMaxPain.strike, color: 0xfacc15, priority: 4 }] : []),
     ].sort((a, b) => a.priority - b.priority);
+    const markerZ = WORLD_DEPTH / 2 - 0.65;
+    const labelZ = WORLD_DEPTH / 2 + 0.95;
+    const occupiedX: number[] = [];
 
     levels.forEach((level, index) => {
         const inRange = strikeMapper.inRange(level.strike);
         const x = inRange ? strikeMapper.toWorld(level.strike) : level.strike < strikeMapper.min ? -WORLD_WIDTH / 2 - 0.7 : WORLD_WIDTH / 2 + 0.7;
+        const collisionSlot = occupiedX.filter((usedX) => Math.abs(usedX - x) < 1.35).length;
+        occupiedX.push(x);
         const material = new THREE.LineDashedMaterial({ color: level.color, dashSize: 0.35, gapSize: 0.22, transparent: true, opacity: inRange ? 0.85 : 0.55 });
         const marker = line([
-            new THREE.Vector3(x, -WORLD_HEIGHT, -WORLD_DEPTH / 2),
-            new THREE.Vector3(x, WORLD_HEIGHT + 0.8, -WORLD_DEPTH / 2),
+            new THREE.Vector3(x, -WORLD_HEIGHT, markerZ),
+            new THREE.Vector3(x, WORLD_HEIGHT + 0.9, markerZ),
         ], material);
         marker.computeLineDistances();
         group.add(marker);
         group.add(makeTextSprite(
             inRange ? level.label : `${level.label} FULL CHAIN`,
-            new THREE.Vector3(x, WORLD_HEIGHT + 1 + index * 0.22, -WORLD_DEPTH / 2 - 0.35),
-            { color: `#${level.color.toString(16).padStart(6, '0')}`, size: 34 }
+            new THREE.Vector3(x, WORLD_HEIGHT + 1.05 + collisionSlot * 0.58 + index * 0.06, labelZ + collisionSlot * 0.26),
+            { color: `#${level.color.toString(16).padStart(6, '0')}`, size: level.priority === 1 ? 42 : 38 }
         ));
     });
 
@@ -554,11 +580,11 @@ function line(points: THREE.Vector3[], material: THREE.Material): THREE.Line {
 function makeTextSprite(text: string, position: THREE.Vector3, options: { color: string; size: number }): THREE.Sprite {
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    canvas.width = 512;
-    canvas.height = 128;
+    canvas.width = 1024;
+    canvas.height = 256;
     if (context) {
         context.clearRect(0, 0, canvas.width, canvas.height);
-        context.font = `600 ${options.size}px ui-monospace, SFMono-Regular, Menlo, monospace`;
+        context.font = `700 ${options.size * 2}px ui-monospace, SFMono-Regular, Menlo, monospace`;
         context.fillStyle = options.color;
         context.textAlign = 'center';
         context.textBaseline = 'middle';
@@ -568,7 +594,9 @@ function makeTextSprite(text: string, position: THREE.Vector3, options: { color:
     const material = new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false });
     const sprite = new THREE.Sprite(material);
     sprite.position.copy(position);
-    sprite.scale.set(2.6, 0.65, 1);
+    const sizeFactor = options.size / 42;
+    const width = Math.min(6.2, Math.max(1.4, text.length * 0.24)) * sizeFactor;
+    sprite.scale.set(width, 0.72 * sizeFactor, 1);
     return sprite;
 }
 

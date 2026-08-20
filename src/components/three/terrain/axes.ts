@@ -19,6 +19,13 @@ export function createLinearMapper(values: readonly number[], size: number): Lin
     const min = finiteValues.length ? Math.min(...finiteValues) : 0;
     const max = finiteValues.length ? Math.max(...finiteValues) : min + 1;
     const safeMax = max === min ? min + 1 : max;
+    return createLinearMapperFromDomain([min, safeMax], size);
+}
+
+export function createLinearMapperFromDomain(domain: readonly [number, number], size: number): LinearMapper {
+    const min = Number.isFinite(domain[0]) ? domain[0] : 0;
+    const max = Number.isFinite(domain[1]) ? domain[1] : min + 1;
+    const safeMax = max === min ? min + 1 : max;
     return {
         min,
         max: safeMax,
@@ -83,6 +90,6 @@ function niceStrikeStep(rawStep: number): number {
     const exponent = Math.floor(Math.log10(rawStep));
     const magnitude = 10 ** exponent;
     const normalized = rawStep / magnitude;
-    const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
+    const multiplier = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 2.5 ? 2.5 : normalized <= 5 ? 5 : 10;
     return multiplier * magnitude;
 }
