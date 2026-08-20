@@ -5,24 +5,32 @@
 - **Status**: [COMPLETE]
 
 ## Completed Scope
-- Added typed Deribit REST client and normalization layer under `src/lib/deribit/`.
-- Reworked `src/app/api/deribit/route.ts` to consume normalized BTC option contracts and preserve the dashboard response shape.
-- Hardened quant helpers against non-finite and invalid numeric inputs.
-- Expanded Vitest coverage for Deribit instrument parsing, payload normalization, IV clamping, fallback spot handling, signed put GEX, and numeric guard behavior.
+- Added explicit Deribit response envelope validation for index-price and option book-summary payloads.
+- Rejects malformed JSON envelopes, Deribit `error` responses, wrong `result` shapes, non-JSON upstream responses, and invalid JSON bodies.
+- Preserves fallback behavior for invalid index prices while failing invalid book-summary payloads into the route-level synthetic fallback.
+- Kept Gemini-owned consumers unchanged; API response shape remains compatible with `src/app/page.tsx` and `src/components/three/SurfaceMesh.tsx`.
 
 ## Verification
-- `npx.cmd vitest run`: passed, 2 test files, 11 tests.
-- `npm.cmd run build`: passed after rerun with network access for `next/font` Google font fetch.
+- `npx.cmd vitest run`: passed, 2 test files, 12 tests.
 - `npx.cmd eslint src/app/api/deribit/route.ts src/lib/deribit/client.ts src/lib/deribit/normalization.ts src/lib/deribit/normalization.test.ts src/lib/deribit/types.ts src/lib/quant/engine.ts src/lib/quant/engine.test.ts`: passed.
-- `npm.cmd run lint`: blocked by existing Gemini-owned UI lint errors in `src/app/page.tsx` and `src/components/three/SurfaceMesh.tsx`.
+- `npm.cmd run build`: passed.
+- Full `npm.cmd run lint` was not rerun for this patch; previous run is blocked by existing Gemini-owned UI lint errors in `src/app/page.tsx` and `src/components/three/SurfaceMesh.tsx`.
+
+## Contract Notes For Architect
+- Raw Greeks remain distinct from dollar exposure metrics.
+- GEX remains `gamma * openInterest * spot^2`, signed positive for calls and negative for puts; no per-1% scaling is applied.
+- `topPositiveGexStrike` / `topNegativeGexStrike` currently mean largest positive / most negative net GEX strike, not strict call-only / put-only wall strikes.
+- `gammaFlip` currently means local strike-level net GEX sign transition, not full spot-revaluation portfolio gamma flip.
+- `charm` convention remains underspecified and should be confirmed before formula changes.
+- `maxPainStrike` uses sampled visualization strikes and is approximate unless moved to all available strikes.
 
 ---
 
 >>> COMPLETED BY: Codex
 >>> STATUS: COMPLETE
 >>> BRANCH: agent/codex
->>> COMMIT: 040d843ebbc1994034d0420ba785134ca5add133
->>> TESTS: `npx.cmd vitest run` PASS (2 files, 11 tests); `npm.cmd run build` PASS; targeted Codex ESLint PASS; full `npm.cmd run lint` BLOCKED by existing Gemini-owned UI lint errors
+>>> COMMIT: f378ad77661225ad68d36fe7eaecea2b43d6f003
+>>> TESTS: `npx.cmd vitest run` PASS (2 files, 12 tests); targeted Codex ESLint PASS; `npm.cmd run build` PASS
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review Codex backend Deribit normalization, quant guard behavior, and API response compatibility for Milestone 3 acceptance.
->>> TARGET: `src/app/api/deribit/route.ts`, `src/lib/deribit/`, `src/lib/quant/`
+>>> ACTION REQUIRED: Review Deribit response validation and documented quant/API contract notes for Milestone 3 acceptance.
+>>> TARGET: `src/lib/deribit/client.ts`, `src/lib/deribit/normalization.ts`, `src/lib/deribit/normalization.test.ts`, `src/app/api/deribit/route.ts`, `src/lib/quant/`
