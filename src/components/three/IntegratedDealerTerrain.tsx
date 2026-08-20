@@ -3,32 +3,31 @@
 import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Info, Maximize2, RotateCcw, Play, Pause, Eye, Check, Target } from 'lucide-react';
-import { TerrainGridCell, DealerEnvironmentSummaryData, ExposureScales, SelectedAnalyticalState } from '@/lib/dashboard/types';
+import { Info, Maximize2, RotateCcw, Play, Pause, Eye, Check, Target, Compass } from 'lucide-react';
+import {
+    TerrainDataContractV2,
+    TerrainSurfaceCell,
+    VannaContourPrimitive,
+    CharmPressureGlyph,
+    ConfluenceFloorCell,
+    TerrainScales,
+    TerrainKeyLevels,
+    DealerBehaviorZone,
+} from '@/lib/terrain/types';
 import { formatUsd, formatGex } from '@/lib/dashboard/adapters';
 
 interface IntegratedDealerTerrainProps {
-    surfaceGrid: TerrainGridCell[][];
-    interpolatedGrid?: TerrainGridCell[][];
-    summary: DealerEnvironmentSummaryData;
-    scales: ExposureScales;
-    strikes: number[];
-    expirations: string[];
-    dtes: number[];
-    selectedState?: SelectedAnalyticalState;
+    data: TerrainDataContractV2;
+    selectedStrike?: number | null;
+    selectedDte?: number | null;
     onSelectStrike?: (strike: number) => void;
-    onSelectPoint?: (cell: TerrainGridCell) => void;
+    onSelectPoint?: (cell: TerrainSurfaceCell) => void;
 }
 
 export default function IntegratedDealerTerrain({
-    surfaceGrid,
-    interpolatedGrid,
-    summary,
-    scales,
-    strikes,
-    expirations,
-    dtes,
-    selectedState,
+    data,
+    selectedStrike,
+    selectedDte,
     onSelectStrike,
     onSelectPoint,
 }: IntegratedDealerTerrainProps) {
@@ -44,6 +43,7 @@ export default function IntegratedDealerTerrain({
     const [showGex, setShowGex] = useState(true);
     const [showVanna, setShowVanna] = useState(true);
     const [showCharm, setShowCharm] = useState(true);
+    const [showFloor, setShowFloor] = useState(true);
     const [showSpot, setShowSpot] = useState(true);
     const [showDealerLevels, setShowDealerLevels] = useState(true);
     const [showZeroPlane, setShowZeroPlane] = useState(true);
@@ -52,13 +52,14 @@ export default function IntegratedDealerTerrain({
     const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
 
     // Hover tooltip state
-    const [hoveredCell, setHoveredCell] = useState<TerrainGridCell | null>(null);
+    const [hoveredCell, setHoveredCell] = useState<TerrainSurfaceCell | null>(null);
     const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
 
     // Groups for selective rendering
     const gexGroupRef = useRef<THREE.Group>(new THREE.Group());
     const vannaGroupRef = useRef<THREE.Group>(new THREE.Group());
     const charmGroupRef = useRef<THREE.Group>(new THREE.Group());
+    const floorGroupRef = useRef<THREE.Group>(new THREE.Group());
     const spotGroupRef = useRef<THREE.Group>(new THREE.Group());
     const levelsGroupRef = useRef<THREE.Group>(new THREE.Group());
     const zeroPlaneGroupRef = useRef<THREE.Group>(new THREE.Group());
@@ -68,6 +69,7 @@ export default function IntegratedDealerTerrain({
     useEffect(() => { gexGroupRef.current.visible = showGex; }, [showGex]);
     useEffect(() => { vannaGroupRef.current.visible = showVanna; }, [showVanna]);
     useEffect(() => { charmGroupRef.current.visible = showCharm; }, [showCharm]);
+    useEffect(() => { floorGroupRef.current.visible = showFloor; }, [showFloor]);
     useEffect(() => { spotGroupRef.current.visible = showSpot; }, [showSpot]);
     useEffect(() => { levelsGroupRef.current.visible = showDealerLevels; }, [showDealerLevels]);
     useEffect(() => { zeroPlaneGroupRef.current.visible = showZeroPlane; }, [showZeroPlane]);
@@ -76,13 +78,31 @@ export default function IntegratedDealerTerrain({
     const WORLD_WIDTH = 26;
     const WORLD_DEPTH = 18;
     const MAX_HEIGHT = 7.2;
+    const FLOOR_Y = -MAX_HEIGHT - 1.2;
 
-    const gexScaleBound = scales.gexMax || 8e9;
-    const vannaScaleBound = scales.vannaMax || 1e9;
-    const charmScaleBound = scales.charmMax || 5e8;
+    const {
+        surfaceGrid,
+        strikes,
+        dtes,
+        scales,
+        keyLevels,
+        vannaContours,
+        charmGlyphs,
+        confluenceFloor,
+        spotPrice,
+        dataMode,
+    } = data;
 
-    const minStrike = strikes[0] || 58000;
-    const maxStrike = strikes[strikes.length - 1] || 78000;
+    const gexScaleBound = (scales as any)?.gex?.robustAbsMax || (scales as any)?.gex?.max || (scales as any)?.gexMax || 1e9;
+    const vannaScaleBound = (scales as any)?.vanna?.robustAbsMax || (scales as any)?.vanna?.max || (scales as any)?.vannaMax || 1e8;
+    const charmScaleBound = (scales as any)?.charm?.robustAbsMax || (scales as any)?.charm?.max || (scales as any)?.charmMax || 1e8;
+
+    const gexUnit = (scales as any)?.gex?.unit || (scales as any)?.gexUnit || 'USD / 1% BTC move';
+    const vannaUnit = (scales as any)?.vanna?.unit || (scales as any)?.vannaUnit || 'USD / 1 vol point';
+    const charmUnit = (scales as any)?.charm?.unit || (scales as any)?.charmUnit || 'USD / day decay';
+
+    const minStrike = strikes[0] || 50000;
+    const maxStrike = strikes[strikes.length - 1] || 80000;
     const minDte = dtes[0] || 7;
     const maxDte = dtes[dtes.length - 1] || 270;
 
@@ -104,7 +124,7 @@ export default function IntegratedDealerTerrain({
         const scene = new THREE.Scene();
         sceneRef.current = scene;
         scene.background = new THREE.Color(0x060a12);
-        scene.fog = new THREE.FogExp2(0x060a12, 0.009);
+        scene.fog = new THREE.FogExp2(0x060a12, 0.008);
 
         const camera = new THREE.PerspectiveCamera(
             38,
@@ -133,12 +153,12 @@ export default function IntegratedDealerTerrain({
         controls.dampingFactor = 0.06;
         controls.maxDistance = 120;
         controls.minDistance = 8;
-        controls.maxPolarAngle = Math.PI / 2 + 0.1;
-        controls.target.set(0, 0, 0);
+        controls.maxPolarAngle = Math.PI / 2 + 0.15;
+        controls.target.set(0, -1, 0);
         controlsRef.current = controls;
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.9);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
         scene.add(ambientLight);
 
         const dirLight1 = new THREE.DirectionalLight(0x00e676, 1.8);
@@ -149,8 +169,8 @@ export default function IntegratedDealerTerrain({
         dirLight2.position.set(-15, -15, -15);
         scene.add(dirLight2);
 
-        const topLight = new THREE.PointLight(0x38bdf8, 1.4, 80);
-        topLight.position.set(0, 20, 0);
+        const topLight = new THREE.PointLight(0x38bdf8, 1.3, 90);
+        topLight.position.set(0, 22, 0);
         scene.add(topLight);
 
         // Root Group
@@ -158,6 +178,7 @@ export default function IntegratedDealerTerrain({
         scene.add(rootGroup);
         rootGroupRef.current = rootGroup;
 
+        rootGroup.add(floorGroupRef.current);
         rootGroup.add(gexGroupRef.current);
         rootGroup.add(vannaGroupRef.current);
         rootGroup.add(charmGroupRef.current);
@@ -184,14 +205,12 @@ export default function IntegratedDealerTerrain({
 
             if (intersects.length > 0) {
                 const point = intersects[0].point;
-                // Reverse map point (x, z) to strike and DTE
                 const normX = (point.x + WORLD_WIDTH / 2) / WORLD_WIDTH;
                 const normZ = (point.z + WORLD_DEPTH / 2) / WORLD_DEPTH;
                 const strikeEstimate = minStrike + normX * (maxStrike - minStrike);
                 const dteEstimate = minDte + normZ * (maxDte - minDte);
 
-                // Find closest actual observation cell
-                let closest: TerrainGridCell | null = null;
+                let closest: TerrainSurfaceCell | null = null;
                 let minDist = Infinity;
 
                 for (const row of surfaceGrid) {
@@ -256,21 +275,21 @@ export default function IntegratedDealerTerrain({
         };
     }, [surfaceGrid, minStrike, maxStrike, minDte, maxDte, isRotating, onSelectStrike, onSelectPoint]);
 
-    // Build 3D Mesh Geometry with High-Resolution Visual Interpolation
+    // Build 3D Terrain Meshes from Contract V2 Data
     useEffect(() => {
-        const renderGrid = interpolatedGrid && interpolatedGrid.length > 0 ? interpolatedGrid : surfaceGrid;
-        if (!renderGrid || renderGrid.length === 0) return;
+        if (!surfaceGrid || surfaceGrid.length === 0) return;
 
         const gexGroup = gexGroupRef.current;
         const vannaGroup = vannaGroupRef.current;
         const charmGroup = charmGroupRef.current;
+        const floorGroup = floorGroupRef.current;
         const spotGroup = spotGroupRef.current;
         const levelsGroup = levelsGroupRef.current;
         const zeroPlaneGroup = zeroPlaneGroupRef.current;
         const selectionGroup = selectionGroupRef.current;
 
         // Clean previous meshes
-        [gexGroup, vannaGroup, charmGroup, spotGroup, levelsGroup, zeroPlaneGroup, selectionGroup].forEach((grp) => {
+        [gexGroup, vannaGroup, charmGroup, floorGroup, spotGroup, levelsGroup, zeroPlaneGroup, selectionGroup].forEach((grp) => {
             while (grp.children.length > 0) {
                 const child = grp.children[0];
                 grp.remove(child);
@@ -278,10 +297,61 @@ export default function IntegratedDealerTerrain({
             }
         });
 
-        const numRows = renderGrid.length; // DTEs
-        const numCols = renderGrid[0].length; // Strikes
+        const numRows = surfaceGrid.length; // DTEs
+        const numCols = surfaceGrid[0].length; // Strikes
 
-        // 1. GEX TERRAIN MESH (High-Density Smooth Geometry)
+        // 1. CONFLUENCE PRESSURE FLOOR (Rendered below GEX surface)
+        if (confluenceFloor && confluenceFloor.length > 0) {
+            const fRows = confluenceFloor.length;
+            const fCols = confluenceFloor[0].length;
+
+            const floorGeo = new THREE.PlaneGeometry(
+                WORLD_WIDTH,
+                WORLD_DEPTH,
+                fCols - 1,
+                fRows - 1
+            );
+            floorGeo.rotateX(-Math.PI / 2);
+
+            const fColors: number[] = [];
+            for (let i = 0; i < fRows; i++) {
+                for (let j = 0; j < fCols; j++) {
+                    const cCell = confluenceFloor[i][j];
+                    const score = cCell.confluenceScore || 0;
+                    const normScore = Math.min(1, Math.max(0, score / 100));
+
+                    const color = new THREE.Color();
+                    if (normScore < 0.4) {
+                        color.setRGB(0.04 + normScore * 0.1, 0.08 + normScore * 0.15, 0.14 + normScore * 0.2);
+                    } else if (normScore < 0.75) {
+                        color.setRGB(0.0, 0.6 + normScore * 0.3, 0.7 + normScore * 0.25);
+                    } else {
+                        color.setRGB(0.95, 0.82, 0.25); // Extreme Hotspot Glow
+                    }
+                    fColors.push(color.r, color.g, color.b);
+                }
+            }
+
+            floorGeo.setAttribute('color', new THREE.Float32BufferAttribute(fColors, 3));
+            const floorMat = new THREE.MeshStandardMaterial({
+                vertexColors: true,
+                roughness: 0.5,
+                metalness: 0.2,
+                side: THREE.DoubleSide,
+            });
+
+            const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+            floorMesh.position.y = FLOOR_Y;
+            floorGroup.add(floorMesh);
+
+            const floorEdgeGeo = new THREE.EdgesGeometry(floorGeo);
+            const floorEdgeMat = new THREE.LineBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.4 });
+            const floorEdges = new THREE.LineSegments(floorEdgeGeo, floorEdgeMat);
+            floorEdges.position.y = FLOOR_Y;
+            floorGroup.add(floorEdges);
+        }
+
+        // 2. GEX PHYSICAL TERRAIN (Elevation determined by GEX Exposure normalized by robustAbsMax)
         const geometry = new THREE.PlaneGeometry(
             WORLD_WIDTH,
             WORLD_DEPTH,
@@ -296,21 +366,21 @@ export default function IntegratedDealerTerrain({
         for (let i = 0; i < numRows; i++) {
             for (let j = 0; j < numCols; j++) {
                 const vertexIndex = i * numCols + j;
-                const cell = renderGrid[i][j];
-                const gex = cell.gex;
+                const cell = surfaceGrid[i][j];
+                const gexExp = cell.gexExposure ?? cell.gex ?? 0;
 
-                // Normalized Y elevation using dataset-specific gexScaleBound
-                const heightY = (gex / gexScaleBound) * MAX_HEIGHT;
+                // Normalized Y elevation
+                const heightY = (gexExp / gexScaleBound) * MAX_HEIGHT;
                 positions.setY(vertexIndex, heightY);
 
-                // Emerald Green for dealer long gamma (+GEX), Ruby Crimson for short gamma (-GEX)
+                // Green Mountain (+GEX) vs Red Canyon (-GEX)
                 const color = new THREE.Color();
-                if (gex >= 0) {
-                    const t = Math.min(1, gex / gexScaleBound);
-                    color.setRGB(0.02 + 0.08 * (1 - t), 0.75 + 0.25 * t, 0.35 + 0.5 * t);
+                if (gexExp >= 0) {
+                    const t = Math.min(1, gexExp / gexScaleBound);
+                    color.setRGB(0.03 + 0.05 * (1 - t), 0.72 + 0.28 * t, 0.32 + 0.4 * t);
                 } else {
-                    const t = Math.min(1, Math.abs(gex) / gexScaleBound);
-                    color.setRGB(0.85 + 0.15 * t, 0.08, 0.22 + 0.08 * (1 - t));
+                    const t = Math.min(1, Math.abs(gexExp) / gexScaleBound);
+                    color.setRGB(0.85 + 0.15 * t, 0.06, 0.20 + 0.06 * (1 - t));
                 }
                 colors.push(color.r, color.g, color.b);
             }
@@ -321,8 +391,8 @@ export default function IntegratedDealerTerrain({
 
         const surfaceMat = new THREE.MeshStandardMaterial({
             vertexColors: true,
-            roughness: 0.28,
-            metalness: 0.35,
+            roughness: 0.32,
+            metalness: 0.28,
             side: THREE.DoubleSide,
             flatShading: false,
         });
@@ -335,73 +405,99 @@ export default function IntegratedDealerTerrain({
                 vertexColors: true,
                 wireframe: true,
                 transparent: true,
-                opacity: 0.32,
+                opacity: 0.26,
             });
             const wireframeMesh = new THREE.Mesh(geometry.clone(), wireframeMat);
-            wireframeMesh.position.y += 0.015;
+            wireframeMesh.position.y += 0.02;
             gexGroup.add(wireframeMesh);
         }
 
-        // 2. VANNA CONTOURS (Purple/Magenta Isobar Ring Overlay across Terrain Heights)
-        const vannaStep = Math.max(1, Math.floor(numRows / 8));
-        for (let i = 0; i < numRows; i += vannaStep) {
-            const linePoints: THREE.Vector3[] = [];
-            for (let j = 0; j < numCols; j++) {
-                const cell = renderGrid[i][j];
-                const x = strikeToX(cell.strike);
-                const z = dteToZ(cell.dte);
-                const y = (cell.gex / gexScaleBound) * MAX_HEIGHT + 0.05;
-                linePoints.push(new THREE.Vector3(x, y, z));
-            }
+        // 3. TRUE VANNA CONTOURS (Projected from Codex vannaContours)
+        if (vannaContours && vannaContours.length > 0) {
+            vannaContours.forEach((contour) => {
+                if (!contour.points || contour.points.length < 2) return;
 
-            const contourGeo = new THREE.BufferGeometry().setFromPoints(linePoints);
-            const contourMat = new THREE.LineBasicMaterial({
-                color: 0xc084fc,
-                transparent: true,
-                opacity: 0.75,
-                linewidth: 2,
+                const pts: THREE.Vector3[] = contour.points.map((pt) => {
+                    const x = strikeToX(pt.strike);
+                    const z = dteToZ(pt.dte);
+
+                    // Find corresponding GEX height
+                    const normStrike = (pt.strike - minStrike) / (maxStrike - minStrike || 1);
+                    const normDte = (pt.dte - minDte) / (maxDte - minDte || 1);
+                    const cIdx = Math.min(numCols - 1, Math.max(0, Math.round(normStrike * (numCols - 1))));
+                    const rIdx = Math.min(numRows - 1, Math.max(0, Math.round(normDte * (numRows - 1))));
+                    const cell = surfaceGrid[rIdx]?.[cIdx];
+                    const gexExp = cell?.gexExposure ?? 0;
+                    const y = (gexExp / gexScaleBound) * MAX_HEIGHT + 0.06;
+
+                    return new THREE.Vector3(x, y, z);
+                });
+
+                const contourGeo = new THREE.BufferGeometry().setFromPoints(pts);
+                const isPositive = contour.sign === 'POSITIVE' || contour.threshold > 0;
+                const isZero = contour.sign === 'ZERO' || contour.threshold === 0;
+
+                const contourColor = isPositive ? 0xd946ef : isZero ? 0xa855f7 : 0x6366f1;
+                const opacity = Math.min(0.9, Math.max(0.35, (contour.intensity || 50) / 100));
+
+                const contourMat = new THREE.LineBasicMaterial({
+                    color: contourColor,
+                    transparent: true,
+                    opacity,
+                    linewidth: isPositive ? 2.5 : 1.5,
+                });
+
+                const line = new THREE.Line(contourGeo, contourMat);
+                vannaGroup.add(line);
             });
-            const contourLine = new THREE.Line(contourGeo, contourMat);
-            vannaGroup.add(contourLine);
         }
 
-        // 3. CHARM FLOW VECTORS (Directional Streamline Arrows in Glowing Amber)
-        const arrowStepR = Math.max(2, Math.floor(numRows / 6));
-        const arrowStepC = Math.max(2, Math.floor(numCols / 9));
+        // 4. TRUE CHARM HEDGE PRESSURE GLYPHS (Directional from Codex charmGlyphs)
+        if (charmGlyphs && charmGlyphs.length > 0) {
+            // Filter to emphasize higher intensity glyphs to prevent arrow clutter
+            const filteredGlyphs = charmGlyphs.filter((g) => g.intensity >= 30 || Math.abs(g.charmExposure) > charmScaleBound * 0.25);
 
-        for (let i = 0; i < numRows; i += arrowStepR) {
-            for (let j = 0; j < numCols; j += arrowStepC) {
-                const cell = renderGrid[i][j];
-                const x = strikeToX(cell.strike);
-                const z = dteToZ(cell.dte);
-                const y = (cell.gex / gexScaleBound) * MAX_HEIGHT + 0.15;
+            filteredGlyphs.forEach((glyph) => {
+                const x = strikeToX(glyph.strike);
+                const z = dteToZ(glyph.dte);
 
-                // Flow direction towards spot and expiry time decay
-                const dirX = cell.strike > summary.spotPrice ? -0.85 : 0.85;
-                const dirZ = -0.45;
+                // Height lookup
+                const normStrike = (glyph.strike - minStrike) / (maxStrike - minStrike || 1);
+                const normDte = (glyph.dte - minDte) / (maxDte - minDte || 1);
+                const cIdx = Math.min(numCols - 1, Math.max(0, Math.round(normStrike * (numCols - 1))));
+                const rIdx = Math.min(numRows - 1, Math.max(0, Math.round(normDte * (numRows - 1))));
+                const cell = surfaceGrid[rIdx]?.[cIdx];
+                const gexExp = cell?.gexExposure ?? 0;
+                const y = (gexExp / gexScaleBound) * MAX_HEIGHT + 0.18;
+
+                // Direction strictly determined by hedgeDirection
+                const isBuyHedge = glyph.hedgeDirection === 'BUY_HEDGE';
+                const dirX = isBuyHedge ? 1.0 : -1.0;
+                const dirZ = -0.35;
                 const dir = new THREE.Vector3(dirX, 0, dirZ).normalize();
 
-                const charmIntensity = Math.min(1.2, Math.max(0.6, (Math.abs(cell.charm) / charmScaleBound) * 1.2));
+                const arrowLength = Math.min(1.4, Math.max(0.5, (glyph.intensity / 100) * 1.4));
+                const arrowColor = isBuyHedge ? 0xf59e0b : 0xf97316;
 
                 const arrowHelper = new THREE.ArrowHelper(
                     dir,
                     new THREE.Vector3(x, y, z),
-                    charmIntensity,
-                    0xff9100,
+                    arrowLength,
+                    arrowColor,
                     0.35,
-                    0.2
+                    0.22
                 );
                 charmGroup.add(arrowHelper);
-            }
+            });
         }
 
-        // 4. ZERO PLANE & BORDER
+        // 5. ZERO PLANE & BORDER
         const zeroPlaneGeo = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH);
         zeroPlaneGeo.rotateX(-Math.PI / 2);
         const zeroPlaneMat = new THREE.MeshBasicMaterial({
-            color: 0x152233,
+            color: 0x0f172a,
             transparent: true,
-            opacity: 0.38,
+            opacity: 0.45,
             side: THREE.DoubleSide,
         });
         const zeroMesh = new THREE.Mesh(zeroPlaneGeo, zeroPlaneMat);
@@ -418,13 +514,13 @@ export default function IntegratedDealerTerrain({
         zeroEdges.position.y = 0;
         zeroPlaneGroup.add(zeroEdges);
 
-        // 5. SPOT PRICE VERTICAL BEACON
-        const spotX = strikeToX(summary.spotPrice);
+        // 6. SPOT PRICE VERTICAL BEACON
+        const spotX = strikeToX(spotPrice);
         const spotPoints = [
-            new THREE.Vector3(spotX, -MAX_HEIGHT - 1, -WORLD_DEPTH / 2 - 0.5),
-            new THREE.Vector3(spotX, MAX_HEIGHT + 2, -WORLD_DEPTH / 2 - 0.5),
-            new THREE.Vector3(spotX, MAX_HEIGHT + 2, WORLD_DEPTH / 2 + 0.5),
-            new THREE.Vector3(spotX, -MAX_HEIGHT - 1, WORLD_DEPTH / 2 + 0.5),
+            new THREE.Vector3(spotX, FLOOR_Y, -WORLD_DEPTH / 2 - 0.5),
+            new THREE.Vector3(spotX, MAX_HEIGHT + 2.2, -WORLD_DEPTH / 2 - 0.5),
+            new THREE.Vector3(spotX, MAX_HEIGHT + 2.2, WORLD_DEPTH / 2 + 0.5),
+            new THREE.Vector3(spotX, FLOOR_Y, WORLD_DEPTH / 2 + 0.5),
         ];
         const spotLineGeo = new THREE.BufferGeometry().setFromPoints(spotPoints);
         const spotLineMat = new THREE.LineDashedMaterial({
@@ -437,20 +533,21 @@ export default function IntegratedDealerTerrain({
         spotLine.computeLineDistances();
         spotGroup.add(spotLine);
 
-        const spotSphereGeo = new THREE.SphereGeometry(0.35, 16, 16);
+        const spotSphereGeo = new THREE.SphereGeometry(0.38, 16, 16);
         const spotSphereMat = new THREE.MeshBasicMaterial({ color: 0xffd600 });
         const spotSphere = new THREE.Mesh(spotSphereGeo, spotSphereMat);
-        spotSphere.position.set(spotX, MAX_HEIGHT + 2, 0);
+        spotSphere.position.set(spotX, MAX_HEIGHT + 2.2, 0);
         spotGroup.add(spotSphere);
 
-        // 6. DEALER LEVEL MARKER PLANES
-        const addLevelLine = (strike: number, colorHex: number) => {
+        // 7. DEALER LEVEL MARKER PLANES
+        const addLevelPlane = (strike: number, colorHex: number) => {
+            if (strike < minStrike || strike > maxStrike) return; // Handled by edge banners
             const x = strikeToX(strike);
             const pts = [
-                new THREE.Vector3(x, -MAX_HEIGHT - 0.5, -WORLD_DEPTH / 2),
-                new THREE.Vector3(x, MAX_HEIGHT + 1.5, -WORLD_DEPTH / 2),
-                new THREE.Vector3(x, MAX_HEIGHT + 1.5, WORLD_DEPTH / 2),
-                new THREE.Vector3(x, -MAX_HEIGHT - 0.5, WORLD_DEPTH / 2),
+                new THREE.Vector3(x, FLOOR_Y, -WORLD_DEPTH / 2),
+                new THREE.Vector3(x, MAX_HEIGHT + 1.6, -WORLD_DEPTH / 2),
+                new THREE.Vector3(x, MAX_HEIGHT + 1.6, WORLD_DEPTH / 2),
+                new THREE.Vector3(x, FLOOR_Y, WORLD_DEPTH / 2),
             ];
             const geo = new THREE.BufferGeometry().setFromPoints(pts);
             const mat = new THREE.LineBasicMaterial({
@@ -462,19 +559,19 @@ export default function IntegratedDealerTerrain({
             levelsGroup.add(line);
         };
 
-        addLevelLine(summary.callWall, 0x00e676);
-        addLevelLine(summary.putWall, 0xff1744);
-        addLevelLine(summary.gammaFlip, 0x00e5ff);
-        addLevelLine(summary.maxPain, 0xff9100);
+        if (keyLevels?.callWall?.strike) addLevelPlane(keyLevels.callWall.strike, 0x00e676);
+        if (keyLevels?.putWall?.strike) addLevelPlane(keyLevels.putWall.strike, 0xff1744);
+        if (keyLevels?.gammaFlip?.strike) addLevelPlane(keyLevels.gammaFlip.strike, 0x00e5ff);
+        if (keyLevels?.primaryMaxPain?.strike) addLevelPlane(keyLevels.primaryMaxPain.strike, 0xff9100);
 
-        // 7. SELECTED STRIKE HIGHLIGHT (When clicked from tables or slices)
-        if (selectedState?.strike) {
-            const selX = strikeToX(selectedState.strike);
+        // 8. SELECTED STRIKE HIGHLIGHT
+        if (selectedStrike) {
+            const selX = strikeToX(selectedStrike);
             const selPts = [
-                new THREE.Vector3(selX, -MAX_HEIGHT - 0.8, -WORLD_DEPTH / 2 - 0.3),
+                new THREE.Vector3(selX, FLOOR_Y - 0.2, -WORLD_DEPTH / 2 - 0.3),
                 new THREE.Vector3(selX, MAX_HEIGHT + 1.8, -WORLD_DEPTH / 2 - 0.3),
                 new THREE.Vector3(selX, MAX_HEIGHT + 1.8, WORLD_DEPTH / 2 + 0.3),
-                new THREE.Vector3(selX, -MAX_HEIGHT - 0.8, WORLD_DEPTH / 2 + 0.3),
+                new THREE.Vector3(selX, FLOOR_Y - 0.2, WORLD_DEPTH / 2 + 0.3),
             ];
             const selGeo = new THREE.BufferGeometry().setFromPoints(selPts);
             const selMat = new THREE.LineBasicMaterial({
@@ -485,7 +582,7 @@ export default function IntegratedDealerTerrain({
             selectionGroup.add(selLine);
         }
 
-    }, [interpolatedGrid, surfaceGrid, strikes, dtes, summary, scales, showWireframe, gexScaleBound, vannaScaleBound, charmScaleBound, strikeToX, dteToZ, selectedState]);
+    }, [surfaceGrid, strikes, dtes, scales, keyLevels, vannaContours, charmGlyphs, confluenceFloor, spotPrice, selectedStrike, showWireframe, strikeToX, dteToZ]);
 
     const handleSetView = (mode: '3d' | '2d') => {
         setViewMode(mode);
@@ -496,13 +593,13 @@ export default function IntegratedDealerTerrain({
         setIsRotating(false);
 
         if (mode === '2d') {
-            camera.position.set(0, 36, 0.01);
-            controls.target.set(0, 0, 0);
+            camera.position.set(0, 38, 0.01);
+            controls.target.set(0, -1, 0);
         } else {
             camera.position.set(22, 17, 30);
-            controls.target.set(0, 0, 0);
+            controls.target.set(0, -1, 0);
         }
-        camera.lookAt(0, 0, 0);
+        camera.lookAt(0, -1, 0);
         controls.update();
     };
 
@@ -513,8 +610,18 @@ export default function IntegratedDealerTerrain({
         }
     };
 
+    // Calculate smart non-overlapping banner positions
+    const callWallStrike = keyLevels?.callWall?.strike || 72000;
+    const putWallStrike = keyLevels?.putWall?.strike || 62000;
+    const gammaFlipStrike = keyLevels?.gammaFlip?.strike || 65250;
+    const maxPainStrike = keyLevels?.primaryMaxPain?.strike || 68500;
+
+    const isCallWallOffSurface = callWallStrike > maxStrike;
+    const isPutWallOffSurface = putWallStrike < minStrike;
+    const isFlipOffSurface = gammaFlipStrike < minStrike || gammaFlipStrike > maxStrike;
+
     return (
-        <div className="relative w-full h-[520px] rounded-xl bg-[#080d16] border border-[#151f30] overflow-hidden flex flex-col select-none shadow-2xl">
+        <div className="relative w-full h-[540px] rounded-xl bg-[#080d16] border border-[#151f30] overflow-hidden flex flex-col select-none shadow-2xl">
             {/* 3D WebGL Canvas Viewport */}
             <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
 
@@ -522,9 +629,13 @@ export default function IntegratedDealerTerrain({
             <div className="absolute top-3 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
                 <div className="flex items-center gap-2 pointer-events-auto">
                     <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                        INTEGRATED DEALER TERRAIN
+                        DEALER PRESSURE TERRAIN (3D)
                     </h2>
-                    <Info className="w-3.5 h-3.5 text-zinc-400 cursor-pointer hover:text-cyan-400 transition-colors" />
+                    {dataMode === 'DEMO' && (
+                        <span className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-500/40 text-[9px] font-mono font-bold">
+                            DEMO CANONICAL MODEL
+                        </span>
+                    )}
                 </div>
 
                 {/* 3D / 2D & Viewport Controls */}
@@ -587,10 +698,10 @@ export default function IntegratedDealerTerrain({
             </div>
 
             {/* Left Overlay: Metrics Toggles & THREE INDEPENDENT EXPOSURE SCALES */}
-            <div className="absolute top-12 left-4 flex flex-col gap-2.5 pointer-events-none z-10">
+            <div className="absolute top-12 left-4 flex flex-col gap-2 pointer-events-none z-10">
                 {/* Layer Checkboxes */}
                 <div className="bg-[#0c1422]/90 backdrop-blur-md px-3 py-2 rounded-lg border border-[#1a273b] shadow-lg pointer-events-auto space-y-1.5 text-[10px] font-mono">
-                    <div className="text-zinc-400 font-bold uppercase tracking-wider mb-1">METRICS</div>
+                    <div className="text-zinc-400 font-bold uppercase tracking-wider mb-1">TERRAIN LAYERS</div>
 
                     <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
                         <input
@@ -606,7 +717,7 @@ export default function IntegratedDealerTerrain({
                         </span>
                         <div className="flex items-center gap-1.5">
                             <span className="w-2.5 h-1.5 rounded-xs bg-emerald-400" />
-                            <span className="text-zinc-200">GEX (Surface)</span>
+                            <span className="text-zinc-200">GEX Mountains</span>
                         </div>
                     </label>
 
@@ -624,7 +735,7 @@ export default function IntegratedDealerTerrain({
                         </span>
                         <div className="flex items-center gap-1.5">
                             <span className="w-2.5 h-0.5 bg-purple-400" />
-                            <span className="text-zinc-200">Vanna (Contours)</span>
+                            <span className="text-zinc-200">Vanna Contours</span>
                         </div>
                     </label>
 
@@ -642,7 +753,25 @@ export default function IntegratedDealerTerrain({
                         </span>
                         <div className="flex items-center gap-1.5">
                             <span className="text-amber-400 text-xs leading-none">→</span>
-                            <span className="text-zinc-200">Charm (Flow)</span>
+                            <span className="text-zinc-200">Charm Pressure</span>
+                        </div>
+                    </label>
+
+                    <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
+                        <input
+                            type="checkbox"
+                            checked={showFloor}
+                            onChange={(e) => setShowFloor(e.target.checked)}
+                            className="hidden"
+                        />
+                        <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center ${
+                            showFloor ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'border-zinc-700'
+                        }`}>
+                            {showFloor && <Check className="w-2.5 h-2.5" />}
+                        </span>
+                        <div className="flex items-center gap-1.5">
+                            <span className="w-2.5 h-1.5 rounded-xs bg-cyan-400" />
+                            <span className="text-zinc-200">Confluence Floor</span>
                         </div>
                     </label>
 
@@ -665,20 +794,20 @@ export default function IntegratedDealerTerrain({
                     </label>
                 </div>
 
-                {/* THREE INDEPENDENT EXPOSURE SCALES */}
-                <div className="bg-[#0c1422]/90 backdrop-blur-md px-3 py-2.5 rounded-lg border border-[#1a273b] shadow-lg pointer-events-auto space-y-2 text-[9px] font-mono">
+                {/* THREE PERSISTENT INDEPENDENT EXPOSURE SCALES */}
+                <div className="bg-[#0c1422]/90 backdrop-blur-md px-3 py-2.5 rounded-lg border border-[#1a273b] shadow-lg pointer-events-auto space-y-2.5 text-[9px] font-mono">
                     {/* Scale 1: GEX EXPOSURE */}
                     <div className="space-y-0.5">
-                        <div className="flex items-center justify-between text-zinc-400 font-bold uppercase">
+                        <div className="flex items-center justify-between font-bold text-emerald-400">
                             <span>GEX EXPOSURE</span>
-                            <span className="text-zinc-400 text-[8px]">{scales.gexUnit}</span>
+                            <span className="text-zinc-400 text-[8px]">{gexUnit}</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-10 rounded-full bg-gradient-to-b from-[#00e676] via-[#1a2638] to-[#ff1744]" />
                             <div className="flex flex-col justify-between h-10 text-[8px] font-bold">
-                                <span className="text-emerald-400">+{formatGex(scales.gexMax)}</span>
+                                <span className="text-emerald-400">+{formatGex(gexScaleBound)}</span>
                                 <span className="text-zinc-400">0</span>
-                                <span className="text-rose-400">-{formatGex(scales.gexMax)}</span>
+                                <span className="text-rose-400">-{formatGex(gexScaleBound)}</span>
                             </div>
                         </div>
                     </div>
@@ -687,16 +816,16 @@ export default function IntegratedDealerTerrain({
 
                     {/* Scale 2: VANNA EXPOSURE */}
                     <div className="space-y-0.5">
-                        <div className="flex items-center justify-between text-zinc-400 font-bold uppercase">
+                        <div className="flex items-center justify-between font-bold text-purple-400">
                             <span>VANNA EXPOSURE</span>
-                            <span className="text-zinc-400 text-[8px]">{scales.vannaUnit}</span>
+                            <span className="text-zinc-400 text-[8px]">{vannaUnit}</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-8 rounded-full bg-gradient-to-b from-[#c084fc] via-[#1a2638] to-[#6366f1]" />
                             <div className="flex flex-col justify-between h-8 text-[8px] font-bold">
-                                <span className="text-purple-400">+{formatGex(scales.vannaMax)}</span>
+                                <span className="text-purple-400">+{formatGex(vannaScaleBound)}</span>
                                 <span className="text-zinc-400">0</span>
-                                <span className="text-indigo-400">-{formatGex(scales.vannaMax)}</span>
+                                <span className="text-indigo-400">-{formatGex(vannaScaleBound)}</span>
                             </div>
                         </div>
                     </div>
@@ -705,33 +834,35 @@ export default function IntegratedDealerTerrain({
 
                     {/* Scale 3: CHARM EXPOSURE */}
                     <div className="space-y-0.5">
-                        <div className="flex items-center justify-between text-zinc-400 font-bold uppercase">
+                        <div className="flex items-center justify-between font-bold text-amber-400">
                             <span>CHARM EXPOSURE</span>
-                            <span className="text-zinc-400 text-[8px]">{scales.charmUnit}</span>
+                            <span className="text-zinc-400 text-[8px]">{charmUnit}</span>
                         </div>
                         <div className="flex items-center gap-2">
                             <div className="w-2 h-8 rounded-full bg-gradient-to-b from-[#ff9100] via-[#1a2638] to-[#d97706]" />
                             <div className="flex flex-col justify-between h-8 text-[8px] font-bold">
-                                <span className="text-amber-400">+{formatGex(scales.charmMax)}</span>
+                                <span className="text-amber-400">+{formatGex(charmScaleBound)}</span>
                                 <span className="text-zinc-400">0</span>
-                                <span className="text-amber-600">-{formatGex(scales.charmMax)}</span>
+                                <span className="text-amber-600">-{formatGex(charmScaleBound)}</span>
                             </div>
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Persistent 3D Landmark Banners with Pointer Arrows */}
+            {/* Persistent Non-Overlapping Landmark Banners */}
             <div className="absolute inset-0 pointer-events-none z-10">
                 {/* PUT WALL Banner */}
                 <div className="absolute top-[8%] left-[29%] -translate-x-1/2 flex flex-col items-center">
                     <button
-                        onClick={() => onSelectStrike?.(summary.putWall)}
-                        className="px-2 py-0.5 rounded bg-[#1a080c] border border-rose-500/80 shadow-lg shadow-rose-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => onSelectStrike?.(putWallStrike)}
+                        className="px-2.5 py-1 rounded bg-[#1a080c] border border-rose-500/80 shadow-lg shadow-rose-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
                     >
-                        <span className="text-[9px] font-mono font-bold text-rose-400 tracking-wider">PUT WALL</span>
+                        <span className="text-[9px] font-mono font-bold text-rose-400 tracking-wider">
+                            {isPutWallOffSurface ? '← PUT WALL (FULL-CHAIN)' : 'PUT WALL'}
+                        </span>
                         <span className="text-[11px] font-mono font-black text-rose-200">
-                            {summary.putWall.toLocaleString()}
+                            ${putWallStrike.toLocaleString()}
                         </span>
                     </button>
                     <div className="w-[1px] h-4 bg-gradient-to-b from-rose-500 to-transparent" />
@@ -740,26 +871,26 @@ export default function IntegratedDealerTerrain({
                 {/* GAMMA FLIP Banner */}
                 <div className="absolute top-[8%] left-[40%] -translate-x-1/2 flex flex-col items-center">
                     <button
-                        onClick={() => onSelectStrike?.(summary.gammaFlip)}
-                        className="px-2 py-0.5 rounded bg-[#08121a] border border-cyan-500/80 shadow-lg shadow-cyan-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => onSelectStrike?.(gammaFlipStrike)}
+                        className="px-2.5 py-1 rounded bg-[#08121a] border border-cyan-500/80 shadow-lg shadow-cyan-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
                     >
                         <span className="text-[9px] font-mono font-bold text-cyan-400 tracking-wider">GAMMA FLIP</span>
                         <span className="text-[11px] font-mono font-black text-cyan-200">
-                            {summary.gammaFlip.toLocaleString()}
+                            ${gammaFlipStrike.toLocaleString()}
                         </span>
                     </button>
                     <div className="w-[1px] h-4 bg-gradient-to-b from-cyan-500 to-transparent" />
                 </div>
 
-                {/* SPOT PRICE Center Dominant Banner */}
+                {/* SPOT PRICE Dominant Center Banner */}
                 <div className="absolute top-[6%] left-[49%] -translate-x-1/2 flex flex-col items-center">
                     <button
-                        onClick={() => onSelectStrike?.(summary.spotPrice)}
-                        className="px-3 py-1 rounded-lg bg-[#0e1626] border-2 border-white shadow-xl shadow-cyan-500/20 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => onSelectStrike?.(spotPrice)}
+                        className="px-3 py-1.5 rounded-lg bg-[#0e1626] border-2 border-white shadow-xl shadow-cyan-500/20 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
                     >
                         <span className="text-[9px] font-mono font-bold text-zinc-300 tracking-widest uppercase">SPOT PRICE</span>
                         <span className="text-xs font-mono font-black text-white tracking-tight">
-                            {summary.spotPrice.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            ${spotPrice.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
                         </span>
                     </button>
                     <div className="w-[1px] h-6 bg-gradient-to-b from-white to-transparent" />
@@ -768,12 +899,12 @@ export default function IntegratedDealerTerrain({
                 {/* MAX PAIN Banner */}
                 <div className="absolute top-[8%] left-[58%] -translate-x-1/2 flex flex-col items-center">
                     <button
-                        onClick={() => onSelectStrike?.(summary.maxPain)}
-                        className="px-2 py-0.5 rounded bg-[#1a1408] border border-amber-500/80 shadow-lg shadow-amber-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => onSelectStrike?.(maxPainStrike)}
+                        className="px-2.5 py-1 rounded bg-[#1a1408] border border-amber-500/80 shadow-lg shadow-amber-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
                     >
                         <span className="text-[9px] font-mono font-bold text-amber-400 tracking-wider">MAX PAIN</span>
                         <span className="text-[11px] font-mono font-black text-amber-200">
-                            {summary.maxPain.toLocaleString()}
+                            ${maxPainStrike.toLocaleString()}
                         </span>
                     </button>
                     <div className="w-[1px] h-4 bg-gradient-to-b from-amber-500 to-transparent" />
@@ -782,12 +913,14 @@ export default function IntegratedDealerTerrain({
                 {/* CALL WALL Banner */}
                 <div className="absolute top-[8%] left-[68%] -translate-x-1/2 flex flex-col items-center">
                     <button
-                        onClick={() => onSelectStrike?.(summary.callWall)}
-                        className="px-2 py-0.5 rounded bg-[#081a10] border border-emerald-500/80 shadow-lg shadow-emerald-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
+                        onClick={() => onSelectStrike?.(callWallStrike)}
+                        className="px-2.5 py-1 rounded bg-[#081a10] border border-emerald-500/80 shadow-lg shadow-emerald-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
                     >
-                        <span className="text-[9px] font-mono font-bold text-emerald-400 tracking-wider">CALL WALL</span>
+                        <span className="text-[9px] font-mono font-bold text-emerald-400 tracking-wider">
+                            {isCallWallOffSurface ? 'CALL WALL (FULL-CHAIN) →' : 'CALL WALL'}
+                        </span>
                         <span className="text-[11px] font-mono font-black text-emerald-200">
-                            {summary.callWall.toLocaleString()}
+                            ${callWallStrike.toLocaleString()}
                         </span>
                     </button>
                     <div className="w-[1px] h-4 bg-gradient-to-b from-emerald-500 to-transparent" />
@@ -795,81 +928,73 @@ export default function IntegratedDealerTerrain({
 
                 {/* 3D Axis Labels */}
                 <div className="absolute top-[32%] left-[19%] -rotate-90 origin-left text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
-                    DEALER EXPOSURE PRESSURE (GEX)
+                    DEALER EXPOSURE (GEX HEIGHT)
                 </div>
                 <div className="absolute bottom-[8%] left-[48%] -translate-x-1/2 text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
-                    STRIKE PRICE (USD)
+                    STRIKE PRICE AXIS (USD)
                 </div>
-                <div className="absolute bottom-[24%] right-[22%] rotate-[45deg] text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
-                    DAYS TO EXPIRY
+                <div className="absolute bottom-[16%] right-[14%] rotate-30 origin-right text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
+                    EXPIRATION DTE HORIZON
                 </div>
             </div>
 
-            {/* Interactive Raycast Hover Tooltip */}
+            {/* Interactive Raycast Tooltip */}
             {hoveredCell && mousePos && (
                 <div
-                    className="absolute pointer-events-none z-30 p-2.5 rounded-lg bg-[#0c1422]/95 border border-cyan-500/50 shadow-2xl backdrop-blur-md text-[10px] font-mono space-y-1"
-                    style={{
-                        left: Math.min(mousePos.x + 14, (containerRef.current?.clientWidth || 800) - 200),
-                        top: Math.max(10, mousePos.y - 120),
-                    }}
+                    className="absolute pointer-events-none z-30 bg-[#060a12]/95 backdrop-blur-md p-2.5 rounded-lg border border-cyan-500/60 shadow-2xl text-[10px] font-mono space-y-1 transform -translate-x-1/2 -translate-y-full -mt-2"
+                    style={{ left: mousePos.x, top: mousePos.y }}
                 >
-                    <div className="flex items-center justify-between gap-4 font-bold border-b border-zinc-800 pb-1">
-                        <span className="text-white">${hoveredCell.strike.toLocaleString()}</span>
-                        <span className="text-cyan-300">{hoveredCell.dte}d ({hoveredCell.expiry})</span>
+                    <div className="flex items-center justify-between gap-4 border-b border-zinc-800 pb-1">
+                        <span className="font-bold text-white">${hoveredCell.strike.toLocaleString()}</span>
+                        <span className="text-zinc-400">{hoveredCell.dte}d ({hoveredCell.expiry})</span>
                     </div>
-                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-zinc-300">
-                        <span>GEX:</span>
-                        <span className={`font-bold ${hoveredCell.gex >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {formatGex(hoveredCell.gex)}
-                        </span>
-                        <span>Vanna:</span>
-                        <span className={`font-bold ${hoveredCell.vanna >= 0 ? 'text-purple-400' : 'text-indigo-400'}`}>
-                            {formatGex(hoveredCell.vanna)}
-                        </span>
-                        <span>Charm:</span>
-                        <span className={`font-bold ${hoveredCell.charm >= 0 ? 'text-amber-400' : 'text-amber-500'}`}>
-                            {formatGex(hoveredCell.charm)}
-                        </span>
-                        <span>OI:</span>
-                        <span className="text-white">{hoveredCell.openInterest.toLocaleString()} BTC</span>
-                        <span>IV:</span>
-                        <span className="text-fuchsia-300">{hoveredCell.iv.toFixed(1)}%</span>
-                        <span>Delta (Δ):</span>
-                        <span className="text-zinc-200">{hoveredCell.delta.toFixed(2)}</span>
-                    </div>
+
+                    {hoveredCell.observed ? (
+                        <div className="space-y-0.5 text-[9px]">
+                            <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">GEX Exposure:</span>
+                                <span className={`font-bold ${hoveredCell.gexExposure >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                    {formatGex(hoveredCell.gexExposure)} ({hoveredCell.gexBand || 'MED'})
+                                </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Vanna Exposure:</span>
+                                <span className="font-bold text-purple-400">
+                                    {formatGex(hoveredCell.vannaExposure)} ({hoveredCell.vannaBand || 'MED'})
+                                </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Charm Exposure:</span>
+                                <span className="font-bold text-amber-400">
+                                    {formatGex(hoveredCell.charmExposure)}/day
+                                </span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Confluence:</span>
+                                <span className="font-bold text-cyan-400">{hoveredCell.confluenceScore}/100</span>
+                            </div>
+                            <div className="flex justify-between gap-4">
+                                <span className="text-zinc-400">Open Interest:</span>
+                                <span className="text-white">{hoveredCell.openInterestBtc?.toLocaleString()} BTC</span>
+                            </div>
+                            {hoveredCell.iv && (
+                                <div className="flex justify-between gap-4">
+                                    <span className="text-zinc-400">IV / Delta:</span>
+                                    <span className="text-zinc-300">{hoveredCell.iv.toFixed(1)}% | Δ {(hoveredCell.rawDelta ?? 0).toFixed(2)}</span>
+                                </div>
+                            )}
+                            <div className="flex justify-between gap-4 pt-1 border-t border-zinc-800">
+                                <span className="text-zinc-400">Behavior Zone:</span>
+                                <span className="font-bold text-cyan-300">{hoveredCell.behaviorZone?.replace('_', ' ')}</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="text-[9px] text-amber-400 font-semibold py-1">
+                            NO DIRECT CONTRACT OBSERVATION
+                        </div>
+                    )}
                 </div>
             )}
-
-            {/* Bottom Confluence Legend Bar */}
-            <div className="absolute bottom-2.5 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
-                <div className="flex items-center gap-4 bg-[#0c1422]/90 backdrop-blur-md px-3.5 py-1.5 rounded-lg border border-[#1a273b] shadow-lg pointer-events-auto text-[10px] font-mono">
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full border border-emerald-400 bg-emerald-400/30" />
-                        <span className="text-zinc-300">High Confluence</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full border border-amber-400 bg-amber-400/30" />
-                        <span className="text-zinc-300">Dealer Support Zone</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full border border-purple-400 bg-purple-400/30" />
-                        <span className="text-zinc-300">Regime Transition</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <span className="w-2 h-2 rounded-full border border-cyan-400 bg-cyan-400/30" />
-                        <span className="text-zinc-300">Gamma Flip Zone</span>
-                    </div>
-                </div>
-
-                <div className="hidden md:flex items-center gap-3 text-[10px] font-mono text-zinc-400 bg-[#0c1422]/90 backdrop-blur-md px-3 py-1.5 rounded-lg border border-[#1a273b]">
-                    <span>Click: Select Strike</span>
-                    <span>•</span>
-                    <span>Drag: Rotate</span>
-                    <span>•</span>
-                    <span>Right-drag: Pan</span>
-                </div>
-            </div>
         </div>
     );
 }

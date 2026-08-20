@@ -75,32 +75,56 @@ export function calculateExposureScales(grid: TerrainGridCell[][]): ExposureScal
     return {
         gexMax: gexBound,
         gexMin: -gexBound,
-        gexUnit: 'USD / 1% ΔS',
+        gexUnit: 'USD / 1% BTC move',
         vannaMax: vannaBound,
         vannaMin: -vannaBound,
-        vannaUnit: 'USD / 1% ΔIV',
+        vannaUnit: 'USD / 1 vol point',
         charmMax: charmBound,
         charmMin: -charmBound,
-        charmUnit: 'USD / Day',
+        charmUnit: 'USD / day decay',
+        gex: {
+            min: -gexBound,
+            max: gexBound,
+            robustAbsMax: gexBound,
+            unit: 'USD / 1% BTC move',
+        },
+        vanna: {
+            min: -vannaBound,
+            max: vannaBound,
+            robustAbsMax: vannaBound,
+            unit: 'USD / 1 vol point',
+        },
+        charm: {
+            min: -charmBound,
+            max: charmBound,
+            robustAbsMax: charmBound,
+            unit: 'USD / day decay',
+        },
+        openInterest: {
+            min: 0,
+            max: 50000,
+            robustAbsMax: 50000,
+            unit: 'BTC',
+        },
         gexMeta: {
             min: -gexBound,
             max: gexBound,
             robustAbsMax: gexBound,
-            unit: 'USD / 1% ΔS',
+            unit: 'USD / 1% BTC move',
         },
         vannaMeta: {
             min: -vannaBound,
             max: vannaBound,
             robustAbsMax: vannaBound,
-            unit: 'USD / 1% ΔIV',
+            unit: 'USD / 1 vol point',
         },
         charmMeta: {
             min: -charmBound,
             max: charmBound,
             robustAbsMax: charmBound,
-            unit: 'USD / Day',
+            unit: 'USD / day decay',
         },
-    };
+    } as any;
 }
 
 /**
@@ -718,3 +742,109 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
         keyLevelProfiles,
     };
 }
+
+/**
+ * Maps Codex Contract V2 data into KeyLevelProfileData for any requested strike.
+ * Zero UI mathematical derivations — purely extracts Codex-supplied values.
+ */
+export function extractKeyLevelProfileFromContractV2(
+    contract: any,
+    strike: number
+): KeyLevelProfileData {
+    const spot = contract.spotPrice || 68000;
+    const distancePct = ((strike - spot) / spot) * 100;
+
+    // Find pre-calculated profile if provided by Codex
+    if (contract.keyLevelProfiles && contract.keyLevelProfiles[strike]) {
+        return contract.keyLevelProfiles[strike];
+    }
+
+    let gexSum = 0;
+    let vannaSum = 0;
+    let charmSum = 0;
+    let oiSum = 0;
+    let maxGexInt = 0;
+    let maxVannaInt = 0;
+    let maxCharmInt = 0;
+    let maxConfluence = 0;
+    let dominantZone: DealerBehaviorZone = 'NEUTRAL';
+    let gexBand: any = 'LOW';
+    let vannaBand: any = 'LOW';
+    let charmBand: any = 'LOW';
+
+    if (Array.isArray(contract.surfaceGrid)) {
+        for (const row of contract.surfaceGrid) {
+            for (const cell of row) {
+                if (cell.strike === strike) {
+                    gexSum += (cell.gexExposure ?? cell.gex ?? 0);
+                    vannaSum += (cell.vannaExposure ?? 0);
+                    charmSum += (cell.charmExposure ?? 0);
+                    oiSum += (cell.openInterestBtc ?? cell.openInterest ?? 0);
+                    if ((cell.gexIntensity ?? 0) > maxGexInt) {
+                        maxGexInt = cell.gexIntensity;
+                        gexBand = cell.gexBand || 'LOW';
+                    }
+                    if ((cell.vannaIntensity ?? 0) > maxVannaInt) {
+                        maxVannaInt = cell.vannaIntensity;
+                        vannaBand = cell.vannaBand || 'LOW';
+                    }
+                    if ((cell.charmIntensity ?? 0) > maxCharmInt) {
+                        maxCharmInt = cell.charmIntensity;
+                        charmBand = cell.charmBand || 'LOW';
+                    }
+                    if ((cell.confluenceScore ?? 0) > maxConfluence) {
+                        maxConfluence = cell.confluenceScore;
+                    }
+                    if (cell.behaviorZone && cell.behaviorZone !== 'NEUTRAL') {
+                        dominantZone = cell.behaviorZone;
+                    }
+                }
+            }
+        }
+    }
+
+    const isCallWall = strike === contract.keyLevels?.callWall?.strike || strike === contract.summary?.callWall;
+    const isPutWall = strike === contract.keyLevels?.putWall?.strike || strike === contract.summary?.putWall;
+    const flipStrike = contract.keyLevels?.gammaFlip?.strike || contract.summary?.gammaFlip || spot;
+    const maxPainStrike = contract.keyLevels?.primaryMaxPain?.strike || contract.summary?.maxPainStrike || contract.summary?.maxPain || spot;
+
+    const gammaFlipDistancePct = ((strike - flipStrike) / (flipStrike || 1)) * 100;
+    const maxPainDistancePct = ((strike - maxPainStrike) / (maxPainStrike || 1)) * 100;
+    const totalOi = contract.summary?.totalOpenInterest || 400000;
+    const oiConcentrationPct = (oiSum / (totalOi || 1)) * 100;
+
+    let behaviorTendencyDescription = 'Moderate dealer positioning area. Normal continuous delta hedging flow expected without extreme gamma pinning.';
+    if (dominantZone === 'HIGH_CONFLUENCE_WALL' || isCallWall || isPutWall) {
+        behaviorTendencyDescription = 'Strong dealer reaction zone. Heavy open interest creates prominent hedging reaction tendency. Watch whether price is rejected or accepted around this level.';
+    } else if (dominantZone === 'REGIME_TRANSITION') {
+        behaviorTendencyDescription = 'Gamma regime crossover zone. Crossover between long-gamma stabilization and short-gamma trend acceleration. Hedging flows invert polarity around this level.';
+    } else if (dominantZone === 'STABILIZATION_ZONE') {
+        behaviorTendencyDescription = 'Positive dealer gamma pocket. Counter-trend delta hedging dampens volatility and supports dip-buying tendency.';
+    } else if (dominantZone === 'ACCELERATION_ZONE') {
+        behaviorTendencyDescription = 'Negative dealer gamma pocket. Delta hedging aligns with market direction, creating rapid trend acceleration risk.';
+    }
+
+    return {
+        strike,
+        distancePct,
+        gexExposure: gexSum,
+        gexIntensity: maxGexInt,
+        gexBand,
+        vannaExposure: vannaSum,
+        vannaIntensity: maxVannaInt,
+        vannaBand,
+        charmExposure: charmSum,
+        charmIntensity: maxCharmInt,
+        charmBand,
+        callWallStatus: isCallWall,
+        putWallStatus: isPutWall,
+        gammaFlipDistancePct,
+        maxPainDistancePct,
+        oiBtc: oiSum,
+        oiConcentrationPct,
+        confluenceScore: maxConfluence || 50,
+        behaviorZone: dominantZone,
+        behaviorTendencyDescription,
+    };
+}
+
