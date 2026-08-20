@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { clearDeribitOptionChainCacheForTests, fetchDeribitOptionChain } from './client';
+import { clearDeribitOptionChainCacheForTests, fetchDeribitOptionChain } from './client.server';
 
 const now = new Date(Date.UTC(2026, 0, 1, 0, 0, 0));
 

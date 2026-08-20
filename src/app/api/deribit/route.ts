@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { FALLBACK_SPOT_PRICE, fetchDeribitOptionChain } from '@/lib/deribit/client';
+import { FALLBACK_SPOT_PRICE, fetchDeribitOptionChain } from '@/lib/deribit/client.server';
 import type { NormalizedDeribitOption, OptionType } from '@/lib/deribit/types';
 import { calculateGreeks, calculateNetGEX } from '@/lib/quant/engine';
 
