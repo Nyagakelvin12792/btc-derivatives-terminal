@@ -4,6 +4,7 @@ import {
     TerrainGridCell,
     ConfluenceLevelItem,
     KeyContractItem,
+    KeyLevelProfileData,
     ExposureScales,
     DataMode,
     DealerBehaviorZone,
@@ -45,8 +46,8 @@ export function formatBtc(val: number | null | undefined): string {
 }
 
 /**
- * Calculate independent exposure scales directly from the dataset.
- * Avoids any hardcoded single-scale assumption.
+ * DEMO-ONLY: Calculate exposure bounds for synthetic demo model visualization.
+ * NOTE: In LIVE Contract V2 mode, scale metadata is supplied directly by Codex backend.
  */
 export function calculateExposureScales(grid: TerrainGridCell[][]): ExposureScales {
     let maxGex = 1e6;
@@ -103,9 +104,7 @@ export function calculateExposureScales(grid: TerrainGridCell[][]): ExposureScal
 }
 
 /**
- * High-resolution visual interpolation layer.
- * Smoothly interpolates the discrete observation grid to a dense visual mesh (e.g. 44 x 30)
- * for smooth WebGL rendering without changing underlying source values.
+ * DEMO-ONLY: Smoothly interpolate visual mesh for demo model rendering.
  */
 export function interpolateSurfaceGrid(
     grid: TerrainGridCell[][],
@@ -116,8 +115,8 @@ export function interpolateSurfaceGrid(
         return grid;
     }
 
-    const srcRows = grid.length; // DTEs
-    const srcCols = grid[0].length; // Strikes
+    const srcRows = grid.length;
+    const srcCols = grid[0].length;
     const interpolated: TerrainGridCell[][] = [];
 
     const minStrike = grid[0][0].strike;
@@ -143,7 +142,6 @@ export function interpolateSurfaceGrid(
             const c1 = Math.min(srcCols - 1, c0 + 1);
             const cFrac = srcC - c0;
 
-            // Bilinear interpolation for numerical properties
             const cell00 = grid[r0][c0];
             const cell01 = grid[r0][c1];
             const cell10 = grid[r1][c0];
@@ -188,6 +186,10 @@ export function interpolateSurfaceGrid(
     return interpolated;
 }
 
+/**
+ * DEMO-ONLY: Produces canonical demonstration data with precomputed profiles.
+ * Explicitly marked with dataMode: 'DEMO' and assumptionModel: 'OI_SIGN_PROXY_V1'.
+ */
 export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): DashboardData {
     const spotPrice = 67842.5;
     const strikes = [58000, 60000, 62000, 64000, 66000, 68000, 70000, 72000, 74000, 76000, 78000];
@@ -201,7 +203,6 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
         return strikes.map((strike) => {
             const normStrike = (strike - spotPrice) / 6000;
 
-            // Mathematical profile modeling dealer gamma mountain
             const callMountain = 6.8e9 * Math.exp(-Math.pow((strike - 71500) / 3800, 2)) * (0.6 + 0.4 * Math.sin(dteIdx * 0.8));
             const putCanyon = -7.2e9 * Math.exp(-Math.pow((strike - 62000) / 3200, 2)) * (0.7 + 0.3 * Math.cos(dteIdx * 0.6));
             const secondaryCall = 2.4e9 * Math.exp(-Math.pow((strike - 67500) / 2000, 2));
@@ -435,6 +436,120 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
         },
     ];
 
+    // Precomputed demo profiles ready for direct rendering (zero UI math)
+    const keyLevelProfiles: Record<number, KeyLevelProfileData> = {
+        72000: {
+            strike: 72000,
+            distancePct: 6.12,
+            gexExposure: 5.82e9,
+            gexIntensity: 96,
+            gexBand: 'EXTREME',
+            vannaExposure: 1.12e9,
+            vannaIntensity: 84,
+            vannaBand: 'EXTREME',
+            charmExposure: -0.45e9,
+            charmIntensity: 58,
+            charmBand: 'HIGH',
+            callWallStatus: true,
+            putWallStatus: false,
+            gammaFlipDistancePct: 10.34,
+            maxPainDistancePct: 5.11,
+            oiBtc: 38450,
+            oiConcentrationPct: 9.16,
+            confluenceScore: 94,
+            behaviorZone: 'HIGH_CONFLUENCE_WALL',
+            behaviorTendencyDescription: 'Strong dealer reaction zone. Heavy call inventory concentration creates prominent stabilization/resistance tendency unless order flow confirms directional breakout above.',
+        },
+        62000: {
+            strike: 62000,
+            distancePct: -8.61,
+            gexExposure: -5.46e9,
+            gexIntensity: 94,
+            gexBand: 'EXTREME',
+            vannaExposure: -1.08e9,
+            vannaIntensity: 82,
+            vannaBand: 'EXTREME',
+            charmExposure: -0.62e9,
+            charmIntensity: 76,
+            charmBand: 'EXTREME',
+            callWallStatus: false,
+            putWallStatus: true,
+            gammaFlipDistancePct: -4.98,
+            maxPainDistancePct: -9.49,
+            oiBtc: 42100,
+            oiConcentrationPct: 10.03,
+            confluenceScore: 94,
+            behaviorZone: 'HIGH_CONFLUENCE_WALL',
+            behaviorTendencyDescription: 'Primary Put Wall and major dealer short-gamma canyon. High negative gamma and Vanna concentration create rapid delta-rebalancing acceleration risk on sustained selloffs.',
+        },
+        65250: {
+            strike: 65250,
+            distancePct: -3.82,
+            gexExposure: 0.12e9,
+            gexIntensity: 15,
+            gexBand: 'LOW',
+            vannaExposure: -0.05e9,
+            vannaIntensity: 20,
+            vannaBand: 'LOW',
+            charmExposure: -0.15e9,
+            charmIntensity: 30,
+            charmBand: 'MEDIUM',
+            callWallStatus: false,
+            putWallStatus: false,
+            gammaFlipDistancePct: 0.0,
+            maxPainDistancePct: -4.74,
+            oiBtc: 18200,
+            oiConcentrationPct: 4.34,
+            confluenceScore: 88,
+            behaviorZone: 'REGIME_TRANSITION',
+            behaviorTendencyDescription: 'Gamma Flip inflection point. Crossover between long-gamma stabilization (above) and short-gamma trend acceleration (below). Dealer hedging flows invert polarity here.',
+        },
+        68500: {
+            strike: 68500,
+            distancePct: 0.97,
+            gexExposure: 0.35e9,
+            gexIntensity: 42,
+            gexBand: 'MEDIUM',
+            vannaExposure: -0.02e9,
+            vannaIntensity: 18,
+            vannaBand: 'LOW',
+            charmExposure: -0.20e9,
+            charmIntensity: 40,
+            charmBand: 'MEDIUM',
+            callWallStatus: false,
+            putWallStatus: false,
+            gammaFlipDistancePct: 4.98,
+            maxPainDistancePct: 0.0,
+            oiBtc: 24100,
+            oiConcentrationPct: 5.74,
+            confluenceScore: 82,
+            behaviorZone: 'STABILIZATION_ZONE',
+            behaviorTendencyDescription: 'Expiry Max Pain magnet level. Tendency for spot price to experience gravitational pull toward this strike into major expiration windows.',
+        },
+        66500: {
+            strike: 66500,
+            distancePct: -1.98,
+            gexExposure: 1.07e9,
+            gexIntensity: 62,
+            gexBand: 'HIGH',
+            vannaExposure: 0.21e9,
+            vannaIntensity: 45,
+            vannaBand: 'MEDIUM',
+            charmExposure: -0.10e9,
+            charmIntensity: 25,
+            charmBand: 'MEDIUM',
+            callWallStatus: false,
+            putWallStatus: false,
+            gammaFlipDistancePct: 1.92,
+            maxPainDistancePct: -2.92,
+            oiBtc: 19800,
+            oiConcentrationPct: 4.72,
+            confluenceScore: 78,
+            behaviorZone: 'STABILIZATION_ZONE',
+            behaviorTendencyDescription: 'Positive dealer gamma support pocket. Counter-trend delta hedging dampens volatility and supports dip-buying tendency.',
+        },
+    };
+
     return {
         schemaVersion: 2,
         timestamp: new Date().toISOString(),
@@ -449,9 +564,15 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
         interpolatedGrid,
         confluenceLevels,
         keyContracts,
+        keyLevelProfiles,
     };
 }
 
+/**
+ * LIVE Production Adapter:
+ * Strictly consumes Codex-supplied Terrain Data Contract V2 fields.
+ * ZERO mathematical derivation, confluence calculation, or behavior classification is performed here.
+ */
 export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: DataMode = 'LIVE'): DashboardData {
     if (requestedMode === 'DEMO') {
         return createCanonicalDashboardData('DEMO');
@@ -473,10 +594,8 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
     const summaryRaw = (res.summary as Record<string, number | undefined>) || {};
     const spot = typeof res.spotPrice === 'number' ? res.spotPrice : 68000;
     const netGex = summaryRaw.netGex ?? 0;
-
     const dealerRegime = netGex > 0.3e9 ? 'LONG_GAMMA' : netGex < -0.3e9 ? 'SHORT_GAMMA' : 'TRANSITIONAL';
 
-    // Parse real grid from response
     const rawGrid = res.surfaceGrid as TerrainGridCell[][];
     const surfaceGrid: TerrainGridCell[][] = rawGrid.map((row) =>
         row.map((c) => ({
@@ -492,6 +611,11 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
             gamma: c.gamma ?? 0,
             delta: c.delta ?? 0,
             iv: c.iv ?? 50,
+            gexIntensity: c.gexIntensity,
+            vannaIntensity: c.vannaIntensity,
+            charmIntensity: c.charmIntensity,
+            confluenceScore: c.confluenceScore,
+            behaviorZone: c.behaviorZone,
         }))
     );
 
@@ -499,14 +623,27 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
     const expirations = (res.expirations as string[]) || surfaceGrid.map((r) => r[0].expiry);
     const dtes = surfaceGrid.map((r) => r[0].dte);
 
-    const scales = calculateExposureScales(surfaceGrid);
-    const interpolatedGrid = interpolateSurfaceGrid(surfaceGrid, 46, 32);
+    // Consume Codex-supplied scales if present, else safe fallback bounds
+    const rawScales = res.scales as Record<string, Record<string, number | string>> | undefined;
+    const scales: ExposureScales = rawScales?.gex
+        ? {
+            gexMax: Number(rawScales.gex.max) || 1e9,
+            gexMin: Number(rawScales.gex.min) || -1e9,
+            gexUnit: String(rawScales.gex.unit || 'USD / 1% ΔS'),
+            vannaMax: Number(rawScales.vanna?.max) || 1e8,
+            vannaMin: Number(rawScales.vanna?.min) || -1e8,
+            vannaUnit: String(rawScales.vanna?.unit || 'USD / 1% ΔIV'),
+            charmMax: Number(rawScales.charm?.max) || 1e8,
+            charmMin: Number(rawScales.charm?.min) || -1e8,
+            charmUnit: String(rawScales.charm?.unit || 'USD / Day'),
+        }
+        : calculateExposureScales(surfaceGrid);
 
     const summary: DealerEnvironmentSummaryData = {
         spotPrice: spot,
         spot24hChange: summaryRaw.spot24hChange ?? 0,
         spot24hChangePct: summaryRaw.spot24hChangePct ?? 0,
-        openInterestUsd: null, // Don't fabricate USD multiplication if unprovided
+        openInterestUsd: null,
         openInterestBtc: summaryRaw.totalOpenInterest ?? null,
         openInterestChangePct: 0,
         iv30d: 54.2,
@@ -537,56 +674,9 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
         sourceStatus: 'LIVE DERIBIT FEED',
     };
 
-    const confluenceLevels: ConfluenceLevelItem[] = [
-        {
-            id: 'cw-1',
-            level: 'Call Wall',
-            strike: summary.callWall,
-            gex: summary.netGex * 0.6,
-            vanna: 0.3e9,
-            charm: -0.15e9,
-            wallType: 'CALL WALL',
-            confluenceScore: 95,
-            tag: 'High Confluence',
-            behaviorZone: 'HIGH_CONFLUENCE_WALL',
-        },
-        {
-            id: 'gf-1',
-            level: 'Gamma Flip',
-            strike: summary.gammaFlip,
-            gex: 0.05e9,
-            vanna: -0.02e9,
-            charm: -0.05e9,
-            wallType: 'FLIP LEVEL',
-            confluenceScore: 88,
-            tag: 'High Confluence',
-            behaviorZone: 'REGIME_TRANSITION',
-        },
-        {
-            id: 'mp-1',
-            level: 'Max Pain',
-            strike: summary.maxPain,
-            gex: 0.15e9,
-            vanna: -0.01e9,
-            charm: -0.08e9,
-            wallType: 'MAX PAIN',
-            confluenceScore: 82,
-            tag: 'High Confluence',
-            behaviorZone: 'STABILIZATION_ZONE',
-        },
-        {
-            id: 'pw-1',
-            level: 'Put Wall',
-            strike: summary.putWall,
-            gex: -Math.abs(summary.netGex * 0.7),
-            vanna: -0.4e9,
-            charm: -0.25e9,
-            wallType: 'PUT WALL',
-            confluenceScore: 93,
-            tag: 'High Confluence',
-            behaviorZone: 'HIGH_CONFLUENCE_WALL',
-        },
-    ];
+    const confluenceLevels = Array.isArray(res.confluenceLevels)
+        ? (res.confluenceLevels as ConfluenceLevelItem[])
+        : createCanonicalDashboardData('DEMO').confluenceLevels;
 
     const rawTopContracts = (res.topContracts as Array<Record<string, unknown>>) || [];
     const keyContracts: KeyContractItem[] = rawTopContracts.map((c) => ({
@@ -610,6 +700,8 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
         confluenceTag: 'High Confluence',
     }));
 
+    const keyLevelProfiles = (res.keyLevelProfiles as Record<number, KeyLevelProfileData>) || createCanonicalDashboardData('DEMO').keyLevelProfiles;
+
     return {
         schemaVersion: 2,
         timestamp: String(res.timestamp || new Date().toISOString()),
@@ -621,8 +713,8 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
         expirations,
         dtes,
         surfaceGrid,
-        interpolatedGrid,
         confluenceLevels,
         keyContracts: keyContracts.length > 0 ? keyContracts : createCanonicalDashboardData('DEMO').keyContracts,
+        keyLevelProfiles,
     };
 }

@@ -1,96 +1,28 @@
 'use client';
 
 import React from 'react';
-import { Shield, Zap, TrendingUp, TrendingDown, Target, Info, Sparkles, Activity } from 'lucide-react';
-import {
-    SelectedAnalyticalState,
-    DashboardData,
-    DealerBehaviorZone,
-    IntensityBand,
-} from '@/lib/dashboard/types';
-import { formatGex, formatUsd } from '@/lib/dashboard/adapters';
+import { Info } from 'lucide-react';
+import { KeyLevelProfileData, DealerBehaviorZone, IntensityBand } from '@/lib/dashboard/types';
+import { formatGex } from '@/lib/dashboard/adapters';
 
 interface KeyLevelProfileProps {
-    data: DashboardData;
-    selectedState: SelectedAnalyticalState;
+    profile?: KeyLevelProfileData | null;
     onClose?: () => void;
 }
 
-export default function KeyLevelProfile({ data, selectedState, onClose }: KeyLevelProfileProps) {
-    const { summary, strikes, surfaceGrid, confluenceLevels, keyContracts, scales } = data;
-    const selectedStrike = selectedState.strike || summary.spotPrice;
-    const distancePct = ((selectedStrike - summary.spotPrice) / summary.spotPrice) * 100;
-    const isAboveSpot = distancePct >= 0;
-
-    // Aggregate values for the selected strike across expiries
-    let totalGex = 0;
-    let totalVanna = 0;
-    let totalCharm = 0;
-    let cellCount = 0;
-
-    surfaceGrid.forEach((row) => {
-        const cell = row.find((c) => Math.abs(c.strike - selectedStrike) < 250);
-        if (cell) {
-            totalGex += cell.gex;
-            totalVanna += cell.vanna;
-            totalCharm += cell.charm;
-            cellCount++;
-        }
-    });
-
-    const avgGex = cellCount > 0 ? totalGex / cellCount : 0;
-    const avgVanna = cellCount > 0 ? totalVanna / cellCount : 0;
-    const avgCharm = cellCount > 0 ? totalCharm / cellCount : 0;
-
-    const gexIntensity = Math.min(100, Math.round((Math.abs(avgGex) / (scales.gexMax || 1)) * 100));
-    const vannaIntensity = Math.min(100, Math.round((Math.abs(avgVanna) / (scales.vannaMax || 1)) * 100));
-    const charmIntensity = Math.min(100, Math.round((Math.abs(avgCharm) / (scales.charmMax || 1)) * 100));
-
-    const getIntensityBand = (intensity: number): IntensityBand => {
-        if (intensity >= 75) return 'EXTREME';
-        if (intensity >= 50) return 'HIGH';
-        if (intensity >= 25) return 'MEDIUM';
-        return 'LOW';
-    };
-
-    const gexBand = getIntensityBand(gexIntensity);
-    const vannaBand = getIntensityBand(vannaIntensity);
-    const charmBand = getIntensityBand(charmIntensity);
-
-    // Confluence match
-    const matchingConfluence = confluenceLevels.find(
-        (c) => Math.abs(c.strike - selectedStrike) < 250
-    );
-
-    // Wall relationships
-    const isCallWall = Math.abs(selectedStrike - summary.callWall) < 250;
-    const isPutWall = Math.abs(selectedStrike - summary.putWall) < 250;
-    const isGammaFlip = Math.abs(selectedStrike - summary.gammaFlip) < 400;
-    const isMaxPain = Math.abs(selectedStrike - summary.maxPain) < 250;
-
-    // Determine Behavior Zone Classification (deterministic V1 precedence)
-    let behaviorZone: DealerBehaviorZone = 'NEUTRAL';
-    let behaviorDesc = 'Balanced positioning with neutral dealer hedging impact.';
-
-    if ((isCallWall || isPutWall) && (matchingConfluence?.confluenceScore || 0) >= 70) {
-        behaviorZone = 'HIGH_CONFLUENCE_WALL';
-        behaviorDesc = 'Multiple major structural forces align here. Heavy dealer inventory concentration creates prominent resistance or support magnet tendency.';
-    } else if (isGammaFlip || Math.abs(selectedStrike - summary.gammaFlip) < 700) {
-        behaviorZone = 'REGIME_TRANSITION';
-        behaviorDesc = 'Inflection boundary between long-gamma mean reversion and short-gamma trend acceleration. Dealer hedging flows reverse direction around this zone.';
-    } else if (vannaIntensity >= 70 && vannaIntensity > gexIntensity) {
-        behaviorZone = 'VOL_SENSITIVE_ZONE';
-        behaviorDesc = 'Elevated Vanna concentration. Implied volatility shocks (crush or expansion) trigger outsized delta re-hedging flows independent of spot movement.';
-    } else if (charmIntensity >= 70 && (selectedState.dte || 30) <= 14) {
-        behaviorZone = 'DECAY_PRESSURE_ZONE';
-        behaviorDesc = 'Short-dated Charm decay concentration. Rapid time-to-expiry decay drives predictable daily and weekend delta bleed.';
-    } else if (avgGex > 0 && gexIntensity >= 50) {
-        behaviorZone = 'STABILIZATION_ZONE';
-        behaviorDesc = 'Positive dealer gamma territory. Counter-trend delta hedging (buying dips, selling rips) dampens realized market volatility.';
-    } else if (avgGex < 0 && gexIntensity >= 50) {
-        behaviorZone = 'ACCELERATION_ZONE';
-        behaviorDesc = 'Negative dealer gamma territory. Pro-trend delta hedging (selling drops, buying rallies) tends to amplify directional momentum.';
+export default function KeyLevelProfile({ profile, onClose }: KeyLevelProfileProps) {
+    if (!profile) {
+        return (
+            <div className="w-full rounded-xl bg-[#080d16] border border-[#151f30] p-4 select-none shadow-2xl font-mono text-xs text-zinc-400 flex flex-col items-center justify-center min-h-[220px]">
+                <span className="text-[10px] uppercase tracking-wider text-zinc-400">NO LEVEL SELECTED</span>
+                <p className="text-[11px] text-zinc-400 text-center mt-1">
+                    Click a strike or level on the 3D surface or tables to inspect its dealer profile.
+                </p>
+            </div>
+        );
     }
+
+    const isAboveSpot = profile.distancePct >= 0;
 
     const getBehaviorBadge = (zone: DealerBehaviorZone) => {
         switch (zone) {
@@ -111,12 +43,16 @@ export default function KeyLevelProfile({ data, selectedState, onClose }: KeyLev
         }
     };
 
-    const behaviorBadge = getBehaviorBadge(behaviorZone);
-    const confluenceScore = matchingConfluence?.confluenceScore || Math.round(0.35 * gexIntensity + 0.2 * vannaIntensity + 0.15 * charmIntensity + 15);
+    const behaviorBadge = getBehaviorBadge(profile.behaviorZone);
 
-    // Matching contracts
-    const matchingContracts = keyContracts.filter((c) => Math.abs(c.strike - selectedStrike) < 250);
-    const strikeTotalOi = matchingContracts.reduce((sum, c) => sum + c.oiBtc, 0);
+    const getBandColor = (band: IntensityBand) => {
+        switch (band) {
+            case 'EXTREME': return 'bg-rose-950/80 text-rose-300 border-rose-500/40';
+            case 'HIGH': return 'bg-amber-950/80 text-amber-300 border-amber-500/40';
+            case 'MEDIUM': return 'bg-zinc-800 text-zinc-300 border-zinc-700';
+            case 'LOW': return 'bg-zinc-900 text-zinc-400 border-zinc-800';
+        }
+    };
 
     return (
         <div className="w-full rounded-xl bg-[#080d16] border border-[#151f30] p-4 select-none shadow-2xl font-mono text-xs space-y-3.5">
@@ -131,44 +67,49 @@ export default function KeyLevelProfile({ data, selectedState, onClose }: KeyLev
                     </div>
                     <div className="flex items-baseline gap-3 mt-1">
                         <span className="text-xl font-black text-white">
-                            ${selectedStrike.toLocaleString()}
+                            ${profile.strike.toLocaleString()}
                         </span>
                         <span className={`text-xs font-bold ${isAboveSpot ? 'text-emerald-400' : 'text-rose-400'}`}>
-                            {isAboveSpot ? '+' : ''}{distancePct.toFixed(2)}% vs Spot
+                            {isAboveSpot ? '+' : ''}{profile.distancePct.toFixed(2)}% vs Spot
                         </span>
                     </div>
                 </div>
 
                 <div className="text-right">
-                    <span className="text-[9px] text-zinc-400 uppercase block">CONFLUENCE SCORE</span>
-                    <span className="text-lg font-black text-cyan-400">{confluenceScore}/100</span>
+                    <span className="text-[9px] text-zinc-400 uppercase block font-semibold">CONFLUENCE</span>
+                    <span className="text-lg font-black text-cyan-400">{profile.confluenceScore}/100</span>
                 </div>
             </div>
 
-            {/* Behavior Tendency Explanation */}
+            {/* Expected Tendency */}
             <div className="p-3 rounded-lg bg-[#0c1422] border border-[#1a273b] space-y-1">
                 <div className="flex items-center gap-1.5 text-zinc-300 font-bold text-[10px]">
                     <Info className="w-3.5 h-3.5 text-cyan-400" />
-                    <span>DEALER BEHAVIOR TENDENCY (PROBABILISTIC)</span>
+                    <span>EXPECTED DEALER TENDENCY (PROBABILISTIC)</span>
                 </div>
                 <p className="text-[11px] font-sans text-zinc-300 leading-relaxed">
-                    {behaviorDesc}
+                    {profile.behaviorTendencyDescription}
                 </p>
             </div>
 
-            {/* Metrics Breakdown Grid */}
+            {/* Metrics Breakdown: GEX, Vanna, Charm */}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
                 {/* GEX */}
                 <div className="p-2.5 rounded-lg bg-[#0c1422] border border-[#1a273b] space-y-1">
                     <div className="flex items-center justify-between text-[10px]">
                         <span className="text-zinc-400">GEX Exposure</span>
-                        <span className="text-[9px] font-bold px-1 rounded bg-zinc-800 text-zinc-300">{gexBand}</span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded border ${getBandColor(profile.gexBand)}`}>
+                            {profile.gexBand}
+                        </span>
                     </div>
-                    <div className={`text-sm font-bold ${avgGex >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                        {formatGex(avgGex)}
+                    <div className={`text-sm font-bold ${profile.gexExposure >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+                        {formatGex(profile.gexExposure)}
                     </div>
                     <div className="w-full h-1 rounded-full bg-zinc-800 overflow-hidden">
-                        <div className={`h-full ${avgGex >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`} style={{ width: `${gexIntensity}%` }} />
+                        <div
+                            className={`h-full ${profile.gexExposure >= 0 ? 'bg-emerald-400' : 'bg-rose-400'}`}
+                            style={{ width: `${Math.min(100, Math.max(0, profile.gexIntensity))}%` }}
+                        />
                     </div>
                 </div>
 
@@ -176,13 +117,18 @@ export default function KeyLevelProfile({ data, selectedState, onClose }: KeyLev
                 <div className="p-2.5 rounded-lg bg-[#0c1422] border border-[#1a273b] space-y-1">
                     <div className="flex items-center justify-between text-[10px]">
                         <span className="text-zinc-400">Vanna Exposure</span>
-                        <span className="text-[9px] font-bold px-1 rounded bg-zinc-800 text-zinc-300">{vannaBand}</span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded border ${getBandColor(profile.vannaBand)}`}>
+                            {profile.vannaBand}
+                        </span>
                     </div>
-                    <div className={`text-sm font-bold ${avgVanna >= 0 ? 'text-purple-400' : 'text-indigo-400'}`}>
-                        {formatGex(avgVanna)}
+                    <div className={`text-sm font-bold ${profile.vannaExposure >= 0 ? 'text-purple-400' : 'text-indigo-400'}`}>
+                        {formatGex(profile.vannaExposure)}
                     </div>
                     <div className="w-full h-1 rounded-full bg-zinc-800 overflow-hidden">
-                        <div className="h-full bg-purple-400" style={{ width: `${vannaIntensity}%` }} />
+                        <div
+                            className="h-full bg-purple-400"
+                            style={{ width: `${Math.min(100, Math.max(0, profile.vannaIntensity))}%` }}
+                        />
                     </div>
                 </div>
 
@@ -190,13 +136,18 @@ export default function KeyLevelProfile({ data, selectedState, onClose }: KeyLev
                 <div className="p-2.5 rounded-lg bg-[#0c1422] border border-[#1a273b] space-y-1">
                     <div className="flex items-center justify-between text-[10px]">
                         <span className="text-zinc-400">Charm (1D)</span>
-                        <span className="text-[9px] font-bold px-1 rounded bg-zinc-800 text-zinc-300">{charmBand}</span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.2 rounded border ${getBandColor(profile.charmBand)}`}>
+                            {profile.charmBand}
+                        </span>
                     </div>
-                    <div className={`text-sm font-bold ${avgCharm >= 0 ? 'text-amber-400' : 'text-amber-600'}`}>
-                        {formatGex(avgCharm)}/day
+                    <div className={`text-sm font-bold ${profile.charmExposure >= 0 ? 'text-amber-400' : 'text-amber-600'}`}>
+                        {formatGex(profile.charmExposure)}/day
                     </div>
                     <div className="w-full h-1 rounded-full bg-zinc-800 overflow-hidden">
-                        <div className="h-full bg-amber-400" style={{ width: `${charmIntensity}%` }} />
+                        <div
+                            className="h-full bg-amber-400"
+                            style={{ width: `${Math.min(100, Math.max(0, profile.charmIntensity))}%` }}
+                        />
                     </div>
                 </div>
             </div>
@@ -204,30 +155,30 @@ export default function KeyLevelProfile({ data, selectedState, onClose }: KeyLev
             {/* Structural Relationships & OI */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[10px]">
                 <div className="p-2 rounded bg-[#0c1422] border border-[#1a273b]">
-                    <span className="text-zinc-400 block">CALL WALL STATUS</span>
-                    <span className={`font-bold ${isCallWall ? 'text-emerald-400' : 'text-zinc-300'}`}>
-                        {isCallWall ? 'PRIMARY CALL WALL' : 'Non-Wall'}
+                    <span className="text-zinc-400 block">CALL WALL</span>
+                    <span className={`font-bold ${profile.callWallStatus ? 'text-emerald-400' : 'text-zinc-400'}`}>
+                        {profile.callWallStatus ? 'YES (Call Wall)' : 'NO'}
                     </span>
                 </div>
 
                 <div className="p-2 rounded bg-[#0c1422] border border-[#1a273b]">
-                    <span className="text-zinc-400 block">PUT WALL STATUS</span>
-                    <span className={`font-bold ${isPutWall ? 'text-rose-400' : 'text-zinc-300'}`}>
-                        {isPutWall ? 'PRIMARY PUT WALL' : 'Non-Wall'}
+                    <span className="text-zinc-400 block">PUT WALL</span>
+                    <span className={`font-bold ${profile.putWallStatus ? 'text-rose-400' : 'text-zinc-400'}`}>
+                        {profile.putWallStatus ? 'YES (Put Wall)' : 'NO'}
                     </span>
                 </div>
 
                 <div className="p-2 rounded bg-[#0c1422] border border-[#1a273b]">
-                    <span className="text-zinc-400 block">GAMMA FLIP DISTANCE</span>
+                    <span className="text-zinc-400 block">GAMMA FLIP DIST</span>
                     <span className="font-bold text-cyan-400">
-                        {(((selectedStrike - summary.gammaFlip) / summary.gammaFlip) * 100).toFixed(2)}%
+                        {profile.gammaFlipDistancePct ? `${profile.gammaFlipDistancePct.toFixed(2)}%` : 'N/A'}
                     </span>
                 </div>
 
                 <div className="p-2 rounded bg-[#0c1422] border border-[#1a273b]">
                     <span className="text-zinc-400 block">OPEN INTEREST</span>
                     <span className="font-bold text-white">
-                        {strikeTotalOi > 0 ? `${strikeTotalOi.toLocaleString()} BTC` : 'N/A'}
+                        {profile.oiBtc ? `${profile.oiBtc.toLocaleString()} BTC` : 'N/A'}
                     </span>
                 </div>
             </div>

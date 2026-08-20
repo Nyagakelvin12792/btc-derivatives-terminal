@@ -183,4 +183,5 @@ export interface DashboardData {
     interpolatedGrid?: TerrainGridCell[][];
     confluenceLevels: ConfluenceLevelItem[];
     keyContracts: KeyContractItem[];
+    keyLevelProfiles?: Record<number, KeyLevelProfileData>;
 }

@@ -3,6 +3,7 @@
 import React from 'react';
 import { DashboardData, SelectedAnalyticalState } from '@/lib/dashboard/types';
 import { formatGex, formatUsd } from '@/lib/dashboard/adapters';
+import ExposureScalePanel from '@/components/dashboard/ExposureScalePanel';
 import { Activity, ShieldCheck, Zap, Layers, Compass, TrendingUp, TrendingDown, Clock, BarChart3, AlertCircle } from 'lucide-react';
 
 interface WorkspaceViewProps {
@@ -16,12 +17,12 @@ interface WorkspaceViewProps {
  * Executive high-level macro view of total dealer positioning
  */
 export function DashboardOverviewView({ data, onSelectStrike }: WorkspaceViewProps) {
-    const { summary, strikes, confluenceLevels } = data;
+    const { summary, strikes, confluenceLevels, scales } = data;
 
     return (
-        <div className="space-y-4 font-mono select-none">
+        <div className="space-y-3 font-mono select-none">
             {/* Top Macro Stat Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                 <div className="p-4 rounded-xl bg-[#080d16] border border-[#151f30] shadow-xl">
                     <div className="text-[10px] text-zinc-400 font-bold uppercase mb-1">TOTAL NET GEX EXPOSURE</div>
                     <div className="text-2xl font-black text-emerald-400">{formatGex(summary.netGex)}</div>
@@ -47,8 +48,11 @@ export function DashboardOverviewView({ data, onSelectStrike }: WorkspaceViewPro
                 </div>
             </div>
 
+            {/* Exposure Scale Panel */}
+            <ExposureScalePanel scales={scales} />
+
             {/* Macro Confluence & Walls Summary */}
-            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3.5">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
                 <div className="p-4 rounded-xl bg-[#080d16] border border-[#151f30] shadow-xl space-y-3">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
                         <Zap className="w-4 h-4 text-cyan-400" /> Key Structural Dealer Boundaries
@@ -101,10 +105,12 @@ export function DashboardOverviewView({ data, onSelectStrike }: WorkspaceViewPro
  * Dedicated gamma exposure profiling
  */
 export function GexAnalysisView({ data, onSelectStrike }: WorkspaceViewProps) {
-    const { surfaceGrid, strikes, summary } = data;
+    const { surfaceGrid, strikes, summary, scales } = data;
 
     return (
-        <div className="space-y-4 font-mono select-none">
+        <div className="space-y-3 font-mono select-none">
+            <ExposureScalePanel scales={scales} />
+
             <div className="p-4 rounded-xl bg-[#080d16] border border-[#151f30] shadow-xl space-y-3">
                 <div className="flex items-center justify-between border-b border-[#151f30] pb-2">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -122,7 +128,7 @@ export function GexAnalysisView({ data, onSelectStrike }: WorkspaceViewProps) {
                         });
 
                         const isPos = totalGex >= 0;
-                        const barWidth = Math.min(100, (Math.abs(totalGex) / (data.scales.gexMax * 4 || 1)) * 100);
+                        const barWidth = Math.min(100, (Math.abs(totalGex) / (scales.gexMax * 4 || 1)) * 100);
 
                         return (
                             <div
@@ -156,10 +162,12 @@ export function GexAnalysisView({ data, onSelectStrike }: WorkspaceViewProps) {
  * Dedicated volatility sensitivity analysis
  */
 export function VannaAnalysisView({ data, onSelectStrike }: WorkspaceViewProps) {
-    const { surfaceGrid, strikes, summary } = data;
+    const { strikes, summary, scales } = data;
 
     return (
-        <div className="space-y-4 font-mono select-none">
+        <div className="space-y-3 font-mono select-none">
+            <ExposureScalePanel scales={scales} />
+
             <div className="p-4 rounded-xl bg-[#080d16] border border-[#151f30] shadow-xl space-y-3">
                 <div className="flex items-center justify-between border-b border-[#151f30] pb-2">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -193,10 +201,12 @@ export function VannaAnalysisView({ data, onSelectStrike }: WorkspaceViewProps) 
  * Dedicated time-decay drift analysis
  */
 export function CharmAnalysisView({ data }: WorkspaceViewProps) {
-    const { summary, dtes } = data;
+    const { summary, scales } = data;
 
     return (
-        <div className="space-y-4 font-mono select-none">
+        <div className="space-y-3 font-mono select-none">
+            <ExposureScalePanel scales={scales} />
+
             <div className="p-4 rounded-xl bg-[#080d16] border border-[#151f30] shadow-xl space-y-3">
                 <div className="flex items-center justify-between border-b border-[#151f30] pb-2">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">
@@ -224,10 +234,12 @@ export function CharmAnalysisView({ data }: WorkspaceViewProps) {
  * Dedicated OI strike/expiry breakdown
  */
 export function OpenInterestView({ data, onSelectStrike }: WorkspaceViewProps) {
-    const { strikes, keyContracts, summary } = data;
+    const { strikes, keyContracts, scales } = data;
 
     return (
-        <div className="space-y-4 font-mono select-none">
+        <div className="space-y-3 font-mono select-none">
+            <ExposureScalePanel scales={scales} />
+
             <div className="p-4 rounded-xl bg-[#080d16] border border-[#151f30] shadow-xl space-y-3">
                 <div className="flex items-center justify-between border-b border-[#151f30] pb-2">
                     <h3 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-2">

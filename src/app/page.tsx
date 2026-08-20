@@ -11,6 +11,7 @@ import ExpirySliceChart from '@/components/dashboard/ExpirySliceChart';
 import ConfluenceLevelsTable from '@/components/dashboard/ConfluenceLevelsTable';
 import KeyContractsTable from '@/components/dashboard/KeyContractsTable';
 import KeyLevelProfile from '@/components/dashboard/KeyLevelProfile';
+import HowToReadMapPanel from '@/components/dashboard/HowToReadMapPanel';
 import DealerBehaviorLegend from '@/components/dashboard/DealerBehaviorLegend';
 import FooterBar from '@/components/dashboard/FooterBar';
 import {
@@ -47,10 +48,10 @@ export default function TerminalPage() {
 
     // Shared analytical selection state across all synchronized components
     const [selectedState, setSelectedState] = useState<SelectedAnalyticalState>({
-        strike: 67842.5,
+        strike: 72000,
         dte: 30,
         expiry: '2025-06-27',
-        levelId: null,
+        levelId: 'cw-1',
         contractInstrument: null,
     });
 
@@ -131,6 +132,14 @@ export default function TerminalPage() {
         }
     };
 
+    // Lookup prepared profile without any UI math derivation
+    const selectedStrike = selectedState.strike || data.summary.spotPrice;
+    const currentProfile = data.keyLevelProfiles
+        ? (data.keyLevelProfiles[selectedStrike] ||
+           Object.values(data.keyLevelProfiles).find((p) => Math.abs(p.strike - selectedStrike) < 400) ||
+           null)
+        : null;
+
     return (
         <div className="min-h-screen bg-[#05080f] text-zinc-100 flex flex-row font-sans selection:bg-cyan-500 selection:text-black overflow-x-hidden">
             {/* Left Navigation Sidebar */}
@@ -152,7 +161,10 @@ export default function TerminalPage() {
                     {/* View 1: Primary Canonical SURFACE MAP */}
                     {activeTab === 'SURFACE MAP' && (
                         <div className="space-y-3">
-                            {/* Top Row: Dominant 3D Dealer Terrain (75%) + Environment Summary (25%) */}
+                            {/* How To Read Map 5-Second Guide */}
+                            <HowToReadMapPanel />
+
+                            {/* Top Row: Dominant 3D Dealer Terrain (75%) + Environment Summary & Profile (25%) */}
                             <div className="grid grid-cols-1 xl:grid-cols-12 gap-3">
                                 <div className="xl:col-span-9 w-full">
                                     <IntegratedDealerTerrain
@@ -175,8 +187,7 @@ export default function TerminalPage() {
                                         onSelectStrike={handleSelectStrike}
                                     />
                                     <KeyLevelProfile
-                                        data={data}
-                                        selectedState={selectedState}
+                                        profile={currentProfile}
                                     />
                                 </div>
                             </div>
@@ -245,14 +256,14 @@ export default function TerminalPage() {
                     {/* View 2: DASHBOARD Overview */}
                     {activeTab === 'DASHBOARD' && (
                         <div className="space-y-3">
+                            <HowToReadMapPanel />
                             <DashboardOverviewView
                                 data={data}
                                 selectedState={selectedState}
                                 onSelectStrike={handleSelectStrike}
                             />
                             <KeyLevelProfile
-                                data={data}
-                                selectedState={selectedState}
+                                profile={currentProfile}
                             />
                             <DealerBehaviorLegend />
                         </div>
@@ -261,14 +272,14 @@ export default function TerminalPage() {
                     {/* View 3: GEX ANALYSIS */}
                     {activeTab === 'GEX ANALYSIS' && (
                         <div className="space-y-3">
+                            <HowToReadMapPanel />
                             <GexAnalysisView
                                 data={data}
                                 selectedState={selectedState}
                                 onSelectStrike={handleSelectStrike}
                             />
                             <KeyLevelProfile
-                                data={data}
-                                selectedState={selectedState}
+                                profile={currentProfile}
                             />
                             <DealerBehaviorLegend />
                         </div>
@@ -277,14 +288,14 @@ export default function TerminalPage() {
                     {/* View 4: VANNA */}
                     {activeTab === 'VANNA' && (
                         <div className="space-y-3">
+                            <HowToReadMapPanel />
                             <VannaAnalysisView
                                 data={data}
                                 selectedState={selectedState}
                                 onSelectStrike={handleSelectStrike}
                             />
                             <KeyLevelProfile
-                                data={data}
-                                selectedState={selectedState}
+                                profile={currentProfile}
                             />
                             <DealerBehaviorLegend />
                         </div>
@@ -293,13 +304,13 @@ export default function TerminalPage() {
                     {/* View 5: CHARM */}
                     {activeTab === 'CHARM' && (
                         <div className="space-y-3">
+                            <HowToReadMapPanel />
                             <CharmAnalysisView
                                 data={data}
                                 selectedState={selectedState}
                             />
                             <KeyLevelProfile
-                                data={data}
-                                selectedState={selectedState}
+                                profile={currentProfile}
                             />
                             <DealerBehaviorLegend />
                         </div>
@@ -308,14 +319,14 @@ export default function TerminalPage() {
                     {/* View 6: OPEN INTEREST */}
                     {activeTab === 'OPEN INTEREST' && (
                         <div className="space-y-3">
+                            <HowToReadMapPanel />
                             <OpenInterestView
                                 data={data}
                                 selectedState={selectedState}
                                 onSelectStrike={handleSelectStrike}
                             />
                             <KeyLevelProfile
-                                data={data}
-                                selectedState={selectedState}
+                                profile={currentProfile}
                             />
                             <DealerBehaviorLegend />
                         </div>
