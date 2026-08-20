@@ -1,4 +1,15 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
+import type {
+    BtcOpenInterest,
+    Days,
+    DeribitInstrumentName,
+    ExpiryCode,
+    NormalizedDeribitOption,
+    Usd,
+    VolatilityDecimal,
+    VolatilityPercent,
+    YearFraction,
+} from './types';
 import {
     DeribitValidationError,
     normalizeBookSummaryPayload,
@@ -76,29 +87,29 @@ describe('Deribit normalization', () => {
     });
 
     it('normalizes active options and clamps IV into supported bounds', () => {
-        const options = normalizeDeribitOptions(
-            [
+        const bookItems = normalizeBookSummaryPayload({
+            result: [
                 {
-                    instrumentName: 'BTC-25DEC26-70000-C',
-                    openInterest: 100,
-                    markIv: 400,
+                    instrument_name: 'BTC-25DEC26-70000-C',
+                    open_interest: 100,
+                    mark_iv: 400,
                     volume: 4,
                 },
                 {
-                    instrumentName: 'BTC-25DEC25-70000-C',
-                    openInterest: 100,
-                    markIv: 50,
+                    instrument_name: 'BTC-25DEC25-70000-C',
+                    open_interest: 100,
+                    mark_iv: 50,
                     volume: 4,
                 },
                 {
-                    instrumentName: 'BTC-25DEC26-65000-P',
-                    openInterest: 75,
-                    markIv: null,
+                    instrument_name: 'BTC-25DEC26-65000-P',
+                    open_interest: 75,
+                    mark_iv: null,
                     volume: 1,
                 },
             ],
-            now
-        );
+        });
+        const options = normalizeDeribitOptions(bookItems, now);
 
         expect(options).toHaveLength(2);
         expect(options[0]).toMatchObject({
@@ -114,6 +125,16 @@ describe('Deribit normalization', () => {
             ivDecimal: 0.5,
             type: 'put',
         });
+
+        expectTypeOf(options[0]).toMatchTypeOf<NormalizedDeribitOption>();
+        expectTypeOf(options[0].instrument).toMatchTypeOf<DeribitInstrumentName>();
+        expectTypeOf(options[0].expiryStr).toMatchTypeOf<ExpiryCode>();
+        expectTypeOf(options[0].strike).toMatchTypeOf<Usd>();
+        expectTypeOf(options[0].dte).toMatchTypeOf<Days>();
+        expectTypeOf(options[0].tte).toMatchTypeOf<YearFraction>();
+        expectTypeOf(options[0].openInterest).toMatchTypeOf<BtcOpenInterest>();
+        expectTypeOf(options[0].ivPercent).toMatchTypeOf<VolatilityPercent>();
+        expectTypeOf(options[0].ivDecimal).toMatchTypeOf<VolatilityDecimal>();
     });
 
     it('uses fallback spot when the index result price is invalid', () => {

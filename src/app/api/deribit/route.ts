@@ -60,7 +60,7 @@ export async function GET() {
 }
 
 function buildDeribitSurfaceResponse(
-    normalizedOptions: NormalizedDeribitOption[],
+    normalizedOptions: readonly NormalizedDeribitOption[],
     spotPrice: number,
     now: Date
 ) {

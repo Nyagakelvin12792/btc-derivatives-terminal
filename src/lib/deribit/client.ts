@@ -3,7 +3,7 @@ import {
     normalizeDeribitOptions,
     normalizeIndexPricePayload,
 } from './normalization';
-import type { NormalizedDeribitChain } from './types';
+import type { NormalizedDeribitChain, Usd } from './types';
 
 const DERIBIT_BASE_URL = 'https://www.deribit.com/api/v2/public';
 const BTC_INDEX_URL = `${DERIBIT_BASE_URL}/get_index_price?index_name=btc_usd`;
@@ -11,7 +11,7 @@ const BTC_OPTIONS_BOOK_URL = `${DERIBIT_BASE_URL}/get_book_summary_by_currency?c
 const REVALIDATE_SECONDS = 15;
 const REQUEST_TIMEOUT_MS = 8000;
 
-export const FALLBACK_SPOT_PRICE = 69000;
+export const FALLBACK_SPOT_PRICE = 69000 as Usd;
 
 type NextFetchInit = RequestInit & {
     next?: {

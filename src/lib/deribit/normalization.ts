@@ -1,8 +1,17 @@
 import type {
+    BtcOpenInterest,
+    BtcVolume,
+    Days,
     DeribitBookSummaryItem,
+    DeribitInstrumentName,
+    ExpiryCode,
     NormalizedDeribitOption,
     OptionType,
     ParsedDeribitInstrument,
+    Usd,
+    VolatilityDecimal,
+    VolatilityPercent,
+    YearFraction,
 } from './types';
 
 const MONTH_MAP: Record<string, number> = {
@@ -32,6 +41,42 @@ function finiteNumber(value: unknown): number | null {
 
 function clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
+}
+
+function asDeribitInstrumentName(value: string): DeribitInstrumentName {
+    return value as DeribitInstrumentName;
+}
+
+function asExpiryCode(value: string): ExpiryCode {
+    return value as ExpiryCode;
+}
+
+function asUsd(value: number): Usd {
+    return value as Usd;
+}
+
+function asDays(value: number): Days {
+    return value as Days;
+}
+
+function asYearFraction(value: number): YearFraction {
+    return value as YearFraction;
+}
+
+function asVolatilityPercent(value: number): VolatilityPercent {
+    return value as VolatilityPercent;
+}
+
+function asVolatilityDecimal(value: number): VolatilityDecimal {
+    return value as VolatilityDecimal;
+}
+
+function asBtcOpenInterest(value: number): BtcOpenInterest {
+    return value as BtcOpenInterest;
+}
+
+function asBtcVolume(value: number): BtcVolume {
+    return value as BtcVolume;
 }
 
 export class DeribitValidationError extends Error {
@@ -97,21 +142,21 @@ export function parseDeribitInstrument(instrumentName: unknown): ParsedDeribitIn
     if (!expiryDate || !Number.isFinite(strike) || strike <= 0) return null;
 
     return {
-        instrument: instrumentName,
+        instrument: asDeribitInstrumentName(instrumentName),
         currency: 'BTC',
-        expiryStr,
+        expiryStr: asExpiryCode(expiryStr),
         expiryDate,
-        strike,
+        strike: asUsd(strike),
         type,
     };
 }
 
-export function normalizeIndexPricePayload(payload: unknown, fallbackSpotPrice: number): number {
+export function normalizeIndexPricePayload(payload: unknown, fallbackSpotPrice: number): Usd {
     const envelope = assertDeribitEnvelope(payload, 'object');
     const result = envelope.result as Record<string, unknown>;
 
     const indexPrice = finiteNumber(result.index_price);
-    return indexPrice !== null && indexPrice > 0 ? indexPrice : fallbackSpotPrice;
+    return indexPrice !== null && indexPrice > 0 ? asUsd(indexPrice) : asUsd(fallbackSpotPrice);
 }
 
 export function normalizeBookSummaryPayload(payload: unknown): DeribitBookSummaryItem[] {
@@ -133,9 +178,9 @@ export function normalizeBookSummaryPayload(payload: unknown): DeribitBookSummar
 
         normalized.push({
             instrumentName: parsed.instrument,
-            openInterest,
-            markIv: markIv !== null && markIv > 0 ? markIv : null,
-            volume: volume !== null && volume > 0 ? volume : 0,
+            openInterest: asBtcOpenInterest(openInterest),
+            markIv: markIv !== null && markIv > 0 ? asVolatilityPercent(markIv) : null,
+            volume: asBtcVolume(volume !== null && volume > 0 ? volume : 0),
         });
     }
 
@@ -143,7 +188,7 @@ export function normalizeBookSummaryPayload(payload: unknown): DeribitBookSummar
 }
 
 export function normalizeDeribitOptions(
-    bookItems: DeribitBookSummaryItem[],
+    bookItems: readonly DeribitBookSummaryItem[],
     now: Date
 ): NormalizedDeribitOption[] {
     const options: NormalizedDeribitOption[] = [];
@@ -161,11 +206,11 @@ export function normalizeDeribitOptions(
 
         options.push({
             ...parsed,
-            dte,
-            tte: dte / 365,
+            dte: asDays(dte),
+            tte: asYearFraction(dte / 365),
             openInterest: item.openInterest,
-            ivDecimal,
-            ivPercent,
+            ivDecimal: asVolatilityDecimal(ivDecimal),
+            ivPercent: asVolatilityPercent(ivPercent),
             volume: item.volume,
         });
     }
