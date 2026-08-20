@@ -30,6 +30,9 @@ const MONTH_MAP: Record<string, number> = {
 };
 
 const INSTRUMENT_RE = /^BTC-(\d{1,2}[A-Z]{3}\d{2})-(\d+(?:\.\d+)?)-(C|P)$/;
+const MIN_USD_PRICE = 1;
+const MAX_USD_PRICE = 10_000_000;
+const MAX_BTC_AMOUNT = 21_000_000;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -37,6 +40,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function finiteNumber(value: unknown): number | null {
     return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function finiteNumberInRange(value: unknown, min: number, max: number): number | null {
+    const numberValue = finiteNumber(value);
+    return numberValue !== null && numberValue >= min && numberValue <= max ? numberValue : null;
 }
 
 function clamp(value: number, min: number, max: number): number {
@@ -136,10 +144,10 @@ export function parseDeribitInstrument(instrumentName: unknown): ParsedDeribitIn
 
     const expiryStr = match[1];
     const expiryDate = parseDeribitExpiry(expiryStr);
-    const strike = Number.parseFloat(match[2]);
+    const strike = finiteNumberInRange(Number.parseFloat(match[2]), MIN_USD_PRICE, MAX_USD_PRICE);
     const type: OptionType = match[3] === 'C' ? 'call' : 'put';
 
-    if (!expiryDate || !Number.isFinite(strike) || strike <= 0) return null;
+    if (!expiryDate || strike === null) return null;
 
     return {
         instrument: asDeribitInstrumentName(instrumentName),
@@ -155,7 +163,7 @@ export function normalizeIndexPricePayload(payload: unknown, fallbackSpotPrice: 
     const envelope = assertDeribitEnvelope(payload, 'object');
     const result = envelope.result as Record<string, unknown>;
 
-    const indexPrice = finiteNumber(result.index_price);
+    const indexPrice = finiteNumberInRange(result.index_price, MIN_USD_PRICE, MAX_USD_PRICE);
     return indexPrice !== null && indexPrice > 0 ? asUsd(indexPrice) : asUsd(fallbackSpotPrice);
 }
 
@@ -170,17 +178,17 @@ export function normalizeBookSummaryPayload(payload: unknown): DeribitBookSummar
         const parsed = parseDeribitInstrument(item.instrument_name);
         if (!parsed) continue;
 
-        const openInterest = finiteNumber(item.open_interest);
-        if (openInterest === null || openInterest < 0) continue;
+        const openInterest = finiteNumberInRange(item.open_interest, 0, MAX_BTC_AMOUNT);
+        if (openInterest === null) continue;
 
         const markIv = finiteNumber(item.mark_iv);
-        const volume = finiteNumber(item.volume);
+        const volume = finiteNumberInRange(item.volume, 0, MAX_BTC_AMOUNT);
 
         normalized.push({
             instrumentName: parsed.instrument,
             openInterest: asBtcOpenInterest(openInterest),
             markIv: markIv !== null && markIv > 0 ? asVolatilityPercent(markIv) : null,
-            volume: asBtcVolume(volume !== null && volume > 0 ? volume : 0),
+            volume: asBtcVolume(volume !== null ? volume : 0),
         });
     }
 
@@ -191,6 +199,10 @@ export function normalizeDeribitOptions(
     bookItems: readonly DeribitBookSummaryItem[],
     now: Date
 ): NormalizedDeribitOption[] {
+    if (!Number.isFinite(now.getTime())) {
+        throw new DeribitValidationError('Normalization timestamp must be a valid Date');
+    }
+
     const options: NormalizedDeribitOption[] = [];
 
     for (const item of bookItems) {

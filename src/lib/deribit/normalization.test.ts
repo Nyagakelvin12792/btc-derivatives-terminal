@@ -66,12 +66,27 @@ describe('Deribit normalization', () => {
                     open_interest: 10,
                     mark_iv: 50,
                 },
+                {
+                    instrument_name: 'BTC-25DEC26-90000-C',
+                    open_interest: 21_000_001,
+                    mark_iv: 50,
+                },
+                {
+                    instrument_name: 'BTC-25DEC26-95000-C',
+                    mark_iv: 50,
+                },
+                {
+                    instrument_name: 'BTC-25DEC26-100000-C',
+                    open_interest: 10,
+                    mark_iv: 50,
+                    volume: '12',
+                },
             ],
         };
 
         const rows = normalizeBookSummaryPayload(payload);
 
-        expect(rows).toHaveLength(2);
+        expect(rows).toHaveLength(3);
         expect(rows[0]).toEqual({
             instrumentName: 'BTC-25DEC26-70000-C',
             openInterest: 125.5,
@@ -82,6 +97,12 @@ describe('Deribit normalization', () => {
             instrumentName: 'BTC-25DEC26-65000-P',
             openInterest: 0,
             markIv: null,
+            volume: 0,
+        });
+        expect(rows[2]).toEqual({
+            instrumentName: 'BTC-25DEC26-100000-C',
+            openInterest: 10,
+            markIv: 50,
             volume: 0,
         });
     });
@@ -141,6 +162,12 @@ describe('Deribit normalization', () => {
         expect(normalizeIndexPricePayload({ result: { index_price: 68000 } }, 69000)).toBe(68000);
         expect(normalizeIndexPricePayload({ result: { index_price: -1 } }, 69000)).toBe(69000);
         expect(normalizeIndexPricePayload({ result: { index_price: '68000' } }, 69000)).toBe(69000);
+        expect(normalizeIndexPricePayload({ result: { index_price: 10_000_001 } }, 69000)).toBe(69000);
+    });
+
+    it('rejects impossible strikes and invalid normalization timestamps', () => {
+        expect(parseDeribitInstrument('BTC-25DEC26-10000001-C')).toBeNull();
+        expect(() => normalizeDeribitOptions([], new Date(Number.NaN))).toThrow(DeribitValidationError);
     });
 
     it('rejects malformed Deribit response envelopes', () => {
