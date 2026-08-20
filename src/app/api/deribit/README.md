@@ -100,6 +100,12 @@ charmExposure = positionSign * rawCharm * openInterestBtc * spotUsd / 365
 
 Unit: USD hedge-notional change per calendar day. `rawCharm` is treated as calendar-time delta drift per year.
 
+`charmExposure` is signed option delta-notional drift under `OI_SIGN_PROXY_V1`. The neutralizing underlying hedge flow is the opposite:
+
+```ts
+charmHedgeFlowUsdPerDay = -charmExposure
+```
+
 ## Summary
 
 ```ts
@@ -132,10 +138,11 @@ interface TerrainSurfaceCell {
     strike: number;
     expiry: string;
     dte: number;
-    rawDelta: number;
-    rawGamma: number;
-    rawVanna: number;
-    rawCharm: number;
+    observed: boolean;
+    rawDelta: number | null;
+    rawGamma: number | null;
+    rawVanna: number | null;
+    rawCharm: number | null;
     gexExposure: number;
     vannaExposure: number;
     charmExposure: number;
@@ -143,7 +150,7 @@ interface TerrainSurfaceCell {
     putGexExposure: number;
     openInterestBtc: number;
     openInterestUsd: number;
-    iv: number;
+    iv: number | null;
     gexIntensity: number;
     vannaIntensity: number;
     charmIntensity: number;
@@ -167,7 +174,9 @@ Grid invariants:
 - `surfaceGrid.length === expirations.length`
 - `surfaceGrid[row].length === strikes.length`
 - `dtes[row]` aligns with `expirations[row]`
-- Missing option buckets are filled with zero exposure and zero OI to keep the mesh rectangular
+- Missing option buckets are filled with zero exposure and zero OI to keep the mesh rectangular.
+- In `LIVE` and `DEGRADED`, unobserved rectangular cells set `observed: false`, `rawDelta/rawGamma/rawVanna/rawCharm: null`, and `iv: null`.
+- In `DEMO`, cells may contain synthetic analytical raw Greeks and IV because `dataMode` explicitly marks the response synthetic.
 
 Legacy fields:
 - `gex`, `callGex`, `putGex`, `openInterest`, and `gamma` are retained for existing `SurfaceMesh` compatibility.
@@ -186,7 +195,7 @@ interface TerrainScales {
 }
 ```
 
-Intensity values are 0 to 100 and are scaled by absolute exposure against each metric's own robust absolute maximum.
+Intensity values are 0 to 100 and are scaled by absolute exposure against each metric's own robust absolute maximum calculated from aggregated Strike x Expiry surface cells.
 
 Bands:
 - 0-24: `LOW`
@@ -200,7 +209,7 @@ Bands:
 interface TerrainKeyLevels {
     callWall: { strike: number; exposure: number };
     putWall: { strike: number; exposure: number };
-    gammaFlip: { strike: number; gexExposure: number; curve: GammaFlipCurvePoint[] };
+    gammaFlip: { strike: number; gexExposure: number; curve: GammaFlipCurvePoint[]; crossings: number[] };
     primaryMaxPain: MaxPainByExpiry | null;
 }
 ```
@@ -208,7 +217,7 @@ interface TerrainKeyLevels {
 Definitions:
 - Call Wall aggregates call-side GEX Exposure by strike and selects the maximum positive call exposure.
 - Put Wall aggregates put-side GEX Exposure by strike and selects the largest absolute put exposure.
-- Gamma Flip revalues the full active portfolio across a hypothetical BTC spot grid and interpolates a zero crossing when available.
+- Gamma Flip revalues the full active portfolio across a hypothetical BTC spot grid and interpolates all zero crossings. The primary `strike` is the crossing nearest current `spotPrice`; if no crossing exists, it falls back to the curve point with minimum absolute GEX.
 - Max Pain is calculated per expiry from all strikes in that expiry, not from visualization-sampled strikes.
 
 ## Vanna Contours
@@ -229,6 +238,8 @@ Thresholds currently use normalized signed levels:
 
 Gemini should render positive and negative Vanna contours with visually distinct treatments and project them above the GEX terrain.
 
+Contour `x` and `y` preserve d3 grid coordinates. `strike` and `dte` are interpolated from the neighboring grid axes and must not be treated as nearest-cell labels.
+
 ## Charm Glyphs
 
 ```ts
@@ -237,12 +248,13 @@ interface CharmPressureGlyph {
     dte: number;
     expiry: string;
     charmExposure: number;
+    charmHedgeFlowUsdPerDay: number;
     intensity: number;
     hedgeDirection: 'BUY_HEDGE' | 'SELL_HEDGE' | 'NEUTRAL';
 }
 ```
 
-`hedgeDirection` is derived from Charm Exposure sign only. Gemini must not infer Charm direction from `strike > spot`.
+`hedgeDirection` is derived from `charmHedgeFlowUsdPerDay`, not from `charmExposure` directly. Positive hedge flow means `BUY_HEDGE`; negative hedge flow means `SELL_HEDGE`. Gemini must not infer Charm direction from `strike > spot`.
 
 ## Confluence
 

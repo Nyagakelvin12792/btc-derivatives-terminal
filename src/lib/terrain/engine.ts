@@ -47,6 +47,7 @@ interface CellAccumulator {
     strike: number;
     expiry: string;
     dte: number;
+    observed: boolean;
     rawDelta: number;
     rawGamma: number;
     rawVanna: number;
@@ -107,6 +108,17 @@ export function calculateCharmExposureUsdPerDay(
 ): number {
     if (!validExposureInput(rawCharmCalendarDriftPerYear, openInterestBtc, spotUsd)) return 0;
     return positionSign(type) * rawCharmCalendarDriftPerYear * openInterestBtc * spotUsd / 365;
+}
+
+export function calculateCharmHedgeFlowUsdPerDay(charmExposure: number): number {
+    if (!Number.isFinite(charmExposure)) return 0;
+    return -charmExposure;
+}
+
+export function classifyCharmHedgeDirection(charmHedgeFlowUsdPerDay: number): HedgeDirection {
+    if (charmHedgeFlowUsdPerDay > 0) return 'BUY_HEDGE';
+    if (charmHedgeFlowUsdPerDay < 0) return 'SELL_HEDGE';
+    return 'NEUTRAL';
 }
 
 function validExposureInput(rawGreek: number, openInterestBtc: number, spotUsd: number): boolean {
@@ -190,14 +202,14 @@ export function buildTerrainDataContract(params: {
     const maxPainByExpiry = calculateMaxPainByExpiry(params.options);
     const primaryMaxPain = maxPainByExpiry[0] ?? null;
     const gammaFlip = calculatePortfolioGammaFlip(params.options, params.spotPrice);
-    const scales = calculateScales(exposures);
-
     const cellMap = aggregateCells(exposures, params.spotPrice);
+    const scales = calculateScalesFromCells(cellMap);
     const surfaceGrid = buildSurfaceGrid({
         strikes,
         expiries,
         cellMap,
         spotPrice: params.spotPrice,
+        dataMode: params.dataMode,
         scales,
         callWall,
         putWall,
@@ -324,22 +336,45 @@ function calculatePortfolioGammaFlip(options: readonly NormalizedDeribitOption[]
         curve.push({ spot: round(hypotheticalSpot, 2), gexExposure });
     }
 
+    return selectPrimaryGammaFlipFromCurve(curve, spotPrice);
+}
+
+export function selectPrimaryGammaFlipFromCurve(curve: readonly GammaFlipCurvePoint[], spotPrice: number): GammaFlipLevel {
+    if (curve.length === 0) {
+        return { strike: 0, gexExposure: 0, curve: [], crossings: [] };
+    }
+
+    const crossings: number[] = [];
     for (let i = 0; i < curve.length - 1; i++) {
         const a = curve[i];
         const b = curve[i + 1];
-        if (a.gexExposure === 0) return { strike: a.spot, gexExposure: 0, curve };
+        if (a.gexExposure === 0) {
+            crossings.push(a.spot);
+            continue;
+        }
         if ((a.gexExposure < 0 && b.gexExposure > 0) || (a.gexExposure > 0 && b.gexExposure < 0)) {
             const weight = Math.abs(a.gexExposure) / (Math.abs(a.gexExposure) + Math.abs(b.gexExposure));
-            return {
-                strike: round(a.spot + (b.spot - a.spot) * weight, 2),
-                gexExposure: 0,
-                curve,
-            };
+            crossings.push(round(a.spot + (b.spot - a.spot) * weight, 2));
         }
+    }
+    const last = curve[curve.length - 1];
+    if (last.gexExposure === 0) crossings.push(last.spot);
+
+    const uniqueCrossings = sortedUnique(crossings);
+    if (uniqueCrossings.length > 0) {
+        const primaryCrossing = uniqueCrossings.reduce((best, crossing) => (
+            Math.abs(crossing - spotPrice) < Math.abs(best - spotPrice) ? crossing : best
+        ), uniqueCrossings[0]);
+        return {
+            strike: primaryCrossing,
+            gexExposure: 0,
+            curve: [...curve],
+            crossings: uniqueCrossings,
+        };
     }
 
     const closest = curve.reduce((best, point) => Math.abs(point.gexExposure) < Math.abs(best.gexExposure) ? point : best, curve[0]);
-    return { strike: closest.spot, gexExposure: closest.gexExposure, curve };
+    return { strike: closest.spot, gexExposure: closest.gexExposure, curve: [...curve], crossings: [] };
 }
 
 function calculateMaxPainByExpiry(options: readonly NormalizedDeribitOption[]): MaxPainByExpiry[] {
@@ -372,12 +407,13 @@ function calculateMaxPainByExpiry(options: readonly NormalizedDeribitOption[]): 
         .sort((a, b) => a.dte - b.dte);
 }
 
-function calculateScales(exposures: readonly ContractExposure[]): TerrainScales {
+function calculateScalesFromCells(cellMap: ReadonlyMap<string, CellAccumulator>): TerrainScales {
+    const cells = Array.from(cellMap.values());
     return {
-        gex: scaleFor(exposures.map(({ gexExposure }) => gexExposure), GEX_UNIT),
-        vanna: scaleFor(exposures.map(({ vannaExposure }) => vannaExposure), VANNA_UNIT),
-        charm: scaleFor(exposures.map(({ charmExposure }) => charmExposure), CHARM_UNIT),
-        openInterest: scaleFor(exposures.map(({ option }) => option.openInterest), OPEN_INTEREST_UNIT),
+        gex: scaleFor(cells.map(({ gexExposure }) => gexExposure), GEX_UNIT),
+        vanna: scaleFor(cells.map(({ vannaExposure }) => vannaExposure), VANNA_UNIT),
+        charm: scaleFor(cells.map(({ charmExposure }) => charmExposure), CHARM_UNIT),
+        openInterest: scaleFor(cells.map(({ openInterestBtc }) => openInterestBtc), OPEN_INTEREST_UNIT),
     };
 }
 
@@ -403,6 +439,7 @@ function aggregateCells(exposures: readonly ContractExposure[], spotPrice: numbe
             strike: exposure.option.strike,
             expiry: exposure.option.expiryStr,
             dte: exposure.option.dte,
+            observed: true,
             rawDelta: 0,
             rawGamma: 0,
             rawVanna: 0,
@@ -441,6 +478,7 @@ function buildSurfaceGrid(params: {
     expiries: readonly { expiry: string; dte: number }[];
     cellMap: Map<string, CellAccumulator>;
     spotPrice: number;
+    dataMode: TerrainDataMode;
     scales: TerrainScales;
     callWall: KeyLevel;
     putWall: KeyLevel;
@@ -448,7 +486,7 @@ function buildSurfaceGrid(params: {
     maxPainByExpiry: readonly MaxPainByExpiry[];
 }): TerrainSurfaceCell[][] {
     return params.expiries.map(({ expiry, dte }) => params.strikes.map((strike) => {
-        const cell = params.cellMap.get(cellKey(expiry, strike)) ?? emptyCell(strike, expiry, dte, params.spotPrice);
+        const cell = params.cellMap.get(cellKey(expiry, strike)) ?? emptyCell(strike, expiry, dte, params.spotPrice, params.dataMode);
         const gexIntensity = calculateIntensity(cell.gexExposure, params.scales.gex.robustAbsMax);
         const vannaIntensity = calculateIntensity(cell.vannaExposure, params.scales.vanna.robustAbsMax);
         const charmIntensity = calculateIntensity(cell.charmExposure, params.scales.charm.robustAbsMax);
@@ -485,10 +523,11 @@ function buildSurfaceGrid(params: {
             strike,
             expiry,
             dte: round(dte, 3),
-            rawDelta: average(cell.rawDelta, cell.count),
-            rawGamma: average(cell.rawGamma, cell.count),
-            rawVanna: average(cell.rawVanna, cell.count),
-            rawCharm: average(cell.rawCharm, cell.count),
+            observed: cell.observed,
+            rawDelta: averageOrNull(cell.rawDelta, cell.count),
+            rawGamma: averageOrNull(cell.rawGamma, cell.count),
+            rawVanna: averageOrNull(cell.rawVanna, cell.count),
+            rawCharm: averageOrNull(cell.rawCharm, cell.count),
             gexExposure: cell.gexExposure,
             vannaExposure: cell.vannaExposure,
             charmExposure: cell.charmExposure,
@@ -496,7 +535,7 @@ function buildSurfaceGrid(params: {
             putGexExposure: cell.putGexExposure,
             openInterestBtc: cell.openInterestBtc,
             openInterestUsd: cell.openInterestUsd,
-            iv: cell.count > 0 ? cell.ivSum / cell.count : 50,
+            iv: averageOrNull(cell.ivSum, cell.count),
             gexIntensity,
             vannaIntensity,
             charmIntensity,
@@ -644,14 +683,18 @@ function buildCharmGlyphs(surfaceGrid: readonly TerrainSurfaceCell[][]): CharmPr
         .filter((cell) => cell.charmIntensity >= 25)
         .sort((a, b) => b.charmIntensity - a.charmIntensity)
         .slice(0, 100)
-        .map((cell) => ({
-            strike: cell.strike,
-            dte: cell.dte,
-            expiry: cell.expiry,
-            charmExposure: cell.charmExposure,
-            intensity: cell.charmIntensity,
-            hedgeDirection: hedgeDirection(cell.charmExposure),
-        }));
+        .map((cell) => {
+            const charmHedgeFlowUsdPerDay = calculateCharmHedgeFlowUsdPerDay(cell.charmExposure);
+            return {
+                strike: cell.strike,
+                dte: cell.dte,
+                expiry: cell.expiry,
+                charmExposure: cell.charmExposure,
+                charmHedgeFlowUsdPerDay,
+                intensity: cell.charmIntensity,
+                hedgeDirection: classifyCharmHedgeDirection(charmHedgeFlowUsdPerDay),
+            };
+        });
 }
 
 function buildConfluenceFloor(surfaceGrid: readonly TerrainSurfaceCell[][]): ConfluenceFloorCell[][] {
@@ -691,34 +734,40 @@ function proximityBand(spotPrice: number): number {
     return Math.max(1000, spotPrice * 0.02);
 }
 
-function hedgeDirection(charmExposure: number): HedgeDirection {
-    if (charmExposure > 0) return 'BUY_HEDGE';
-    if (charmExposure < 0) return 'SELL_HEDGE';
-    return 'NEUTRAL';
-}
-
 function contourPoint(x: number, y: number, surfaceGrid: readonly TerrainSurfaceCell[][]): VannaContourPoint {
-    const rowIndex = clamp(Math.round(y - 0.5), 0, surfaceGrid.length - 1);
-    const colIndex = clamp(Math.round(x - 0.5), 0, (surfaceGrid[0]?.length ?? 1) - 1);
-    const cell = surfaceGrid[rowIndex]?.[colIndex];
+    const strikeAxis = surfaceGrid[0]?.map((cell) => cell.strike) ?? [];
+    const dteAxis = surfaceGrid.map((row) => row[0]?.dte ?? 0);
     return {
         x: round(x, 3),
         y: round(y, 3),
-        strike: cell?.strike ?? 0,
-        dte: cell?.dte ?? 0,
+        strike: round(interpolateAxis(strikeAxis, x), 3),
+        dte: round(interpolateAxis(dteAxis, y), 3),
     };
 }
 
-function emptyCell(strike: number, expiry: string, dte: number, spotPrice: number): CellAccumulator {
-    const greeks = calculateGreeks(spotPrice, strike, dte / 365, 0.5, RISK_FREE_RATE, 'call');
+function interpolateAxis(axis: readonly number[], contourCoordinate: number): number {
+    if (axis.length === 0) return 0;
+    if (axis.length === 1) return axis[0];
+    const fractionalIndex = clamp(contourCoordinate - 0.5, 0, axis.length - 1);
+    const lowerIndex = Math.floor(fractionalIndex);
+    const upperIndex = Math.min(axis.length - 1, lowerIndex + 1);
+    const weight = fractionalIndex - lowerIndex;
+    return axis[lowerIndex] + (axis[upperIndex] - axis[lowerIndex]) * weight;
+}
+
+function emptyCell(strike: number, expiry: string, dte: number, spotPrice: number, dataMode: TerrainDataMode): CellAccumulator {
+    const greeks = dataMode === 'DEMO'
+        ? calculateGreeks(spotPrice, strike, dte / 365, 0.5, RISK_FREE_RATE, 'call')
+        : null;
     return {
         strike,
         expiry,
         dte,
-        rawDelta: greeks.delta,
-        rawGamma: greeks.gamma,
-        rawVanna: greeks.vanna,
-        rawCharm: greeks.charm,
+        observed: dataMode === 'DEMO',
+        rawDelta: greeks?.delta ?? 0,
+        rawGamma: greeks?.gamma ?? 0,
+        rawVanna: greeks?.vanna ?? 0,
+        rawCharm: greeks?.charm ?? 0,
         gexExposure: 0,
         vannaExposure: 0,
         charmExposure: 0,
@@ -726,8 +775,8 @@ function emptyCell(strike: number, expiry: string, dte: number, spotPrice: numbe
         putGexExposure: 0,
         openInterestBtc: 0,
         openInterestUsd: 0,
-        ivSum: 50,
-        count: 1,
+        ivSum: dataMode === 'DEMO' ? 50 : 0,
+        count: dataMode === 'DEMO' ? 1 : 0,
     };
 }
 
@@ -760,6 +809,10 @@ function maxMapEntry(map: Map<number, number>, fallbackStrike: number): KeyLevel
 
 function average(total: number, count: number): number {
     return count > 0 ? total / count : 0;
+}
+
+function averageOrNull(total: number, count: number): number | null {
+    return count > 0 ? total / count : null;
 }
 
 function sum(values: readonly number[]): number {

@@ -37,10 +37,11 @@ export interface TerrainSurfaceCell {
     strike: number;
     expiry: string;
     dte: number;
-    rawDelta: number;
-    rawGamma: number;
-    rawVanna: number;
-    rawCharm: number;
+    observed: boolean;
+    rawDelta: number | null;
+    rawGamma: number | null;
+    rawVanna: number | null;
+    rawCharm: number | null;
     gexExposure: number;
     vannaExposure: number;
     charmExposure: number;
@@ -48,7 +49,7 @@ export interface TerrainSurfaceCell {
     putGexExposure: number;
     openInterestBtc: number;
     openInterestUsd: number;
-    iv: number;
+    iv: number | null;
     gexIntensity: number;
     vannaIntensity: number;
     charmIntensity: number;
@@ -83,6 +84,7 @@ export interface GammaFlipLevel {
     strike: number;
     gexExposure: number;
     curve: GammaFlipCurvePoint[];
+    crossings: number[];
 }
 
 export interface MaxPainByExpiry {
@@ -147,6 +149,7 @@ export interface CharmPressureGlyph {
     dte: number;
     expiry: string;
     charmExposure: number;
+    charmHedgeFlowUsdPerDay: number;
     intensity: number;
     hedgeDirection: HedgeDirection;
 }

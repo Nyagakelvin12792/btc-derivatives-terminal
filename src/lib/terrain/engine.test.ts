@@ -1,15 +1,20 @@
 import { describe, expect, it } from 'vitest';
 import type { NormalizedDeribitOption, OptionType } from '@/lib/deribit/types';
+import type { TerrainSurfaceCell } from './types';
 import {
     buildDemoTerrainDataContract,
     buildTerrainDataContract,
     calculateCharmExposureUsdPerDay,
+    calculateCharmHedgeFlowUsdPerDay,
     calculateConfluenceScore,
     calculateGexExposureUsdPerOnePercentMove,
     calculateIntensity,
     calculateVannaExposureUsdPerVolPoint,
+    buildVannaContours,
     classifyDealerBehavior,
+    classifyCharmHedgeDirection,
     intensityBand,
+    selectPrimaryGammaFlipFromCurve,
 } from './engine';
 
 const now = new Date(Date.UTC(2026, 0, 1, 0, 0, 0));
@@ -57,6 +62,14 @@ describe('terrain exposure formulas', () => {
         const expected = (12 * 100 * 50000) / 365;
         expect(calculateCharmExposureUsdPerDay(12, 100, 50000, 'call')).toBeCloseTo(expected, 8);
         expect(calculateCharmExposureUsdPerDay(12, 100, 50000, 'put')).toBeCloseTo(-expected, 8);
+    });
+
+    it('maps charm exposure to the opposite neutralizing hedge flow direction', () => {
+        expect(calculateCharmHedgeFlowUsdPerDay(125)).toBe(-125);
+        expect(calculateCharmHedgeFlowUsdPerDay(-125)).toBe(125);
+        expect(classifyCharmHedgeDirection(125)).toBe('BUY_HEDGE');
+        expect(classifyCharmHedgeDirection(-125)).toBe('SELL_HEDGE');
+        expect(classifyCharmHedgeDirection(0)).toBe('NEUTRAL');
     });
 });
 
@@ -135,12 +148,17 @@ describe('Terrain Data Contract V2', () => {
         expect(response.keyLevels.callWall.strike).toBe(72000);
         expect(response.keyLevels.putWall.strike).toBe(64000);
         expect(response.keyLevels.gammaFlip.curve.length).toBeGreaterThan(10);
+        expect(Array.isArray(response.keyLevels.gammaFlip.crossings)).toBe(true);
         expect(response.maxPainByExpiry).toHaveLength(2);
         expect(response.confluenceLevels[0].confluenceScore).toBeGreaterThanOrEqual(
             response.confluenceLevels.at(-1)?.confluenceScore ?? 0
         );
         expect(response.vannaContours.length).toBeGreaterThan(0);
         expect(response.charmGlyphs.every((glyph) => glyph.intensity >= 25)).toBe(true);
+        for (const glyph of response.charmGlyphs) {
+            expect(glyph.charmHedgeFlowUsdPerDay).toBeCloseTo(-glyph.charmExposure, 8);
+            expect(glyph.hedgeDirection).toBe(classifyCharmHedgeDirection(glyph.charmHedgeFlowUsdPerDay));
+        }
         expect(response.confluenceFloor).toHaveLength(response.surfaceGrid.length);
         expect(response.keyContracts[0]).toEqual(
             expect.objectContaining({
@@ -178,4 +196,135 @@ describe('Terrain Data Contract V2', () => {
         expect(response.assumptionModel).toBe('OI_SIGN_PROXY_V1');
         expect(response.keyContracts).toEqual([]);
     });
+
+    it('leaves LIVE rectangular cells unobserved without invented IV or raw Greeks', () => {
+        const response = buildTerrainDataContract({
+            spotPrice: 68000,
+            now,
+            dataMode: 'LIVE',
+            options: [
+                option({ instrument: 'BTC-27MAR26-64000-C', strike: 64000, type: 'call', openInterest: 100 }),
+                option({ instrument: 'BTC-27MAR26-70000-C', strike: 70000, type: 'call', openInterest: 100 }),
+                option({ instrument: 'BTC-26JUN26-64000-P', strike: 64000, type: 'put', openInterest: 100, expiryStr: '26JUN26', dte: 176 }),
+            ],
+        });
+
+        const emptyLiveCell = response.surfaceGrid
+            .flat()
+            .find((cell) => cell.expiry === '26JUN26' && cell.strike === 70000);
+
+        expect(emptyLiveCell).toEqual(expect.objectContaining({
+            observed: false,
+            rawDelta: null,
+            rawGamma: null,
+            rawVanna: null,
+            rawCharm: null,
+            iv: null,
+            gexExposure: 0,
+            vannaExposure: 0,
+            charmExposure: 0,
+            openInterestBtc: 0,
+            gamma: 0,
+        }));
+    });
+
+    it('derives surface scale bounds from aggregated strike-expiry cells', () => {
+        const response = buildTerrainDataContract({
+            spotPrice: 68000,
+            now,
+            dataMode: 'LIVE',
+            options: [
+                option({ instrument: 'BTC-27MAR26-68000-C-A', strike: 68000, type: 'call', openInterest: 100 }),
+                option({ instrument: 'BTC-27MAR26-68000-C-B', strike: 68000, type: 'call', openInterest: 100 }),
+                option({ instrument: 'BTC-27MAR26-76000-C', strike: 76000, type: 'call', openInterest: 1 }),
+            ],
+        });
+
+        const aggregatedCell = response.surfaceGrid.flat().find((cell) => cell.strike === 68000);
+        const largestContractGex = Math.max(...response.keyContracts.map((contract) => Math.abs(contract.gexExposure)));
+
+        expect(aggregatedCell).toBeDefined();
+        expect(Math.abs(aggregatedCell?.gexExposure ?? 0)).toBeGreaterThan(largestContractGex);
+        expect(response.scales.gex.max).toBeCloseTo(aggregatedCell?.gexExposure ?? 0, 8);
+        expect(response.scales.gex.robustAbsMax).toBeCloseTo(Math.abs(aggregatedCell?.gexExposure ?? 0), 8);
+    });
+
+    it('selects the gamma flip crossing nearest current spot and retains all crossings', () => {
+        const gammaFlip = selectPrimaryGammaFlipFromCurve([
+            { spot: 80, gexExposure: -10 },
+            { spot: 100, gexExposure: 10 },
+            { spot: 120, gexExposure: -10 },
+            { spot: 140, gexExposure: 10 },
+        ], 107);
+
+        expect(gammaFlip.strike).toBe(110);
+        expect(gammaFlip.gexExposure).toBe(0);
+        expect(gammaFlip.crossings).toEqual([90, 110, 130]);
+    });
+
+    it('interpolates Vanna contour strike and DTE from fractional grid coordinates', () => {
+        const grid: TerrainSurfaceCell[][] = [
+            [
+                terrainCell({ strike: 100, dte: 10, vannaExposure: -100 }),
+                terrainCell({ strike: 250, dte: 10, vannaExposure: 100 }),
+            ],
+            [
+                terrainCell({ strike: 100, dte: 40, vannaExposure: -100, expiry: '26JUN26' }),
+                terrainCell({ strike: 250, dte: 40, vannaExposure: 100, expiry: '26JUN26' }),
+            ],
+        ];
+
+        const zeroContour = buildVannaContours(grid, 100).find((contour) => contour.threshold === 0);
+        const interpolatedPoint = zeroContour?.points.find((point) => point.strike > 100 && point.strike < 250);
+
+        expect(interpolatedPoint).toBeDefined();
+        expect(interpolatedPoint?.strike).toBeGreaterThan(100);
+        expect(interpolatedPoint?.strike).toBeLessThan(250);
+        expect(interpolatedPoint?.dte).toBeGreaterThanOrEqual(10);
+        expect(interpolatedPoint?.dte).toBeLessThanOrEqual(40);
+        expect(interpolatedPoint?.x).toEqual(expect.any(Number));
+        expect(interpolatedPoint?.y).toEqual(expect.any(Number));
+    });
 });
+
+function terrainCell(params: {
+    strike: number;
+    dte: number;
+    vannaExposure: number;
+    expiry?: string;
+}): TerrainSurfaceCell {
+    return {
+        strike: params.strike,
+        expiry: params.expiry ?? '27MAR26',
+        dte: params.dte,
+        observed: true,
+        rawDelta: 0,
+        rawGamma: 0,
+        rawVanna: 0,
+        rawCharm: 0,
+        gexExposure: 0,
+        vannaExposure: params.vannaExposure,
+        charmExposure: 0,
+        callGexExposure: 0,
+        putGexExposure: 0,
+        openInterestBtc: 0,
+        openInterestUsd: 0,
+        iv: 50,
+        gexIntensity: 0,
+        vannaIntensity: Math.abs(params.vannaExposure),
+        charmIntensity: 0,
+        oiIntensity: 0,
+        gexBand: 'LOW',
+        vannaBand: 'LOW',
+        charmBand: 'LOW',
+        oiBand: 'LOW',
+        confluenceScore: 0,
+        confluenceBand: 'LOW',
+        behaviorZone: 'NEUTRAL',
+        gex: 0,
+        callGex: 0,
+        putGex: 0,
+        openInterest: 0,
+        gamma: 0,
+    };
+}
