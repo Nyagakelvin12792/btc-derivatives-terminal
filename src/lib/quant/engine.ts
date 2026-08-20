@@ -86,6 +86,6 @@ export function calculateNetGEX(
         return 0;
     }
 
-    const dollarGex = gamma * openInterest * (spot * spot);
+    const dollarGex = gamma * openInterest * (spot * spot) * 0.01;
     return type === 'call' ? dollarGex : -dollarGex;
 }

@@ -1,14 +1,15 @@
-# Deribit Surface API Contract
+# Terrain Data Contract V2
 
 Endpoint: `GET /api/deribit`
 
-Owner: Codex, under `src/app/api/deribit/` and `src/lib/deribit/`.
+Owner: Codex, under `src/app/api/deribit/`, `src/lib/deribit/`, `src/lib/quant/`, and `src/lib/terrain/`.
 
 Primary consumers:
 - `src/app/page.tsx`
 - `src/components/three/SurfaceMesh.tsx`
+- Future Gemini terrain components that consume Contract V2
 
-This endpoint is the browser-facing boundary for the visual engine. Client components must fetch this endpoint and must not import the Deribit upstream client or quant engine directly.
+Client components must fetch this endpoint. They must not import the Deribit upstream client, quant engine, or terrain engine directly.
 
 ## Request
 
@@ -19,174 +20,263 @@ GET /api/deribit
 Accept: application/json
 ```
 
-## Response Behavior
+## Response Modes
 
-The route returns JSON for both live Deribit data and synthetic fallback data.
+Every response includes:
 
-- Live success uses `Cache-Control: public, max-age=5, s-maxage=15, stale-while-revalidate=30`.
-- Synthetic fallback uses `Cache-Control: no-store`.
-- Deribit upstream errors are handled server-side. The visual engine should still receive the same top-level JSON shape.
+```ts
+schemaVersion: 2;
+dataMode: 'LIVE' | 'DEMO' | 'DEGRADED';
+assumptionModel: 'OI_SIGN_PROXY_V1';
+```
+
+Mode semantics:
+- `LIVE`: Deribit option chain was normalized and processed by the production terrain engine.
+- `DEMO`: synthetic demonstration data; this must be visibly labeled by the UI.
+- `DEGRADED`: reserved for partial live analytics. Missing values must be shown as unavailable, not synthetic.
+
+Cache behavior:
+- `LIVE`: `Cache-Control: public, max-age=5, s-maxage=15, stale-while-revalidate=30`
+- `DEMO`: `Cache-Control: no-store`
 
 ## Top-Level Schema
 
 ```ts
-interface DeribitSurfaceResponse {
+interface TerrainDataContractV2 {
+    schemaVersion: 2;
     timestamp: string;
+    dataMode: 'LIVE' | 'DEMO' | 'DEGRADED';
+    assumptionModel: 'OI_SIGN_PROXY_V1';
     spotPrice: number;
-    summary: DeribitSurfaceSummary;
-    expirations: string[];
+    summary: TerrainSummary;
+    scales: TerrainScales;
     strikes: number[];
-    surfaceGrid: SurfaceGridCell[][];
-    topContracts: OptionPoint[];
+    expirations: string[];
+    dtes: number[];
+    surfaceGrid: TerrainSurfaceCell[][];
+    keyLevels: TerrainKeyLevels;
+    maxPainByExpiry: MaxPainByExpiry[];
+    confluenceLevels: TerrainConfluenceLevel[];
+    vannaContours: VannaContourPrimitive[];
+    charmGlyphs: CharmPressureGlyph[];
+    confluenceFloor: ConfluenceFloorCell[][];
+    keyContracts: TerrainKeyContract[];
+    topContracts: TerrainKeyContract[];
 }
 ```
 
-### `timestamp`
+`topContracts` is retained as a legacy Gemini table compatibility alias for `keyContracts`.
 
-ISO-8601 timestamp for the server-side response build time.
+## Locked Exposure Units
 
-Example: `"2026-08-20T08:30:00.000Z"`
+The response distinguishes raw Greeks from exposure metrics.
 
-### `spotPrice`
+Position proxy:
+- Calls use `+1`.
+- Puts use `-1`.
+- This is an OI-sign proxy, not observed dealer inventory.
 
-BTC/USD index price in USD.
-
-### `summary`
+GEX Exposure:
 
 ```ts
-interface DeribitSurfaceSummary {
+gexExposure = positionSign * rawGamma * openInterestBtc * spotUsd * spotUsd * 0.01
+```
+
+Unit: USD hedge-notional change per 1% BTC spot move.
+
+Vanna Exposure:
+
+```ts
+vannaExposure = positionSign * rawVanna * openInterestBtc * spotUsd * 0.01
+```
+
+Unit: USD hedge-notional change per one volatility-point IV move.
+
+Charm Exposure:
+
+```ts
+charmExposure = positionSign * rawCharm * openInterestBtc * spotUsd / 365
+```
+
+Unit: USD hedge-notional change per calendar day. `rawCharm` is treated as calendar-time delta drift per year.
+
+## Summary
+
+```ts
+interface TerrainSummary {
     totalCallGex: number;
     totalPutGex: number;
     netGex: number;
+    totalVannaExposure: number;
+    totalCharmExposure: number;
     totalOpenInterest: number;
     gammaFlip: number;
     maxPainStrike: number;
     topPositiveGexStrike: number;
     topNegativeGexStrike: number;
+    callWallExposure: number;
+    putWallExposure: number;
     contractsCount: number;
 }
 ```
 
-Units:
-- `totalCallGex`, `totalPutGex`, `netGex`: signed dollar gamma exposure.
-- `totalOpenInterest`: BTC-denominated open interest summed across normalized contracts.
-- `gammaFlip`, `maxPainStrike`, `topPositiveGexStrike`, `topNegativeGexStrike`: USD strike levels.
-- `contractsCount`: number of normalized active contracts included in the response.
+Compatibility note:
+- `topPositiveGexStrike` is the call wall strike.
+- `topNegativeGexStrike` is the put wall strike.
+- `totalCallGex`, `totalPutGex`, and `netGex` use the V2 per-1%-move GEX Exposure unit.
 
-Conventions:
-- Call GEX is positive.
-- Put GEX is negative.
-- `netGex = totalCallGex + totalPutGex`.
-- `topPositiveGexStrike` is the call wall currently displayed by `page.tsx`.
-- `topNegativeGexStrike` is the put wall currently displayed by `page.tsx`.
-
-### `expirations`
-
-Expiry labels in ascending expiry order. Live data uses Deribit expiry codes such as `"25DEC26"`. Synthetic fallback uses duration labels such as `"7D"`.
-
-`SurfaceMesh` treats this as the Z-axis labels and expects it to align by index with `surfaceGrid` rows.
-
-### `strikes`
-
-Sampled USD strike levels in ascending order.
-
-`SurfaceMesh` treats this as the X-axis and expects it to align by index with each `surfaceGrid` row.
-
-### `surfaceGrid`
+## Surface Grid
 
 ```ts
-interface SurfaceGridCell {
+interface TerrainSurfaceCell {
     strike: number;
-    dte: number;
     expiry: string;
+    dte: number;
+    rawDelta: number;
+    rawGamma: number;
+    rawVanna: number;
+    rawCharm: number;
+    gexExposure: number;
+    vannaExposure: number;
+    charmExposure: number;
+    callGexExposure: number;
+    putGexExposure: number;
+    openInterestBtc: number;
+    openInterestUsd: number;
+    iv: number;
+    gexIntensity: number;
+    vannaIntensity: number;
+    charmIntensity: number;
+    oiIntensity: number;
+    gexBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+    vannaBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+    charmBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+    oiBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+    confluenceScore: number;
+    confluenceBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+    behaviorZone: DealerBehaviorZone;
     gex: number;
     callGex: number;
     putGex: number;
     openInterest: number;
     gamma: number;
-    iv: number;
 }
 ```
 
-Grid shape:
-- `surfaceGrid.length === expirations.length`.
-- Each row is ordered by `strikes`.
-- Each cell corresponds to one expiry and strike bucket.
-- Missing live option buckets are filled with zero exposure and zero open interest so the mesh remains rectangular.
+Grid invariants:
+- `surfaceGrid.length === expirations.length`
+- `surfaceGrid[row].length === strikes.length`
+- `dtes[row]` aligns with `expirations[row]`
+- Missing option buckets are filled with zero exposure and zero OI to keep the mesh rectangular
 
-Units:
-- `strike`: USD strike.
-- `dte`: days to expiry.
-- `expiry`: expiry label matching the row label.
-- `gex`, `callGex`, `putGex`: signed dollar gamma exposure.
-- `openInterest`: BTC-denominated open interest.
-- `gamma`: raw Black-Scholes gamma, per 1 USD spot move.
-- `iv`: implied volatility as a percent, not a decimal. Example: `55` means 55 percent.
+Legacy fields:
+- `gex`, `callGex`, `putGex`, `openInterest`, and `gamma` are retained for existing `SurfaceMesh` compatibility.
+- New Gemini terrain work should prefer explicit V2 fields such as `gexExposure`, `openInterestBtc`, and `rawGamma`.
 
-`SurfaceMesh` consumes:
-- `surfaceGrid`
-- `spotPrice`
-- `strikes`
-- `expirations`
-- `selectedMetric`, selected in the page as one of `gex`, `openInterest`, `iv`, or `gamma`
+## Scales And Bands
 
-### `topContracts`
+Each exposure metric has an independent scale:
 
 ```ts
-interface OptionPoint {
-    instrument: string;
+interface TerrainScales {
+    gex: { min: number; max: number; robustAbsMax: number; unit: string };
+    vanna: { min: number; max: number; robustAbsMax: number; unit: string };
+    charm: { min: number; max: number; robustAbsMax: number; unit: string };
+    openInterest: { min: number; max: number; robustAbsMax: number; unit: string };
+}
+```
+
+Intensity values are 0 to 100 and are scaled by absolute exposure against each metric's own robust absolute maximum.
+
+Bands:
+- 0-24: `LOW`
+- 25-49: `MEDIUM`
+- 50-74: `HIGH`
+- 75-100: `EXTREME`
+
+## Key Levels
+
+```ts
+interface TerrainKeyLevels {
+    callWall: { strike: number; exposure: number };
+    putWall: { strike: number; exposure: number };
+    gammaFlip: { strike: number; gexExposure: number; curve: GammaFlipCurvePoint[] };
+    primaryMaxPain: MaxPainByExpiry | null;
+}
+```
+
+Definitions:
+- Call Wall aggregates call-side GEX Exposure by strike and selects the maximum positive call exposure.
+- Put Wall aggregates put-side GEX Exposure by strike and selects the largest absolute put exposure.
+- Gamma Flip revalues the full active portfolio across a hypothetical BTC spot grid and interpolates a zero crossing when available.
+- Max Pain is calculated per expiry from all strikes in that expiry, not from visualization-sampled strikes.
+
+## Vanna Contours
+
+`vannaContours` contains true scalar-field contour primitives generated from signed Vanna Exposure values with `d3-contour`.
+
+```ts
+interface VannaContourPrimitive {
+    threshold: number;
+    sign: 'POSITIVE' | 'NEGATIVE' | 'ZERO';
+    intensity: number;
+    points: { x: number; y: number; strike: number; dte: number }[];
+}
+```
+
+Thresholds currently use normalized signed levels:
+`-80, -60, -40, -20, 0, 20, 40, 60, 80`.
+
+Gemini should render positive and negative Vanna contours with visually distinct treatments and project them above the GEX terrain.
+
+## Charm Glyphs
+
+```ts
+interface CharmPressureGlyph {
     strike: number;
-    expiryStr: string;
-    expiryDate: string;
     dte: number;
-    tte: number;
-    type: 'call' | 'put';
-    openInterest: number;
-    iv: number;
-    delta: number;
-    gamma: number;
-    vanna: number;
-    charm: number;
-    gex: number;
-    volume: number;
+    expiry: string;
+    charmExposure: number;
+    intensity: number;
+    hedgeDirection: 'BUY_HEDGE' | 'SELL_HEDGE' | 'NEUTRAL';
 }
 ```
 
-Ordering: descending by absolute `gex`, limited to 15 contracts.
+`hedgeDirection` is derived from Charm Exposure sign only. Gemini must not infer Charm direction from `strike > spot`.
 
-Units:
-- `instrument`: Deribit instrument name.
-- `strike`: USD strike.
-- `expiryStr`: Deribit expiry code.
-- `expiryDate`: ISO string after JSON serialization.
-- `dte`: days to expiry.
-- `tte`: year fraction, `dte / 365`.
-- `type`: option side, `call` or `put`.
-- `openInterest`: BTC-denominated open interest.
-- `iv`: implied volatility as a percent, not a decimal.
-- `delta`: raw Black-Scholes delta.
-- `gamma`: raw Black-Scholes gamma, per 1 USD spot move.
-- `vanna`: raw Black-Scholes vanna.
-- `charm`: raw Black-Scholes charm.
-- `gex`: signed dollar gamma exposure.
-- `volume`: BTC-denominated Deribit volume, defaulting to `0` when missing or malformed.
+## Confluence
 
-## Dollar Exposure Formula
+Confluence measures importance, not direction.
 
-The response distinguishes raw Greeks from dollar exposure metrics.
+Weighting:
+- GEX intensity: 35%
+- Vanna intensity: 20%
+- Charm intensity: 15%
+- OI intensity: 15%
+- Structural-level proximity: 15%
 
-```ts
-rawGamma = BlackScholesGamma(spot, strike, tte, ivDecimal, rate)
-dollarGex = rawGamma * openInterestBtc * spotPriceUsd * spotPriceUsd
-signedGex = optionType === 'call' ? dollarGex : -dollarGex
-```
+Structural proximity considers Call Wall, Put Wall, Gamma Flip, and expiry-specific Max Pain.
 
-`gamma`, `delta`, `vanna`, and `charm` are raw model outputs. `gex`, `callGex`, `putGex`, `totalCallGex`, `totalPutGex`, and `netGex` are dollar exposure metrics.
+`confluenceFloor` is a rectangular Strike x Expiry grid mirroring `surfaceGrid` with only confluence score and band fields for floor rendering.
 
-## Visual Engine Compatibility Notes
+## Dealer Behavior Zones
 
-- The browser fetches `/api/deribit`; it should not call Deribit directly.
-- `SurfaceMesh` requires numeric `surfaceGrid` cells. The server normalizes malformed Deribit values before this response is built.
-- The mesh can render only when at least two expiry rows and two strike columns are present. The fallback response supplies a rectangular synthetic grid.
-- Extra fields may exist in `topContracts`; the current visual page ignores unknown fields.
-- Removing or renaming any documented field is a breaking change for the Gemini visualization layer.
+Allowed values:
+- `STABILIZATION_ZONE`
+- `ACCELERATION_ZONE`
+- `REGIME_TRANSITION`
+- `VOL_SENSITIVE_ZONE`
+- `DECAY_PRESSURE_ZONE`
+- `HIGH_CONFLUENCE_WALL`
+- `NEUTRAL`
+
+Labels describe deterministic tendency classifications, never guaranteed price predictions.
+
+## Gemini Integration Requirements
+
+- Existing Gemini files can continue reading `surfaceGrid`, `spotPrice`, `strikes`, `expirations`, `summary`, and `topContracts`.
+- New terrain visualization should read `schemaVersion === 2` before using V2 fields.
+- The UI must visibly distinguish `LIVE`, `DEMO`, and `DEGRADED`.
+- The UI must display the `OI_SIGN_PROXY_V1` assumption model.
+- Normalized intensities must never replace displayed real exposure values.
+- Removing or renaming any documented V2 field requires Architect review.
