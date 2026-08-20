@@ -10,6 +10,8 @@ import StrikeSliceChart from '@/components/dashboard/StrikeSliceChart';
 import ExpirySliceChart from '@/components/dashboard/ExpirySliceChart';
 import ConfluenceLevelsTable from '@/components/dashboard/ConfluenceLevelsTable';
 import KeyContractsTable from '@/components/dashboard/KeyContractsTable';
+import KeyLevelProfile from '@/components/dashboard/KeyLevelProfile';
+import DealerBehaviorLegend from '@/components/dashboard/DealerBehaviorLegend';
 import FooterBar from '@/components/dashboard/FooterBar';
 import {
     DashboardOverviewView,
@@ -167,10 +169,14 @@ export default function TerminalPage() {
                                     />
                                 </div>
 
-                                <div className="xl:col-span-3 w-full">
+                                <div className="xl:col-span-3 w-full space-y-3">
                                     <DealerEnvironmentSummary
                                         summary={data.summary}
                                         onSelectStrike={handleSelectStrike}
+                                    />
+                                    <KeyLevelProfile
+                                        data={data}
+                                        selectedState={selectedState}
                                     />
                                 </div>
                             </div>
@@ -228,51 +234,91 @@ export default function TerminalPage() {
                                     onSelectContract={handleSelectContract}
                                 />
                             </div>
+
+                            {/* Dealer Behavior Legend Guide */}
+                            <div className="w-full">
+                                <DealerBehaviorLegend />
+                            </div>
                         </div>
                     )}
 
                     {/* View 2: DASHBOARD Overview */}
                     {activeTab === 'DASHBOARD' && (
-                        <DashboardOverviewView
-                            data={data}
-                            selectedState={selectedState}
-                            onSelectStrike={handleSelectStrike}
-                        />
+                        <div className="space-y-3">
+                            <DashboardOverviewView
+                                data={data}
+                                selectedState={selectedState}
+                                onSelectStrike={handleSelectStrike}
+                            />
+                            <KeyLevelProfile
+                                data={data}
+                                selectedState={selectedState}
+                            />
+                            <DealerBehaviorLegend />
+                        </div>
                     )}
 
                     {/* View 3: GEX ANALYSIS */}
                     {activeTab === 'GEX ANALYSIS' && (
-                        <GexAnalysisView
-                            data={data}
-                            selectedState={selectedState}
-                            onSelectStrike={handleSelectStrike}
-                        />
+                        <div className="space-y-3">
+                            <GexAnalysisView
+                                data={data}
+                                selectedState={selectedState}
+                                onSelectStrike={handleSelectStrike}
+                            />
+                            <KeyLevelProfile
+                                data={data}
+                                selectedState={selectedState}
+                            />
+                            <DealerBehaviorLegend />
+                        </div>
                     )}
 
                     {/* View 4: VANNA */}
                     {activeTab === 'VANNA' && (
-                        <VannaAnalysisView
-                            data={data}
-                            selectedState={selectedState}
-                            onSelectStrike={handleSelectStrike}
-                        />
+                        <div className="space-y-3">
+                            <VannaAnalysisView
+                                data={data}
+                                selectedState={selectedState}
+                                onSelectStrike={handleSelectStrike}
+                            />
+                            <KeyLevelProfile
+                                data={data}
+                                selectedState={selectedState}
+                            />
+                            <DealerBehaviorLegend />
+                        </div>
                     )}
 
                     {/* View 5: CHARM */}
                     {activeTab === 'CHARM' && (
-                        <CharmAnalysisView
-                            data={data}
-                            selectedState={selectedState}
-                        />
+                        <div className="space-y-3">
+                            <CharmAnalysisView
+                                data={data}
+                                selectedState={selectedState}
+                            />
+                            <KeyLevelProfile
+                                data={data}
+                                selectedState={selectedState}
+                            />
+                            <DealerBehaviorLegend />
+                        </div>
                     )}
 
                     {/* View 6: OPEN INTEREST */}
                     {activeTab === 'OPEN INTEREST' && (
-                        <OpenInterestView
-                            data={data}
-                            selectedState={selectedState}
-                            onSelectStrike={handleSelectStrike}
-                        />
+                        <div className="space-y-3">
+                            <OpenInterestView
+                                data={data}
+                                selectedState={selectedState}
+                                onSelectStrike={handleSelectStrike}
+                            />
+                            <KeyLevelProfile
+                                data={data}
+                                selectedState={selectedState}
+                            />
+                            <DealerBehaviorLegend />
+                        </div>
                     )}
 
                     {/* View 7: Planned Modules */}

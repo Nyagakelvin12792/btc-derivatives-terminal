@@ -1,5 +1,7 @@
 export type DealerRegimeType = 'LONG_GAMMA' | 'SHORT_GAMMA' | 'TRANSITIONAL';
 export type DataMode = 'LIVE' | 'DEMO' | 'DEGRADED';
+export type AssumptionModel = 'OI_SIGN_PROXY_V1';
+
 export type WorkspaceTab = 
     | 'SURFACE MAP' 
     | 'DASHBOARD' 
@@ -13,6 +15,24 @@ export type WorkspaceTab =
     | 'REPORTS' 
     | 'SETTINGS';
 
+export type IntensityBand = 'LOW' | 'MEDIUM' | 'HIGH' | 'EXTREME';
+
+export type DealerBehaviorZone = 
+    | 'STABILIZATION_ZONE'
+    | 'ACCELERATION_ZONE'
+    | 'REGIME_TRANSITION'
+    | 'VOL_SENSITIVE_ZONE'
+    | 'DECAY_PRESSURE_ZONE'
+    | 'HIGH_CONFLUENCE_WALL'
+    | 'NEUTRAL';
+
+export interface MetricScaleMeta {
+    min: number;
+    max: number;
+    robustAbsMax: number;
+    unit: string;
+}
+
 export interface ExposureScales {
     gexMax: number;
     gexMin: number;
@@ -23,6 +43,9 @@ export interface ExposureScales {
     charmMax: number;
     charmMin: number;
     charmUnit: string;
+    gexMeta?: MetricScaleMeta;
+    vannaMeta?: MetricScaleMeta;
+    charmMeta?: MetricScaleMeta;
 }
 
 export interface DealerEnvironmentSummaryData {
@@ -54,6 +77,7 @@ export interface DealerEnvironmentSummaryData {
     regimeDescription: string;
     regimeScore: number; // 0 to 100 for gauge meter
     dataMode: DataMode;
+    assumptionModel: AssumptionModel;
     sourceStatus: string;
 }
 
@@ -70,6 +94,11 @@ export interface TerrainGridCell {
     gamma: number;
     delta: number;
     iv: number;
+    gexIntensity?: number;
+    vannaIntensity?: number;
+    charmIntensity?: number;
+    confluenceScore?: number;
+    behaviorZone?: DealerBehaviorZone;
 }
 
 export type ConfluenceTag = 'High Confluence' | 'Dealer Support Zone' | 'Regime Transition' | 'Gamma Flip Zone';
@@ -85,6 +114,7 @@ export interface ConfluenceLevelItem {
     wallType: LevelType;
     confluenceScore: number;
     tag: ConfluenceTag;
+    behaviorZone?: DealerBehaviorZone;
 }
 
 export interface KeyContractItem {
@@ -116,9 +146,34 @@ export interface SelectedAnalyticalState {
     contractInstrument: string | null;
 }
 
+export interface KeyLevelProfileData {
+    strike: number;
+    distancePct: number;
+    gexExposure: number;
+    gexIntensity: number;
+    gexBand: IntensityBand;
+    vannaExposure: number;
+    vannaIntensity: number;
+    vannaBand: IntensityBand;
+    charmExposure: number;
+    charmIntensity: number;
+    charmBand: IntensityBand;
+    callWallStatus: boolean;
+    putWallStatus: boolean;
+    gammaFlipDistancePct: number;
+    maxPainDistancePct: number;
+    oiBtc: number;
+    oiConcentrationPct: number;
+    confluenceScore: number;
+    behaviorZone: DealerBehaviorZone;
+    behaviorTendencyDescription: string;
+}
+
 export interface DashboardData {
+    schemaVersion?: number;
     timestamp: string;
     dataMode: DataMode;
+    assumptionModel: AssumptionModel;
     summary: DealerEnvironmentSummaryData;
     scales: ExposureScales;
     strikes: number[];

@@ -6,6 +6,7 @@ import {
     KeyContractItem,
     ExposureScales,
     DataMode,
+    DealerBehaviorZone,
 } from './types';
 
 export function formatUsd(val: number | null | undefined, options?: { showSign?: boolean; decimals?: number; unit?: 'B' | 'M' | 'K' | 'auto' }): string {
@@ -80,12 +81,30 @@ export function calculateExposureScales(grid: TerrainGridCell[][]): ExposureScal
         charmMax: charmBound,
         charmMin: -charmBound,
         charmUnit: 'USD / Day',
+        gexMeta: {
+            min: -gexBound,
+            max: gexBound,
+            robustAbsMax: gexBound,
+            unit: 'USD / 1% ΔS',
+        },
+        vannaMeta: {
+            min: -vannaBound,
+            max: vannaBound,
+            robustAbsMax: vannaBound,
+            unit: 'USD / 1% ΔIV',
+        },
+        charmMeta: {
+            min: -charmBound,
+            max: charmBound,
+            robustAbsMax: charmBound,
+            unit: 'USD / Day',
+        },
     };
 }
 
 /**
  * High-resolution visual interpolation layer.
- * Smoothly interpolates the discrete observation grid to a dense visual mesh (e.g. 48 x 32)
+ * Smoothly interpolates the discrete observation grid to a dense visual mesh (e.g. 44 x 30)
  * for smooth WebGL rendering without changing underlying source values.
  */
 export function interpolateSurfaceGrid(
@@ -209,6 +228,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
                 gamma,
                 delta: strike >= spotPrice ? 0.5 * Math.exp(-normStrike) : -0.5 * Math.exp(normStrike),
                 iv: 54.2 + normStrike * 2.1 + (dteIdx * 0.4),
+                behaviorZone: (strike >= 72000 ? 'HIGH_CONFLUENCE_WALL' : strike <= 62000 ? 'HIGH_CONFLUENCE_WALL' : Math.abs(strike - 65250) < 500 ? 'REGIME_TRANSITION' : gex > 0 ? 'STABILIZATION_ZONE' : 'ACCELERATION_ZONE') as DealerBehaviorZone,
             };
         });
     });
@@ -245,6 +265,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
         regimeDescription: 'Dealers are long gamma. Market tends to stabilize around spot. Pullbacks may be bought, rips may fade. Lower realized volatility expected.',
         regimeScore: 78,
         dataMode: mode,
+        assumptionModel: 'OI_SIGN_PROXY_V1',
         sourceStatus: mode === 'DEMO' ? 'DEMO CANONICAL MODEL' : 'LIVE DERIBIT FEED',
     };
 
@@ -259,6 +280,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
             wallType: 'CALL WALL',
             confluenceScore: 96,
             tag: 'High Confluence',
+            behaviorZone: 'HIGH_CONFLUENCE_WALL',
         },
         {
             id: 'gf-1',
@@ -270,6 +292,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
             wallType: 'FLIP LEVEL',
             confluenceScore: 88,
             tag: 'High Confluence',
+            behaviorZone: 'REGIME_TRANSITION',
         },
         {
             id: 'mp-1',
@@ -281,6 +304,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
             wallType: 'MAX PAIN',
             confluenceScore: 82,
             tag: 'High Confluence',
+            behaviorZone: 'STABILIZATION_ZONE',
         },
         {
             id: 'pw-1',
@@ -292,6 +316,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
             wallType: 'PUT WALL',
             confluenceScore: 94,
             tag: 'High Confluence',
+            behaviorZone: 'HIGH_CONFLUENCE_WALL',
         },
         {
             id: 'ds-1',
@@ -303,6 +328,7 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
             wallType: 'SUPPORT',
             confluenceScore: 78,
             tag: 'Dealer Support Zone',
+            behaviorZone: 'STABILIZATION_ZONE',
         },
     ];
 
@@ -410,8 +436,10 @@ export function createCanonicalDashboardData(mode: DataMode = 'DEMO'): Dashboard
     ];
 
     return {
+        schemaVersion: 2,
         timestamp: new Date().toISOString(),
         dataMode: mode,
+        assumptionModel: 'OI_SIGN_PROXY_V1',
         summary,
         scales,
         strikes,
@@ -505,10 +533,10 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
             : 'Dealers are short gamma. Market volatility tends to amplify. Hedging accelerates trending breakouts.',
         regimeScore: dealerRegime === 'LONG_GAMMA' ? 78 : dealerRegime === 'SHORT_GAMMA' ? 22 : 50,
         dataMode: 'LIVE',
+        assumptionModel: 'OI_SIGN_PROXY_V1',
         sourceStatus: 'LIVE DERIBIT FEED',
     };
 
-    // If topContracts or confluenceLevels provided by backend, adapt them; otherwise produce clean derived levels
     const confluenceLevels: ConfluenceLevelItem[] = [
         {
             id: 'cw-1',
@@ -520,6 +548,7 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
             wallType: 'CALL WALL',
             confluenceScore: 95,
             tag: 'High Confluence',
+            behaviorZone: 'HIGH_CONFLUENCE_WALL',
         },
         {
             id: 'gf-1',
@@ -531,6 +560,7 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
             wallType: 'FLIP LEVEL',
             confluenceScore: 88,
             tag: 'High Confluence',
+            behaviorZone: 'REGIME_TRANSITION',
         },
         {
             id: 'mp-1',
@@ -542,6 +572,7 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
             wallType: 'MAX PAIN',
             confluenceScore: 82,
             tag: 'High Confluence',
+            behaviorZone: 'STABILIZATION_ZONE',
         },
         {
             id: 'pw-1',
@@ -553,6 +584,7 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
             wallType: 'PUT WALL',
             confluenceScore: 93,
             tag: 'High Confluence',
+            behaviorZone: 'HIGH_CONFLUENCE_WALL',
         },
     ];
 
@@ -579,8 +611,10 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
     }));
 
     return {
+        schemaVersion: 2,
         timestamp: String(res.timestamp || new Date().toISOString()),
         dataMode: 'LIVE',
+        assumptionModel: 'OI_SIGN_PROXY_V1',
         summary,
         scales,
         strikes,
