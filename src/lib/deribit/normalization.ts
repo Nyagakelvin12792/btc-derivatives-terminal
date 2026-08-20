@@ -173,26 +173,35 @@ export function normalizeBookSummaryPayload(payload: unknown): DeribitBookSummar
 
     const normalized: DeribitBookSummaryItem[] = [];
     for (const item of result) {
-        if (!isRecord(item)) continue;
+        const normalizedItem = normalizeBookSummaryItem(item);
+        if (normalizedItem) normalized.push(normalizedItem);
+    }
+
+    return normalized;
+}
+
+function normalizeBookSummaryItem(item: unknown): DeribitBookSummaryItem | null {
+    try {
+        if (!isRecord(item)) return null;
 
         const parsed = parseDeribitInstrument(item.instrument_name);
-        if (!parsed) continue;
+        if (!parsed) return null;
 
         const openInterest = finiteNumberInRange(item.open_interest, 0, MAX_BTC_AMOUNT);
-        if (openInterest === null) continue;
+        if (openInterest === null) return null;
 
         const markIv = finiteNumber(item.mark_iv);
         const volume = finiteNumberInRange(item.volume, 0, MAX_BTC_AMOUNT);
 
-        normalized.push({
+        return {
             instrumentName: parsed.instrument,
             openInterest: asBtcOpenInterest(openInterest),
             markIv: markIv !== null && markIv > 0 ? asVolatilityPercent(markIv) : null,
             volume: asBtcVolume(volume !== null ? volume : 0),
-        });
+        };
+    } catch {
+        return null;
     }
-
-    return normalized;
 }
 
 export function normalizeDeribitOptions(
@@ -206,17 +215,29 @@ export function normalizeDeribitOptions(
     const options: NormalizedDeribitOption[] = [];
 
     for (const item of bookItems) {
+        const option = normalizeDeribitOption(item, now);
+        if (option) options.push(option);
+    }
+
+    return options;
+}
+
+function normalizeDeribitOption(
+    item: DeribitBookSummaryItem,
+    now: Date
+): NormalizedDeribitOption | null {
+    try {
         const parsed = parseDeribitInstrument(item.instrumentName);
-        if (!parsed) continue;
+        if (!parsed) return null;
 
         const msDiff = parsed.expiryDate.getTime() - now.getTime();
-        if (msDiff <= 0) continue;
+        if (msDiff <= 0) return null;
 
         const dte = Math.max(0.1, msDiff / (1000 * 60 * 60 * 24));
         const ivPercent = item.markIv === null ? 50 : clamp(item.markIv, 5, 300);
         const ivDecimal = ivPercent / 100;
 
-        options.push({
+        return {
             ...parsed,
             dte: asDays(dte),
             tte: asYearFraction(dte / 365),
@@ -224,8 +245,8 @@ export function normalizeDeribitOptions(
             ivDecimal: asVolatilityDecimal(ivDecimal),
             ivPercent: asVolatilityPercent(ivPercent),
             volume: item.volume,
-        });
+        };
+    } catch {
+        return null;
     }
-
-    return options;
 }

@@ -43,6 +43,13 @@ describe('Deribit normalization', () => {
     });
 
     it('normalizes only valid Deribit book summary rows', () => {
+        const throwingRow = {};
+        Object.defineProperty(throwingRow, 'instrument_name', {
+            get() {
+                throw new Error('bad instrument getter');
+            },
+        });
+
         const payload = {
             result: [
                 {
@@ -81,12 +88,19 @@ describe('Deribit normalization', () => {
                     mark_iv: 50,
                     volume: '12',
                 },
+                throwingRow,
+                {
+                    instrument_name: 'BTC-25DEC26-105000-P',
+                    open_interest: 11,
+                    mark_iv: 45,
+                    volume: 3,
+                },
             ],
         };
 
         const rows = normalizeBookSummaryPayload(payload);
 
-        expect(rows).toHaveLength(3);
+        expect(rows).toHaveLength(4);
         expect(rows[0]).toEqual({
             instrumentName: 'BTC-25DEC26-70000-C',
             openInterest: 125.5,
@@ -104,6 +118,12 @@ describe('Deribit normalization', () => {
             openInterest: 10,
             markIv: 50,
             volume: 0,
+        });
+        expect(rows[3]).toEqual({
+            instrumentName: 'BTC-25DEC26-105000-P',
+            openInterest: 11,
+            markIv: 45,
+            volume: 3,
         });
     });
 
