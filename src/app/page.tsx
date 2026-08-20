@@ -3,9 +3,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import dynamic from 'next/dynamic';
 import {
-    Activity,
-    TrendingUp,
-    TrendingDown,
     Zap,
     ShieldAlert,
     RefreshCw,
@@ -18,13 +15,13 @@ import {
     Database,
     Sparkles
 } from 'lucide-react';
-import { GridCell } from '@/components/three/SurfaceMesh';
+import type { TerrainDataContractV2 } from '@/lib/terrain/types';
 
-// Dynamically import Three.js 3D SurfaceMesh to ensure no SSR hydration mismatch
-const SurfaceMesh = dynamic(() => import('@/components/three/SurfaceMesh'), {
+// Dynamically import Three.js 3D terrain to ensure no SSR hydration mismatch
+const IntegratedDealerTerrain = dynamic(() => import('@/components/three/IntegratedDealerTerrain'), {
     ssr: false,
     loading: () => (
-        <div className="w-full h-[520px] rounded-2xl bg-[#06090e] border border-cyan-500/20 flex flex-col items-center justify-center gap-4 text-cyan-400">
+        <div className="w-full h-[620px] rounded-lg bg-[#06090e] border border-cyan-500/20 flex flex-col items-center justify-center gap-4 text-cyan-400">
             <div className="relative">
                 <div className="w-12 h-12 rounded-full border-2 border-cyan-500/20 border-t-cyan-400 animate-spin" />
                 <Cpu className="w-6 h-6 text-cyan-400 absolute top-3 left-3 animate-pulse" />
@@ -34,46 +31,12 @@ const SurfaceMesh = dynamic(() => import('@/components/three/SurfaceMesh'), {
     ),
 });
 
-interface DeribitResponse {
-    timestamp: string;
-    spotPrice: number;
-    summary: {
-        totalCallGex: number;
-        totalPutGex: number;
-        netGex: number;
-        totalOpenInterest: number;
-        gammaFlip: number;
-        maxPainStrike: number;
-        topPositiveGexStrike: number;
-        topNegativeGexStrike: number;
-        contractsCount: number;
-    };
-    expirations: string[];
-    strikes: number[];
-    surfaceGrid: GridCell[][];
-    topContracts: Array<{
-        instrument: string;
-        strike: number;
-        expiryStr: string;
-        dte: number;
-        type: 'call' | 'put';
-        openInterest: number;
-        iv: number;
-        delta: number;
-        gamma: number;
-        vanna: number;
-        charm: number;
-        gex: number;
-        volume: number;
-    }>;
-}
+type DeribitResponse = TerrainDataContractV2;
 
 export default function TerminalHome() {
     const [data, setData] = useState<DeribitResponse | null>(null);
-    const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
-    const [selectedMetric, setSelectedMetric] = useState<'gex' | 'openInterest' | 'iv' | 'gamma'>('gex');
 
     const fetchData = useCallback(async (isManual = false) => {
         if (isManual) setRefreshing(true);
@@ -87,17 +50,21 @@ export default function TerminalHome() {
         } catch (err) {
             console.error('Failed to load Deribit feed:', err);
         } finally {
-            setLoading(false);
             setRefreshing(false);
         }
     }, []);
 
     useEffect(() => {
-        fetchData();
+        const initialFetch = window.setTimeout(() => {
+            void fetchData();
+        }, 0);
         const interval = setInterval(() => {
-            fetchData();
+            void fetchData();
         }, 20000); // 20s auto-refresh
-        return () => clearInterval(interval);
+        return () => {
+            window.clearTimeout(initialFetch);
+            clearInterval(interval);
+        };
     }, [fetchData]);
 
     const formatCurrency = (val: number) => {
@@ -277,13 +244,7 @@ export default function TerminalHome() {
 
                     {/* 3D Canvas Mesh */}
                     {data && (
-                        <SurfaceMesh
-                            surfaceGrid={data.surfaceGrid}
-                            spotPrice={data.spotPrice}
-                            strikes={data.strikes}
-                            expirations={data.expirations}
-                            selectedMetric={selectedMetric}
-                        />
+                        <IntegratedDealerTerrain data={data} />
                     )}
                 </div>
 
