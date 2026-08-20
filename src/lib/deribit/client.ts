@@ -9,6 +9,7 @@ const DERIBIT_BASE_URL = 'https://www.deribit.com/api/v2/public';
 const BTC_INDEX_URL = `${DERIBIT_BASE_URL}/get_index_price?index_name=btc_usd`;
 const BTC_OPTIONS_BOOK_URL = `${DERIBIT_BASE_URL}/get_book_summary_by_currency?currency=BTC&kind=option`;
 const REVALIDATE_SECONDS = 15;
+const CHAIN_CACHE_TTL_MS = REVALIDATE_SECONDS * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 
 export const FALLBACK_SPOT_PRICE = 69000 as Usd;
@@ -25,6 +26,14 @@ export class DeribitUpstreamError extends Error {
         this.name = 'DeribitUpstreamError';
     }
 }
+
+interface DeribitChainCacheEntry {
+    readonly expiresAtMs: number;
+    readonly chain: NormalizedDeribitChain;
+}
+
+let chainCache: DeribitChainCacheEntry | null = null;
+let inFlightChain: Promise<NormalizedDeribitChain> | null = null;
 
 function requestSignal(): AbortSignal | undefined {
     const abortSignal = AbortSignal as typeof AbortSignal & {
@@ -62,6 +71,29 @@ async function fetchJson(url: string): Promise<unknown> {
 }
 
 export async function fetchDeribitOptionChain(now: Date): Promise<NormalizedDeribitChain> {
+    const requestTimeMs = Date.now();
+    if (chainCache && chainCache.expiresAtMs > requestTimeMs) {
+        return chainCache.chain;
+    }
+
+    if (inFlightChain) return inFlightChain;
+
+    inFlightChain = fetchFreshDeribitOptionChain(now)
+        .then((chain) => {
+            chainCache = {
+                chain,
+                expiresAtMs: requestTimeMs + CHAIN_CACHE_TTL_MS,
+            };
+            return chain;
+        })
+        .finally(() => {
+            inFlightChain = null;
+        });
+
+    return inFlightChain;
+}
+
+async function fetchFreshDeribitOptionChain(now: Date): Promise<NormalizedDeribitChain> {
     const [indexResult, bookPayload] = await Promise.all([
         fetchJson(BTC_INDEX_URL).catch(() => null),
         fetchJson(BTC_OPTIONS_BOOK_URL),
@@ -87,4 +119,9 @@ export async function fetchDeribitOptionChain(now: Date): Promise<NormalizedDeri
         spotPrice,
         options,
     };
+}
+
+export function clearDeribitOptionChainCacheForTests(): void {
+    chainCache = null;
+    inFlightChain = null;
 }

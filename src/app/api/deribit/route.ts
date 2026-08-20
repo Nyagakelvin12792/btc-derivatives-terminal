@@ -3,6 +3,8 @@ import { FALLBACK_SPOT_PRICE, fetchDeribitOptionChain } from '@/lib/deribit/clie
 import type { NormalizedDeribitOption, OptionType } from '@/lib/deribit/types';
 import { calculateGreeks, calculateNetGEX } from '@/lib/quant/engine';
 
+const DERIBIT_RESPONSE_CACHE_CONTROL = 'public, max-age=5, s-maxage=15, stale-while-revalidate=30';
+
 interface OptionPoint {
     instrument: string;
     strike: number;
@@ -52,10 +54,18 @@ export async function GET() {
 
     try {
         const chain = await fetchDeribitOptionChain(now);
-        return NextResponse.json(buildDeribitSurfaceResponse(chain.options, chain.spotPrice, now));
+        return NextResponse.json(buildDeribitSurfaceResponse(chain.options, chain.spotPrice, now), {
+            headers: {
+                'Cache-Control': DERIBIT_RESPONSE_CACHE_CONTROL,
+            },
+        });
     } catch (err: unknown) {
         console.error('Error fetching Deribit data:', err);
-        return NextResponse.json(generateSyntheticDerivativesData(FALLBACK_SPOT_PRICE));
+        return NextResponse.json(generateSyntheticDerivativesData(FALLBACK_SPOT_PRICE), {
+            headers: {
+                'Cache-Control': 'no-store',
+            },
+        });
     }
 }
 
