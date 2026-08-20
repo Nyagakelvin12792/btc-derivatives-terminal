@@ -1,10 +1,15 @@
-// Standard normal probability density function (PDF)
+import type { OptionType } from '@/lib/deribit/types';
+
+// Standard normal probability density function (PDF).
 export function normalPDF(x: number): number {
+    if (!Number.isFinite(x)) return 0;
     return (1 / Math.sqrt(2 * Math.PI)) * Math.exp(-0.5 * x * x);
 }
 
-// Approximation of the cumulative normal distribution function (CDF)
+// Approximation of the cumulative normal distribution function (CDF).
 export function normalCDF(x: number): number {
+    if (!Number.isFinite(x)) return x > 0 ? 1 : 0;
+
     const a1 = 0.254829592;
     const a2 = -0.284496736;
     const a3 = 1.421413741;
@@ -33,9 +38,19 @@ export function calculateGreeks(
     tte: number,
     iv: number,
     rate: number,
-    type: 'call' | 'put'
+    type: OptionType
 ): GreeksResult {
-    if (tte <= 0 || iv <= 0 || spot <= 0 || strike <= 0) {
+    if (
+        !Number.isFinite(spot) ||
+        !Number.isFinite(strike) ||
+        !Number.isFinite(tte) ||
+        !Number.isFinite(iv) ||
+        !Number.isFinite(rate) ||
+        tte <= 0 ||
+        iv <= 0 ||
+        spot <= 0 ||
+        strike <= 0
+    ) {
         return { delta: 0, gamma: 0, vanna: 0, charm: 0 };
     }
 
@@ -46,18 +61,10 @@ export function calculateGreeks(
     const nd1 = normalCDF(d1);
     const npd1 = normalPDF(d1);
 
-    // Delta
     const delta = type === 'call' ? nd1 : nd1 - 1;
-
-    // Gamma (identical for calls and puts)
     const gamma = npd1 / (spot * iv * sqrtT);
-
-    // Vanna (∂Delta / ∂IV)
     const vanna = (-npd1 * d2) / iv;
-
-    // Charm (∂Delta / ∂Time)
-    const charmCall = -npd1 * ((rate / (iv * sqrtT)) - (d2 / (2 * tte)));
-    const charm = type === 'call' ? charmCall : charmCall;
+    const charm = -npd1 * ((rate / (iv * sqrtT)) - (d2 / (2 * tte)));
 
     return { delta, gamma, vanna, charm };
 }
@@ -66,8 +73,19 @@ export function calculateNetGEX(
     gamma: number,
     openInterest: number,
     spot: number,
-    type: 'call' | 'put'
+    type: OptionType
 ): number {
-    const dollarGex = gamma * openInterest * (spot * spot);
+    if (
+        !Number.isFinite(gamma) ||
+        !Number.isFinite(openInterest) ||
+        !Number.isFinite(spot) ||
+        gamma < 0 ||
+        openInterest < 0 ||
+        spot <= 0
+    ) {
+        return 0;
+    }
+
+    const dollarGex = gamma * openInterest * (spot * spot) * 0.01;
     return type === 'call' ? dollarGex : -dollarGex;
 }
