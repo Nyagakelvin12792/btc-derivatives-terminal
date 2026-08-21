@@ -1,68 +1,60 @@
 ﻿>>> COMPLETED BY: Codex
->>> STATUS: COMPLETE
->>> ROUND: C1.2
+>>> STATUS: REVIEW REQUIRED
+>>> ROUND: RENDERER-R1A.3
 >>> BRANCH: agent/codex
->>> COMMIT: 50e0faaac8644a469b153cc68dad9520dd7ed371
->>> TESTS: PASS - npx.cmd vitest run (6 files, 36 tests); PASS - targeted ESLint on touched terrain and Deribit API contract files; PASS - npm.cmd run build
+>>> COMMIT: 10a219108911e5c5a605a7ea4db0c054109ecf25
+>>> TESTS: PASS - npx.cmd vitest run (7 files, 47 tests); PASS - targeted ESLint on renderer/terrain changed files; PASS - npm.cmd run build
 >>> CONTRACT VERSION: 2
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Audit Codex displayed terrain scope fix before Architect Gate A1
->>> TARGET: src/app/api/deribit/README.md, src/lib/terrain/engine.ts, src/lib/terrain/engine.test.ts
+>>> ACTION REQUIRED: Audit TerrainViewportModel dynamic axis contract for Gemini fixed HUD/SVG overlay integration
+>>> TARGET: src/components/three/terrain/viewport.ts, src/components/three/IntegratedDealerTerrain.tsx, src/components/three/terrain/axes.ts, src/components/three/terrain/scales.test.ts, src/lib/terrain/engine.ts, src/lib/terrain/engine.test.ts
 
 ## Implementation Summary
-- Applied the Architect C1.2 displayed surface scope correction without modifying Gemini-owned UI files.
-- Terrain construction now determines the displayed expiry set first using the existing nearest-10-expiries policy.
-- The displayed strike axis is now derived only from contracts whose expiry belongs to that displayed expiry set.
-- Surface-cell aggregation and visible GEX/Vanna/Charm/OI scale calculation now use only the displayed-expiry subset.
-- Full-chain structural analytics remain on the complete active option chain: Call Wall, Put Wall, portfolio Gamma Flip, and Max Pain by expiry.
-- Updated `/api/deribit` contract documentation to clarify displayed surface scope versus full-chain structural analytics.
+- Added `TerrainViewportModel` in `src/components/three/terrain/viewport.ts` for fixed screen-space HUD/SVG axis rendering by Gemini.
+- The viewport model exposes visible Strike, DTE, and Exposure domains, normalized tick positions, formatted tick labels, semantic `zoomLevel`, and structural anchor positions.
+- Added semantic zoom and pan helpers: `zoomTerrainViewport()` and `panTerrainViewport()`.
+- Wired `IntegratedDealerTerrain` to compute the viewport model and expose it through optional `onViewportChange` without breaking existing Gemini props.
+- Kept current renderer modes intact: GEX, Vanna, Charm, Combined disabled.
 
-## Mathematical Verification
-- Visible terrain scales now describe exactly the aggregated Strike x Expiry cells shown in `surfaceGrid`.
-- Hidden expiries cannot distort displayed GEX, Vanna, Charm, or OI scale bounds.
-- Hidden-expiry-only strikes cannot create empty visible X-axis columns.
-- Full-chain Call Wall and Put Wall still aggregate across the complete active chain.
-- Full-chain Gamma Flip still revalues the complete active chain across the hypothetical spot curve.
-- Max Pain by expiry still uses the complete active chain and may include expiries outside the displayed terrain subset.
+## Root Cause / Data Diagnosis
+- R1A.2 diagnosis found CASE B for the flat terrain: the DEMO Contract V2 option fixture was symmetric by strike/DTE/type, so call and put exposures canceled every displayed cell.
+- Previous DEMO diagnostics: 42 cells, 42 observed, 0 unobserved; GEX/Vanna/Charm min and max all 0; robustAbsMax all 1; Spot, Gamma Flip, Call Wall, Put Wall, and Max Pain all collapsed at 69000.
+- The DEMO fixture is now asymmetric while remaining explicitly `dataMode: DEMO`; LIVE quantitative calculations were not changed.
 
-## API Contract
-- Terrain Data Contract V2 remains `schemaVersion: 2` and `assumptionModel: OI_SIGN_PROXY_V1`.
-- `expirations` is the displayed expiry set: nearest 10 expiries.
-- `strikes` is scoped to contracts within displayed expiries only.
-- `surfaceGrid`, `confluenceFloor`, `vannaContours`, `charmGlyphs`, and returned `scales` are display-scoped.
-- `keyLevels.callWall`, `keyLevels.putWall`, `keyLevels.gammaFlip`, and `maxPainByExpiry` remain full-chain analytics.
+## Viewport / Axis Contract
+- `TerrainViewportModel.metric`: `gex | vanna | charm | combined`.
+- `strikeDomain`, `dteDomain`, and `exposureDomain` describe the currently visible quantitative chart domain.
+- `strikeTicks`, `dteTicks`, and `exposureTicks` expose `{ value, normalizedPosition, label }` for fixed HUD axes where `0 -> 1` maps to screen axis position.
+- Zoom narrows domains around a focus value; pan shifts the domain center and clamps to full data bounds.
+- Structural anchors expose label, strike, priority, `normalizedPosition`, and `inDomain` for Spot, Gamma Flip, Call Wall, Put Wall, and Max Pain.
 
-## Files Changed
-- `src/app/api/deribit/README.md`
-- `src/lib/terrain/engine.ts`
-- `src/lib/terrain/engine.test.ts`
-- `.agents/handoffs/codex.md`
+## Renderer Changes
+- Added optional `onViewportChange?: (viewport: TerrainViewportModel) => void` to the existing terrain component interface.
+- Existing dashboard integration remains compatible: `data`, `selectedStrike`, `selectedDte`, `onSelectStrike`, and `onSelectPoint` are unchanged.
+- Current internal geometry/tick mapping reads from the same viewport model so terrain domain and axis domain share one source of truth.
+- No Combined mode, Vanna contour overlay, Charm glyph overlay, confluence floor, Web Worker, or new dashboard module was implemented.
+
+## DEMO Fixture Changes
+- DEMO option generation now uses multiple DTEs and strikes with asymmetric call/put OI and IV distributions.
+- The fixture now produces positive and negative GEX, positive and negative Vanna, positive and negative Charm, distinct structural levels, and nonzero robust scales.
+- DEMO remains explicit through `dataMode: DEMO` and `assumptionModel: OI_SIGN_PROXY_V1`.
 
 ## Tests Added
-- Regression test that an excluded-expiry huge exposure does not alter visible GEX/Vanna/Charm/OI scales.
-- Regression test that a hidden-expiry-only strike is absent from the displayed strike axis.
-- Regression test that full-chain Gamma Flip matches direct full-chain calculation.
-- Regression test that full-chain Call Wall and Put Wall remain influenced by hidden-expiry contracts.
-- Regression test that the displayed surface grid remains rectangular after scope filtering.
+- Added viewport contract tests for normalized HUD ticks, semantic zoom, pan behavior, and structural anchor labels/positions.
+- Added DEMO-data regression test requiring positive/negative GEX, Vanna, Charm, nonzero robust scales, all observed DEMO cells, and non-collapsed structural strikes.
 
 ## Tests Executed
-- `npx.cmd vitest run`: PASS, 6 files, 36 tests.
-- `npm.cmd run lint -- src/lib/terrain/engine.ts src/lib/terrain/engine.test.ts src/lib/terrain/types.ts src/app/api/deribit/route.ts src/app/api/deribit/route.test.ts`: PASS.
+- `npx.cmd vitest run src/components/three/terrain/scales.test.ts src/lib/terrain/engine.test.ts`: PASS, 2 files, 25 tests.
+- `npx.cmd vitest run`: PASS, 7 files, 47 tests.
+- `npm.cmd run lint -- src/components/three/IntegratedDealerTerrain.tsx src/components/three/terrain/axes.ts src/components/three/terrain/scales.test.ts src/components/three/terrain/viewport.ts src/lib/terrain/engine.ts src/lib/terrain/engine.test.ts`: PASS.
 - `npm.cmd run build`: PASS.
 
-## Security / Resilience Findings
-- No Gemini-owned dashboard or visualization files were modified.
-- Displayed terrain no longer creates misleading empty strike columns from hidden far expiries.
-- Hidden expiry outliers no longer compress or distort visible terrain intensity interpretation.
-- Full-chain structural analytics preserve analytical completeness while the rendered surface stays scoped to displayed data.
-
 ## Known Limitations
-- The displayed expiry policy remains the existing nearest-10-expiries rule; no dynamic viewport or user-selected expiry window was added.
-- `keyContracts` still uses the returned display-scoped scales for intensity fields; raw exposure values remain available for full-chain contract ranking.
-- `OI_SIGN_PROXY_V1` remains a deterministic proxy and does not represent observed dealer inventory.
+- Fixed screen-space HUD/SVG axis rendering itself is intentionally left to Gemini; Codex only provides the dynamic mathematical viewport contract.
+- Existing Three.js world-space labels remain as interim renderer labels, but the new contract is the primary integration path for final fixed axes.
+- R1A.3 did not implement additional visual redesign or R1B overlays.
 
 ## Gemini Integration Requirements
-- Treat `expirations`, `strikes`, and `surfaceGrid` as one coherent displayed terrain subset.
-- Use returned `scales` only to explain the visible 3D terrain, not hidden expiries.
-- Continue rendering key levels as full-chain analytics; Call Wall, Put Wall, and Gamma Flip may point to strikes not present in the displayed surface axis.
-- If a key level strike is not in `strikes`, render it as an off-surface/full-chain marker or label rather than forcing a new terrain column.
+- Gemini should consume `TerrainViewportModel` for fixed HUD/SVG axes instead of deriving primary labels from Three.js text sprites.
+- HUD axes should keep a stable screen frame while updating tick values from `strikeTicks`, `dteTicks`, and `exposureTicks`.
+- Gemini should keep terrain viewport domains and HUD domains synchronized through `onViewportChange` or an equivalent shared-state bridge.

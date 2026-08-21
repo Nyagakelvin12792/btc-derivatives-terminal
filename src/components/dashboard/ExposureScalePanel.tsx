@@ -2,9 +2,11 @@
 
 import React from 'react';
 import { formatGex } from '@/lib/dashboard/adapters';
+import type { ExposureScales } from '@/lib/dashboard/types';
+import type { TerrainScales } from '@/lib/terrain/types';
 
 interface ExposureScalePanelProps {
-    scales: any;
+    scales: Partial<TerrainScales & ExposureScales> | any;
 }
 
 export default function ExposureScalePanel({ scales }: ExposureScalePanelProps) {

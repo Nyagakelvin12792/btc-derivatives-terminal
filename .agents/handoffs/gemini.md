@@ -1,7 +1,7 @@
-# GEMINI HANDOFF REPORT — ROUND G2
+# GEMINI HANDOFF REPORT — ROUND G2.1
 
 - **Agent**: Gemini / Antigravity (Visualization UI and QA Lead)
-- **Milestone**: Dealer Pressure Terrain Visualization (Round G2)
+- **Milestone**: Reference-Matched Quantitative Terrain UI & Fixed Screen-Space Axes (Round G2.1)
 - **Branch**: `agent/gemini`
 - **Contract Version**: 2
 - **Status**: COMPLETE
@@ -10,75 +10,62 @@
 
 ## 1. Summary of Accomplishments
 
-Per the Architect's Round G2 Specification:
+Per the Architect's Task Specification for G2.1 and R1A.3 Addendum:
 
-1. **3D Dealer Pressure Terrain Engine (`IntegratedDealerTerrain.tsx`)**:
-   - **GEX Physical Elevation**: Raised Green Mountains ($+GEX$ stabilizing dealer gamma) and lowered Red Canyons ($-GEX$ accelerating dealer gamma), strictly normalized by `scales.gex.robustAbsMax`. Zero plane clearly demarcated with cyan borders.
-   - **True Vanna Contours**: Direct 3D polyline projection of Codex `vannaContours` derived via marching squares, color-graded into positive magenta (`#d946ef`), negative indigo (`#6366f1`), and neutral violet (`#a855f7`) with intensity-scaled opacity.
-   - **True Charm Hedge Pressure Glyphs**: Directional streamlines rendered from Codex `charmGlyphs`, with orientation determined by `glyph.hedgeDirection` (`BUY_HEDGE` vs `SELL_HEDGE`) and length/brightness scaled by `glyph.intensity`.
-   - **Confluence Pressure Floor**: Flat analytical floor at $Y = -MAX\_HEIGHT - 1.2$ rendering the Codex `confluenceFloor` grid with intensity hotspot glow (0–100 score).
-   - **Three Independent Exposure Scales**: Visible, readable gauges displaying GEX ($USD / 1\% \text{ move}$), Vanna ($USD / 1 \text{ vol point}$), and Charm ($USD / \text{day decay}$) with intensity bands (`LOW`, `MEDIUM`, `HIGH`, `EXTREME`).
-   - **Non-Overlapping Landmark Banners**: Prioritized labels for `SPOT PRICE`, `GAMMA FLIP`, `CALL WALL`, `PUT WALL`, and `MAX PAIN` with edge indicators (`OFF-SURFACE →` / `← FULL-CHAIN LEVEL`) when full-chain strikes exceed terrain bounds.
-   - **Interactive Raycasting Tooltip**: Displays full contract metrics on observed cells (GEX, Vanna, Charm, Intensities, Confluence, OI, IV, Delta, Behavior Zone) and explicitly marks `NO DIRECT CONTRACT OBSERVATION` on unobserved cells.
+1. **Fixed Screen-Space Axes Frame**:
+   - **Y-Axis on Left**: Permanent screen-space HUD overlay displaying active metric title (`GEX EXPOSURE`, `VANNA EXPOSURE`, `CHARM EXPOSURE`), semantic units (`USD / 1% BTC MOVE`, `USD / 1 VOL POINT`, `USD / CALENDAR DAY`), and dynamic numerical ticks from Codex `viewport.exposureTicks` (e.g. `+$4B`, `+$2B`, `$0`, `-$2B`, `-$4B`).
+   - **Strike X-Axis on Bottom**: Fixed frame with `STRIKE PRICE (USD)` title and dynamic strike ticks from Codex `viewport.strikeTicks`.
+   - **DTE Z-Axis along Receding Edge**: Fixed/depth-aligned DTE axis with dynamic ticks from Codex `viewport.dteTicks` (`1d`, `7d`, `14d`, `30d`, `60d`, `90d`, `180d`, `365d`).
+   - **Bottom Gradient Bar**: Direct exposure range indicator (`-Bound` to `+Bound`) matching active metric domain.
 
-2. **ECharts Analytical Workspaces (`EChartsWorkspaces.tsx`)**:
-   - Integrated ECharts for all secondary analytical workspaces:
-     - **GEX Analysis**: Strike GEX profile bar chart + Strike $\times$ Expiry GEX heatmap.
-     - **Vanna Workspace**: Vanna exposure strike profile + strike sensitivity breakdown.
-     - **Charm Workspace**: Charm time-decay drift profile (USD/day).
-     - **Open Interest Workspace**: Stacked Call vs Put OI distribution by strike.
-   - Fully synchronized with shared selection state.
+2. **Semantic Viewport Zoom via Mouse-Wheel**:
+   - Integrated Codex viewport helpers (`createTerrainViewportModel`, `zoomTerrainViewport`, `panTerrainViewport`).
+   - Mouse-wheel on 3D canvas triggers semantic data domain narrowing/expansion.
+   - Fixed screen-space axes frame remains pinned in the exact same location while numerical tick values update dynamically.
+   - Constrained OrbitControls camera dolly to prevent desynchronization between camera distance and quantitative axes.
+   - Dedicated `RESET` button restores default full-domain viewport and camera perspective.
 
-3. **TanStack Table Infrastructure (`TanStackTables.tsx`)**:
-   - Multi-column sortable, searchable, and filterable tables for:
-     - **Confluence Levels**: Ranked dealer importance levels with behavior zone classification.
-     - **Key Option Contracts**: Searchable option chains with Call/Put filtering and row selection highlighting.
+3. **Metric Modes & Visual Hierarchy**:
+   - **GEX Mode (Default)**: Positive green mountains (stabilizing gamma) / negative red canyons (accelerating gamma).
+   - **Vanna Mode**: Positive magenta/pink terrain / negative indigo/purple terrain.
+   - **Charm Mode**: Amber/orange sign-aware daily delta drift terrain.
+   - **Combined Mode**: GEX physical terrain base + true Vanna contours + Charm directional hedge-pressure glyphs + Confluence floor + Structural markers.
 
-4. **Shared State & TanStack Query (`store.ts`, `queries.ts`, `providers.tsx`)**:
-   - Zustand store synchronizing `selectedStrike`, `selectedExpiry`, `selectedDte`, `activeWorkspace`, and `visibleLayers`.
-   - TanStack Query polling `/api/deribit` with caching, retry logic, and fallback DEMO / DEGRADED error handling.
-   - Zod runtime validation boundary verifying incoming Contract V2 payloads.
+4. **Right-Hand Metric Summary Card**:
+   - Dynamic summary panel reflecting active mode (`GEX SUMMARY`, `VANNA SUMMARY`, `CHARM SUMMARY`, `COMBINED INSIGHTS`).
+   - Sub-layer toggles for Vanna Contours, Charm Glyphs, and Confluence Floor in Combined mode.
 
-5. **Institutional Five-Second Visual Acceptance**:
-   - Maintained prominent `HowToReadMapPanel` (5 short plain-language lines).
-   - Institutional dark terminal aesthetic with zero video-game neon clutter.
-   - Verified across desktop resolutions (1920x1080, 1440x900, 1366x768) with 0 horizontal overflow.
+5. **Structural Landmark Banners**:
+   - High-contrast 3D poles and screen banners for `SPOT PRICE`, `GAMMA FLIP`, `CALL WALL`, `PUT WALL`, and `MAX PAIN`.
 
 ---
 
-## 2. Files Changed & Added
+## 2. Visual Verification Artifacts (1440x900, 1920x1080, 1366x768)
 
-### Modified
-- `src/components/three/IntegratedDealerTerrain.tsx`: Complete 3D visualization upgrade to Contract V2 primitives.
-- `src/components/dashboard/Workspaces.tsx`: Integrated ECharts workspaces and TanStack tables.
-- `src/components/dashboard/ExposureScalePanel.tsx`: Support for Codex Contract V2 `TerrainScales`.
-- `src/lib/dashboard/adapters.ts`: Contract V2 key-level profile extractor & safe scale calculations.
-- `src/app/page.tsx`: Main page orchestrating TanStack Query, Zustand, 3D Terrain, and workspaces.
-- `src/app/layout.tsx`: Root layout with `Providers` wrapper and updated terminal metadata.
-
-### Added
-- `src/components/dashboard/EChartsWorkspaces.tsx`: ECharts implementations for GEX, Vanna, Charm, and OI.
-- `src/components/dashboard/TanStackTables.tsx`: Sortable/filterable Confluence and Contracts tables.
-- `src/lib/dashboard/store.ts`: Zustand store for terminal state management.
-- `src/lib/dashboard/queries.ts`: TanStack Query hooks & Zod validation boundary.
-- `src/app/providers.tsx`: React Query provider wrapper.
+- **GEX Default Zoom (1440x900)**: `gex_default_zoom_1440x900.png`
+- **GEX Zoomed Near Spot (1440x900)**: `gex_zoomed_near_spot_1440x900.png` (demonstrates stationary axis frame with updated tick values)
+- **Vanna Mode (1440x900)**: `vanna_mode_1440x900.png`
+- **Charm Mode (1440x900)**: `charm_mode_1440x900.png`
+- **Combined Mode (1440x900)**: `combined_mode_1440x900.png`
+- **Terminal Viewport (1920x1080)**: `terminal_1920x1080.png`
+- **Terminal Viewport (1366x768)**: `terminal_1366x768.png`
 
 ---
 
-## 3. Test & Verification Results
+## 3. Test & Build Results
 
-- **Unit Tests**: `npx vitest run` passed (36/36 tests across 6 test suites).
-- **Production Build**: `npm run build` compiled cleanly via Turbopack with 0 TypeScript/WebGL errors.
-- **Browser Visual Verification**: Verified at 1920x1080 with 0 console errors and clean selection synchronization.
+- **Unit Tests**: `npx vitest run` passed (47/47 tests across 7 test suites).
+- **Production Build**: `npm run build` compiled successfully via Next.js Turbopack (0 errors).
+- **Console Integrity**: 0 runtime console errors.
 
 ---
 
 >>> COMPLETED BY: Gemini
 >>> STATUS: COMPLETE
->>> ROUND: G2
+>>> ROUND: G2.1
 >>> BRANCH: agent/gemini
->>> COMMIT: 756c371
+>>> COMMIT: pending commit
 >>> CONTRACT VERSION: 2
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Gate A2 Review & Merge to main
+>>> ACTION REQUIRED: Gate A2.1 Review & Merge to main
 >>> TARGET: `src/components/three/IntegratedDealerTerrain.tsx`, `src/app/page.tsx`, `src/components/dashboard/`

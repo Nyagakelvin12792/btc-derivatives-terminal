@@ -185,6 +185,34 @@ describe('Terrain Data Contract V2', () => {
         expect(response.summary.contractsCount).toBeGreaterThan(0);
     });
 
+    it('builds a visually useful DEMO terrain surface with non-degenerate exposures and structural levels', () => {
+        const response = buildDemoTerrainDataContract(69000, now);
+        const cells = response.surfaceGrid.flat();
+        const gexValues = cells.map((cell) => cell.gexExposure);
+        const vannaValues = cells.map((cell) => cell.vannaExposure);
+        const charmValues = cells.map((cell) => cell.charmExposure);
+        const structuralStrikes = [
+            response.spotPrice,
+            response.keyLevels.gammaFlip.strike,
+            response.keyLevels.callWall.strike,
+            response.keyLevels.putWall.strike,
+            response.keyLevels.primaryMaxPain?.strike ?? response.spotPrice,
+        ];
+
+        expect(cells.filter((cell) => cell.observed)).toHaveLength(cells.length);
+        expect(gexValues.some((value) => value > 0)).toBe(true);
+        expect(gexValues.some((value) => value < 0)).toBe(true);
+        expect(vannaValues.some((value) => value > 0)).toBe(true);
+        expect(vannaValues.some((value) => value < 0)).toBe(true);
+        expect(charmValues.some((value) => value > 0)).toBe(true);
+        expect(charmValues.some((value) => value < 0)).toBe(true);
+        expect(Math.max(...charmValues) - Math.min(...charmValues)).toBeGreaterThan(1000);
+        expect(response.scales.gex.robustAbsMax).toBeGreaterThan(1e6);
+        expect(response.scales.vanna.robustAbsMax).toBeGreaterThan(1e4);
+        expect(response.scales.charm.robustAbsMax).toBeGreaterThan(1e3);
+        expect(new Set(structuralStrikes).size).toBeGreaterThanOrEqual(4);
+    });
+
     it('preserves explicit DEGRADED metadata when requested by the API layer', () => {
         const response = buildTerrainDataContract({
             spotPrice: 68000,

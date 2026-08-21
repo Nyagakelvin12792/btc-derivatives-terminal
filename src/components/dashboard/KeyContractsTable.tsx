@@ -48,8 +48,8 @@ export default function KeyContractsTable({
                 return true;
             })
             .sort((a, b) => {
-                let valA = a[sortField];
-                let valB = b[sortField];
+                const valA = a[sortField];
+                const valB = b[sortField];
 
                 if (typeof valA === 'string') {
                     return sortAsc ? valA.localeCompare(String(valB)) : String(valB).localeCompare(valA);

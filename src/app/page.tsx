@@ -21,7 +21,8 @@ import {
 import { useTerminalStore } from '@/lib/dashboard/store';
 import { useTerrainQuery } from '@/lib/dashboard/queries';
 import { createCanonicalDashboardData, extractKeyLevelProfileFromContractV2 } from '@/lib/dashboard/adapters';
-import { TerrainDataContractV2 } from '@/lib/terrain/types';
+import type { DealerEnvironmentSummaryData } from '@/lib/dashboard/types';
+import type { TerrainDataContractV2 } from '@/lib/terrain/types';
 import { Info, AlertTriangle, ShieldAlert } from 'lucide-react';
 
 // Dynamically import 3D WebGL component to guarantee client-only execution
@@ -53,7 +54,7 @@ export default function TerminalPage() {
     } = useTerminalStore();
 
     // Query live or demo terrain data using TanStack Query
-    const { data: queryData, isLoading, isError, error } = useTerrainQuery(dataMode);
+    const { data: queryData, isError } = useTerrainQuery(dataMode);
 
     // Fallback data when loading or in demo mode
     const fallbackDemoData = useMemo(() => createCanonicalDashboardData('DEMO') as unknown as TerrainDataContractV2, []);
@@ -65,7 +66,7 @@ export default function TerminalPage() {
     }, [data, currentStrike]);
 
     // Adapt summary data for legacy header components if needed
-    const summaryData = useMemo(() => {
+    const summaryData = useMemo<DealerEnvironmentSummaryData>(() => {
         return {
             ...data.summary,
             spotPrice: data.spotPrice || 68000,
@@ -115,7 +116,7 @@ export default function TerminalPage() {
             <div className="flex-1 flex flex-col h-screen overflow-y-auto overflow-x-hidden">
                 {/* Top Ticker Metric Bar */}
                 <TopTickerBar
-                    summary={summaryData as any}
+                    summary={summaryData}
                     onToggleDataMode={(mode) => setDataMode(mode)}
                 />
 
@@ -157,7 +158,7 @@ export default function TerminalPage() {
 
                                 <div className="xl:col-span-3 w-full space-y-3">
                                     <DealerEnvironmentSummary
-                                        summary={summaryData as any}
+                                        summary={summaryData}
                                         onSelectStrike={setSelectedStrike}
                                     />
                                     <KeyLevelProfile

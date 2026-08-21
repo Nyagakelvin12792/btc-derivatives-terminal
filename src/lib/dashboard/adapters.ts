@@ -7,8 +7,10 @@ import {
     KeyLevelProfileData,
     ExposureScales,
     DataMode,
+    IntensityBand,
     DealerBehaviorZone,
 } from './types';
+import type { TerrainDataContractV2 } from '@/lib/terrain/types';
 
 export function formatUsd(val: number | null | undefined, options?: { showSign?: boolean; decimals?: number; unit?: 'B' | 'M' | 'K' | 'auto' }): string {
     if (val === null || val === undefined || isNaN(val)) return 'N/A';
@@ -748,7 +750,7 @@ export function adaptApiResponseToDashboardData(raw: unknown, requestedMode: Dat
  * Zero UI mathematical derivations — purely extracts Codex-supplied values.
  */
 export function extractKeyLevelProfileFromContractV2(
-    contract: any,
+    contract: TerrainDataContractV2 & { keyLevelProfiles?: Record<number, KeyLevelProfileData> } | any,
     strike: number
 ): KeyLevelProfileData {
     const spot = contract.spotPrice || 68000;
@@ -768,9 +770,9 @@ export function extractKeyLevelProfileFromContractV2(
     let maxCharmInt = 0;
     let maxConfluence = 0;
     let dominantZone: DealerBehaviorZone = 'NEUTRAL';
-    let gexBand: any = 'LOW';
-    let vannaBand: any = 'LOW';
-    let charmBand: any = 'LOW';
+    let gexBand: IntensityBand = 'LOW';
+    let vannaBand: IntensityBand = 'LOW';
+    let charmBand: IntensityBand = 'LOW';
 
     if (Array.isArray(contract.surfaceGrid)) {
         for (const row of contract.surfaceGrid) {

@@ -46,6 +46,10 @@ export interface ExposureScales {
     gexMeta?: MetricScaleMeta;
     vannaMeta?: MetricScaleMeta;
     charmMeta?: MetricScaleMeta;
+    gex?: MetricScaleMeta;
+    vanna?: MetricScaleMeta;
+    charm?: MetricScaleMeta;
+    openInterest?: MetricScaleMeta;
 }
 
 export interface DealerEnvironmentSummaryData {

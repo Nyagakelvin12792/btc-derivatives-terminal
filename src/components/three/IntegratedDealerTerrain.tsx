@@ -1,20 +1,41 @@
 'use client';
 
-import React, { useEffect, useRef, useState, useMemo, useCallback } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import { Info, Maximize2, RotateCcw, Play, Pause, Eye, Check, Target, Compass } from 'lucide-react';
 import {
+    RotateCcw,
+    Compass,
+    Layers,
+    Activity,
+    Zap,
+} from 'lucide-react';
+import type {
     TerrainDataContractV2,
     TerrainSurfaceCell,
     VannaContourPrimitive,
     CharmPressureGlyph,
     ConfluenceFloorCell,
-    TerrainScales,
-    TerrainKeyLevels,
-    DealerBehaviorZone,
 } from '@/lib/terrain/types';
-import { formatUsd, formatGex } from '@/lib/dashboard/adapters';
+import { createLinearMapperFromDomain, type LinearMapper } from './terrain/axes';
+import { colorForMetricValue, METRIC_PALETTES } from './terrain/colors';
+import {
+    buildInterpolatedRenderGrid,
+    nearestCell,
+    type RenderGrid,
+    type RenderSample,
+} from './terrain/interpolation';
+import { getMetricConfig, METRIC_CONFIGS, type TerrainMetric } from './terrain/metric';
+import { clampForDisplay, formatFinancialAxis, formatStrikeAxis } from './terrain/scales';
+import {
+    createTerrainViewportModel,
+    zoomTerrainViewport,
+    panTerrainViewport,
+    type TerrainViewportModel,
+    type TerrainAxisTick,
+    type StructuralAnchor,
+} from './terrain/viewport';
+import { formatGex, formatUsd } from '@/lib/dashboard/adapters';
 
 interface IntegratedDealerTerrainProps {
     data: TerrainDataContractV2;
@@ -22,979 +43,999 @@ interface IntegratedDealerTerrainProps {
     selectedDte?: number | null;
     onSelectStrike?: (strike: number) => void;
     onSelectPoint?: (cell: TerrainSurfaceCell) => void;
+    onViewportChange?: (viewport: TerrainViewportModel) => void;
 }
+
+interface HoverState {
+    cell: TerrainSurfaceCell;
+    metricValue: number;
+    screenX: number;
+    screenY: number;
+    isObserved: boolean;
+}
+
+type CameraMode = '3d' | 'top' | 'front';
+
+const WORLD_WIDTH = 24;
+const WORLD_DEPTH = 16;
+const WORLD_HEIGHT = 5.6;
+const FLOOR_Y = -WORLD_HEIGHT - 1.2;
 
 export default function IntegratedDealerTerrain({
     data,
-    selectedStrike,
-    selectedDte,
+    selectedStrike = null,
+    selectedDte = null,
     onSelectStrike,
     onSelectPoint,
+    onViewportChange,
 }: IntegratedDealerTerrainProps) {
     const containerRef = useRef<HTMLDivElement>(null);
-    const sceneRef = useRef<THREE.Scene | null>(null);
-    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
-    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
-    const controlsRef = useRef<OrbitControls | null>(null);
-    const rootGroupRef = useRef<THREE.Group | null>(null);
-    const animationFrameRef = useRef<number | null>(null);
+    const canvasContainerRef = useRef<HTMLDivElement>(null);
 
-    // Layer Visibility States
-    const [showGex, setShowGex] = useState(true);
-    const [showVanna, setShowVanna] = useState(true);
-    const [showCharm, setShowCharm] = useState(true);
-    const [showFloor, setShowFloor] = useState(true);
-    const [showSpot, setShowSpot] = useState(true);
-    const [showDealerLevels, setShowDealerLevels] = useState(true);
-    const [showZeroPlane, setShowZeroPlane] = useState(true);
-    const [showWireframe, setShowWireframe] = useState(true);
+    // Active Metric Mode (GEX, VANNA, CHARM, COMBINED)
+    const [activeMetric, setActiveMetric] = useState<TerrainMetric>('gex');
+    const [cameraMode, setCameraMode] = useState<CameraMode>('3d');
+    const [showWireframe, setShowWireframe] = useState(false);
     const [isRotating, setIsRotating] = useState(false);
-    const [viewMode, setViewMode] = useState<'3d' | '2d'>('3d');
+    const [showZeroPlane, setShowZeroPlane] = useState(true);
 
-    // Hover tooltip state
-    const [hoveredCell, setHoveredCell] = useState<TerrainSurfaceCell | null>(null);
-    const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
+    // Combined view sub-layers
+    const [showVannaContours, setShowVannaContours] = useState(true);
+    const [showCharmGlyphs, setShowCharmGlyphs] = useState(true);
+    const [showConfluenceFloor, setShowConfluenceFloor] = useState(true);
 
-    // Groups for selective rendering
-    const gexGroupRef = useRef<THREE.Group>(new THREE.Group());
-    const vannaGroupRef = useRef<THREE.Group>(new THREE.Group());
-    const charmGroupRef = useRef<THREE.Group>(new THREE.Group());
-    const floorGroupRef = useRef<THREE.Group>(new THREE.Group());
-    const spotGroupRef = useRef<THREE.Group>(new THREE.Group());
-    const levelsGroupRef = useRef<THREE.Group>(new THREE.Group());
+    // Viewport Model (Codex Contract)
+    const [viewport, setViewport] = useState<TerrainViewportModel>(() =>
+        createTerrainViewportModel(data, activeMetric)
+    );
+
+    // Update viewport when metric or data changes
+    useEffect(() => {
+        setViewport(createTerrainViewportModel(data, activeMetric));
+    }, [data, activeMetric]);
+
+    useEffect(() => {
+        onViewportChange?.(viewport);
+    }, [viewport, onViewportChange]);
+
+    // Hover state
+    const [hover, setHover] = useState<HoverState | null>(null);
+
+    // Three.js References
+    const sceneRef = useRef<THREE.Scene | null>(null);
+    const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
+    const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
+    const controlsRef = useRef<OrbitControls | null>(null);
+    const terrainMeshRef = useRef<THREE.Mesh | null>(null);
+    const wireframeMeshRef = useRef<THREE.Mesh | null>(null);
     const zeroPlaneGroupRef = useRef<THREE.Group>(new THREE.Group());
+    const contoursGroupRef = useRef<THREE.Group>(new THREE.Group());
+    const glyphsGroupRef = useRef<THREE.Group>(new THREE.Group());
+    const floorGroupRef = useRef<THREE.Group>(new THREE.Group());
+    const markersGroupRef = useRef<THREE.Group>(new THREE.Group());
     const selectionGroupRef = useRef<THREE.Group>(new THREE.Group());
 
-    // Sync visibility toggles
-    useEffect(() => { gexGroupRef.current.visible = showGex; }, [showGex]);
-    useEffect(() => { vannaGroupRef.current.visible = showVanna; }, [showVanna]);
-    useEffect(() => { charmGroupRef.current.visible = showCharm; }, [showCharm]);
-    useEffect(() => { floorGroupRef.current.visible = showFloor; }, [showFloor]);
-    useEffect(() => { spotGroupRef.current.visible = showSpot; }, [showSpot]);
-    useEffect(() => { levelsGroupRef.current.visible = showDealerLevels; }, [showDealerLevels]);
-    useEffect(() => { zeroPlaneGroupRef.current.visible = showZeroPlane; }, [showZeroPlane]);
+    const metricConfig = useMemo(() => getMetricConfig(activeMetric), [activeMetric]);
 
-    // Dimensions in Three.js world coordinates
-    const WORLD_WIDTH = 26;
-    const WORLD_DEPTH = 18;
-    const MAX_HEIGHT = 7.2;
-    const FLOOR_Y = -MAX_HEIGHT - 1.2;
+    // Linear mappers based on semantic viewport
+    const strikeMapper = useMemo(
+        () => createLinearMapperFromDomain(viewport.strikeDomain, WORLD_WIDTH),
+        [viewport.strikeDomain]
+    );
 
-    const {
-        surfaceGrid,
-        strikes,
-        dtes,
-        scales,
-        keyLevels,
-        vannaContours,
-        charmGlyphs,
-        confluenceFloor,
-        spotPrice,
-        dataMode,
-    } = data;
+    const dteMapper = useMemo(
+        () => createLinearMapperFromDomain(viewport.dteDomain, WORLD_DEPTH),
+        [viewport.dteDomain]
+    );
 
-    const gexScaleBound = (scales as any)?.gex?.robustAbsMax || (scales as any)?.gex?.max || (scales as any)?.gexMax || 1e9;
-    const vannaScaleBound = (scales as any)?.vanna?.robustAbsMax || (scales as any)?.vanna?.max || (scales as any)?.vannaMax || 1e8;
-    const charmScaleBound = (scales as any)?.charm?.robustAbsMax || (scales as any)?.charm?.max || (scales as any)?.charmMax || 1e8;
+    const exposureBound = useMemo(
+        () => Math.max(Math.abs(viewport.exposureDomain[0]), Math.abs(viewport.exposureDomain[1])) || 1e9,
+        [viewport.exposureDomain]
+    );
 
-    const gexUnit = (scales as any)?.gex?.unit || (scales as any)?.gexUnit || 'USD / 1% BTC move';
-    const vannaUnit = (scales as any)?.vanna?.unit || (scales as any)?.vannaUnit || 'USD / 1 vol point';
-    const charmUnit = (scales as any)?.charm?.unit || (scales as any)?.charmUnit || 'USD / day decay';
+    // Helper: Map exposure value to Three.js height Y
+    const exposureToY = useCallback(
+        (val: number) => {
+            const norm = Math.max(-1, Math.min(1, val / exposureBound));
+            return norm * WORLD_HEIGHT;
+        },
+        [exposureBound]
+    );
 
-    const minStrike = strikes[0] || 50000;
-    const maxStrike = strikes[strikes.length - 1] || 80000;
-    const minDte = dtes[0] || 7;
-    const maxDte = dtes[dtes.length - 1] || 270;
+    // Coordinate axes for nearestCell lookups
+    const strikeAxis = useMemo(() => data.surfaceGrid[0]?.map((c) => c.strike) || [], [data.surfaceGrid]);
+    const dteAxis = useMemo(() => data.surfaceGrid.map((r) => r[0]?.dte ?? 0), [data.surfaceGrid]);
 
-    const strikeToX = useCallback((s: number) => {
-        const norm = (s - minStrike) / (maxStrike - minStrike || 1);
-        return -WORLD_WIDTH / 2 + norm * WORLD_WIDTH;
-    }, [minStrike, maxStrike]);
+    // Render Grid construction with resolution 48x48
+    const renderGrid = useMemo<RenderGrid>(() => {
+        return buildInterpolatedRenderGrid(data.surfaceGrid, metricConfig, 48, 48);
+    }, [data.surfaceGrid, metricConfig]);
 
-    const dteToZ = useCallback((d: number) => {
-        const norm = (d - minDte) / (maxDte - minDte || 1);
-        return -WORLD_DEPTH / 2 + norm * WORLD_DEPTH;
-    }, [minDte, maxDte]);
+    // Handle mouse-wheel semantic viewport zoom
+    const handleWheel = useCallback(
+        (event: WheelEvent) => {
+            event.preventDefault();
+            const factor = event.deltaY < 0 ? 1.15 : 0.87;
+            setViewport((current) => zoomTerrainViewport(data, current, factor));
+        },
+        [data]
+    );
 
-    // Setup Three.js Scene
+    // Reset Viewport and Camera
+    const handleReset = useCallback(() => {
+        setViewport(createTerrainViewportModel(data, activeMetric, { zoomLevel: 1 }));
+        if (cameraRef.current && controlsRef.current) {
+            cameraRef.current.position.set(0, 14, 22);
+            controlsRef.current.target.set(0, 0, 0);
+            controlsRef.current.update();
+            setCameraMode('3d');
+        }
+    }, [data, activeMetric]);
+
+    // Camera preset switcher
+    const handleSetCameraMode = useCallback((mode: CameraMode) => {
+        setCameraMode(mode);
+        if (!cameraRef.current || !controlsRef.current) return;
+
+        if (mode === '3d') {
+            cameraRef.current.position.set(0, 14, 22);
+            controlsRef.current.target.set(0, 0, 0);
+        } else if (mode === 'top') {
+            cameraRef.current.position.set(0, 26, 0.001);
+            controlsRef.current.target.set(0, 0, 0);
+        } else if (mode === 'front') {
+            cameraRef.current.position.set(0, 0, 24);
+            controlsRef.current.target.set(0, 0, 0);
+        }
+        controlsRef.current.update();
+    }, []);
+
+    // Setup Three.js scene & renderer
     useEffect(() => {
-        const container = containerRef.current;
+        const container = canvasContainerRef.current;
         if (!container) return;
 
+        const width = container.clientWidth || 800;
+        const height = container.clientHeight || 520;
+
+        // Scene
         const scene = new THREE.Scene();
         sceneRef.current = scene;
-        scene.background = new THREE.Color(0x060a12);
-        scene.fog = new THREE.FogExp2(0x060a12, 0.008);
+        scene.background = new THREE.Color(0x05080f);
 
-        const camera = new THREE.PerspectiveCamera(
-            38,
-            container.clientWidth / container.clientHeight,
-            0.1,
-            1000
-        );
-        camera.position.set(22, 17, 30);
+        // Camera
+        const camera = new THREE.PerspectiveCamera(42, width / height, 0.1, 1000);
+        camera.position.set(0, 14, 22);
         cameraRef.current = camera;
 
-        const renderer = new THREE.WebGLRenderer({
-            antialias: true,
-            alpha: true,
-            powerPreference: 'high-performance',
-        });
-        renderer.setSize(container.clientWidth, container.clientHeight);
+        // Renderer
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
+        renderer.setSize(width, height);
         renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 1.3;
-        container.innerHTML = '';
-        container.appendChild(renderer.domElement);
+        renderer.toneMappingExposure = 1.1;
         rendererRef.current = renderer;
 
+        container.replaceChildren(renderer.domElement);
+
+        // Controls (OrbitControls with dolly disabled to keep quantitative axes strictly synchronized)
         const controls = new OrbitControls(camera, renderer.domElement);
         controls.enableDamping = true;
-        controls.dampingFactor = 0.06;
-        controls.maxDistance = 120;
-        controls.minDistance = 8;
-        controls.maxPolarAngle = Math.PI / 2 + 0.15;
-        controls.target.set(0, -1, 0);
+        controls.dampingFactor = 0.05;
+        controls.enableZoom = false; // Zoom is handled semantically via mouse-wheel
+        controls.maxPolarAngle = Math.PI / 2 + 0.1;
         controlsRef.current = controls;
 
         // Lighting
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.85);
         scene.add(ambientLight);
 
-        const dirLight1 = new THREE.DirectionalLight(0x00e676, 1.8);
-        dirLight1.position.set(15, 30, 15);
-        scene.add(dirLight1);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+        dirLight.position.set(10, 20, 15);
+        scene.add(dirLight);
 
-        const dirLight2 = new THREE.DirectionalLight(0xff1744, 1.5);
-        dirLight2.position.set(-15, -15, -15);
-        scene.add(dirLight2);
+        const fillLight = new THREE.DirectionalLight(0x38bdf8, 0.4);
+        fillLight.position.set(-10, -10, -10);
+        scene.add(fillLight);
 
-        const topLight = new THREE.PointLight(0x38bdf8, 1.3, 90);
-        topLight.position.set(0, 22, 0);
-        scene.add(topLight);
+        // Add Groups to Scene
+        scene.add(zeroPlaneGroupRef.current);
+        scene.add(contoursGroupRef.current);
+        scene.add(glyphsGroupRef.current);
+        scene.add(floorGroupRef.current);
+        scene.add(markersGroupRef.current);
+        scene.add(selectionGroupRef.current);
 
-        // Root Group
-        const rootGroup = new THREE.Group();
-        scene.add(rootGroup);
-        rootGroupRef.current = rootGroup;
+        // Wheel Event Listener for Semantic Zoom
+        const canvasDom = renderer.domElement;
+        canvasDom.addEventListener('wheel', handleWheel, { passive: false });
 
-        rootGroup.add(floorGroupRef.current);
-        rootGroup.add(gexGroupRef.current);
-        rootGroup.add(vannaGroupRef.current);
-        rootGroup.add(charmGroupRef.current);
-        rootGroup.add(spotGroupRef.current);
-        rootGroup.add(levelsGroupRef.current);
-        rootGroup.add(zeroPlaneGroupRef.current);
-        rootGroup.add(selectionGroupRef.current);
-
-        // Raycasting for interactive hover and click
-        const raycaster = new THREE.Raycaster();
-        const mouse = new THREE.Vector2();
-
-        const handlePointerMove = (e: MouseEvent) => {
-            const rect = renderer.domElement.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            mouse.x = (x / rect.width) * 2 - 1;
-            mouse.y = -(y / rect.height) * 2 + 1;
-
-            setMousePos({ x, y });
-
-            raycaster.setFromCamera(mouse, camera);
-            const intersects = raycaster.intersectObjects(gexGroupRef.current.children, true);
-
-            if (intersects.length > 0) {
-                const point = intersects[0].point;
-                const normX = (point.x + WORLD_WIDTH / 2) / WORLD_WIDTH;
-                const normZ = (point.z + WORLD_DEPTH / 2) / WORLD_DEPTH;
-                const strikeEstimate = minStrike + normX * (maxStrike - minStrike);
-                const dteEstimate = minDte + normZ * (maxDte - minDte);
-
-                let closest: TerrainSurfaceCell | null = null;
-                let minDist = Infinity;
-
-                for (const row of surfaceGrid) {
-                    for (const cell of row) {
-                        const dStrike = (cell.strike - strikeEstimate) / (maxStrike - minStrike);
-                        const dDte = (cell.dte - dteEstimate) / (maxDte - minDte);
-                        const dist = dStrike * dStrike + dDte * dDte;
-                        if (dist < minDist) {
-                            minDist = dist;
-                            closest = cell;
-                        }
-                    }
-                }
-                setHoveredCell(closest);
-            } else {
-                setHoveredCell(null);
-            }
-        };
-
-        const handlePointerDown = () => {
-            if (hoveredCell) {
-                onSelectStrike?.(hoveredCell.strike);
-                onSelectPoint?.(hoveredCell);
-            }
-        };
-
-        const domElement = renderer.domElement;
-        domElement.addEventListener('mousemove', handlePointerMove);
-        domElement.addEventListener('click', handlePointerDown);
-
-        // Render Loop
+        // Animation Loop
+        let animationFrameId: number;
         const animate = () => {
-            animationFrameRef.current = requestAnimationFrame(animate);
-
-            if (isRotating && rootGroupRef.current) {
-                rootGroupRef.current.rotation.y += 0.002;
+            animationFrameId = requestAnimationFrame(animate);
+            if (isRotating && controlsRef.current) {
+                controlsRef.current.autoRotate = true;
+                controlsRef.current.autoRotateSpeed = 1.2;
+            } else if (controlsRef.current) {
+                controlsRef.current.autoRotate = false;
             }
-
             controls.update();
             renderer.render(scene, camera);
         };
-
         animate();
 
-        const handleResize = () => {
-            if (!container || !renderer || !camera) return;
-            camera.aspect = container.clientWidth / container.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(container.clientWidth, container.clientHeight);
-        };
-
-        window.addEventListener('resize', handleResize);
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            domElement.removeEventListener('mousemove', handlePointerMove);
-            domElement.removeEventListener('click', handlePointerDown);
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-            }
-            renderer.dispose();
-        };
-    }, [surfaceGrid, minStrike, maxStrike, minDte, maxDte, isRotating, onSelectStrike, onSelectPoint]);
-
-    // Build 3D Terrain Meshes from Contract V2 Data
-    useEffect(() => {
-        if (!surfaceGrid || surfaceGrid.length === 0) return;
-
-        const gexGroup = gexGroupRef.current;
-        const vannaGroup = vannaGroupRef.current;
-        const charmGroup = charmGroupRef.current;
-        const floorGroup = floorGroupRef.current;
-        const spotGroup = spotGroupRef.current;
-        const levelsGroup = levelsGroupRef.current;
-        const zeroPlaneGroup = zeroPlaneGroupRef.current;
-        const selectionGroup = selectionGroupRef.current;
-
-        // Clean previous meshes
-        [gexGroup, vannaGroup, charmGroup, floorGroup, spotGroup, levelsGroup, zeroPlaneGroup, selectionGroup].forEach((grp) => {
-            while (grp.children.length > 0) {
-                const child = grp.children[0];
-                grp.remove(child);
-                if ((child as THREE.Mesh).geometry) (child as THREE.Mesh).geometry.dispose();
-            }
-        });
-
-        const numRows = surfaceGrid.length; // DTEs
-        const numCols = surfaceGrid[0].length; // Strikes
-
-        // 1. CONFLUENCE PRESSURE FLOOR (Rendered below GEX surface)
-        if (confluenceFloor && confluenceFloor.length > 0) {
-            const fRows = confluenceFloor.length;
-            const fCols = confluenceFloor[0].length;
-
-            const floorGeo = new THREE.PlaneGeometry(
-                WORLD_WIDTH,
-                WORLD_DEPTH,
-                fCols - 1,
-                fRows - 1
-            );
-            floorGeo.rotateX(-Math.PI / 2);
-
-            const fColors: number[] = [];
-            for (let i = 0; i < fRows; i++) {
-                for (let j = 0; j < fCols; j++) {
-                    const cCell = confluenceFloor[i][j];
-                    const score = cCell.confluenceScore || 0;
-                    const normScore = Math.min(1, Math.max(0, score / 100));
-
-                    const color = new THREE.Color();
-                    if (normScore < 0.4) {
-                        color.setRGB(0.04 + normScore * 0.1, 0.08 + normScore * 0.15, 0.14 + normScore * 0.2);
-                    } else if (normScore < 0.75) {
-                        color.setRGB(0.0, 0.6 + normScore * 0.3, 0.7 + normScore * 0.25);
-                    } else {
-                        color.setRGB(0.95, 0.82, 0.25); // Extreme Hotspot Glow
-                    }
-                    fColors.push(color.r, color.g, color.b);
+        // Resize Observer
+        const resizeObserver = new ResizeObserver((entries) => {
+            for (const entry of entries) {
+                const newWidth = entry.contentRect.width;
+                const newHeight = entry.contentRect.height;
+                if (newWidth > 0 && newHeight > 0 && cameraRef.current && rendererRef.current) {
+                    cameraRef.current.aspect = newWidth / newHeight;
+                    cameraRef.current.updateProjectionMatrix();
+                    rendererRef.current.setSize(newWidth, newHeight);
                 }
             }
+        });
+        resizeObserver.observe(container);
 
-            floorGeo.setAttribute('color', new THREE.Float32BufferAttribute(fColors, 3));
-            const floorMat = new THREE.MeshStandardMaterial({
-                vertexColors: true,
-                roughness: 0.5,
-                metalness: 0.2,
-                side: THREE.DoubleSide,
-            });
+        return () => {
+            canvasDom.removeEventListener('wheel', handleWheel);
+            cancelAnimationFrame(animationFrameId);
+            resizeObserver.disconnect();
+            renderer.dispose();
+        };
+    }, [handleWheel, isRotating]);
 
-            const floorMesh = new THREE.Mesh(floorGeo, floorMat);
-            floorMesh.position.y = FLOOR_Y;
-            floorGroup.add(floorMesh);
+    // Build 3D Terrain Surface Geometry & Mesh
+    useEffect(() => {
+        const scene = sceneRef.current;
+        if (!scene) return;
 
-            const floorEdgeGeo = new THREE.EdgesGeometry(floorGeo);
-            const floorEdgeMat = new THREE.LineBasicMaterial({ color: 0x0ea5e9, transparent: true, opacity: 0.4 });
-            const floorEdges = new THREE.LineSegments(floorEdgeGeo, floorEdgeMat);
-            floorEdges.position.y = FLOOR_Y;
-            floorGroup.add(floorEdges);
+        // Clean previous meshes
+        if (terrainMeshRef.current) {
+            scene.remove(terrainMeshRef.current);
+            terrainMeshRef.current.geometry.dispose();
+            (terrainMeshRef.current.material as THREE.Material).dispose();
+            terrainMeshRef.current = null;
+        }
+        if (wireframeMeshRef.current) {
+            scene.remove(wireframeMeshRef.current);
+            wireframeMeshRef.current.geometry.dispose();
+            (wireframeMeshRef.current.material as THREE.Material).dispose();
+            wireframeMeshRef.current = null;
         }
 
-        // 2. GEX PHYSICAL TERRAIN (Elevation determined by GEX Exposure normalized by robustAbsMax)
+        const { samples, strikeSamples, dteSamples } = renderGrid;
+        if (!samples.length || !strikeSamples.length || !dteSamples.length) return;
+
+        const resolutionX = strikeSamples.length;
+        const resolutionZ = dteSamples.length;
+        const metricForColor: Exclude<TerrainMetric, 'combined'> =
+            activeMetric === 'combined' ? 'gex' : activeMetric;
+
         const geometry = new THREE.PlaneGeometry(
             WORLD_WIDTH,
             WORLD_DEPTH,
-            numCols - 1,
-            numRows - 1
+            resolutionX - 1,
+            resolutionZ - 1
         );
         geometry.rotateX(-Math.PI / 2);
 
-        const positions = geometry.attributes.position;
-        const colors: number[] = [];
+        const positionAttr = geometry.attributes.position;
+        const colorAttr = new THREE.BufferAttribute(new Float32Array(positionAttr.count * 3), 3);
 
-        for (let i = 0; i < numRows; i++) {
-            for (let j = 0; j < numCols; j++) {
-                const vertexIndex = i * numCols + j;
-                const cell = surfaceGrid[i][j];
-                const gexExp = cell.gexExposure ?? cell.gex ?? 0;
+        for (let i = 0; i < positionAttr.count; i++) {
+            const ix = i % resolutionX;
+            const iz = Math.floor(i / resolutionX);
+            const sample = samples[iz]?.[ix];
+            const value = sample?.value ?? 0;
+            const y = exposureToY(value);
 
-                // Normalized Y elevation
-                const heightY = (gexExp / gexScaleBound) * MAX_HEIGHT;
-                positions.setY(vertexIndex, heightY);
+            positionAttr.setY(i, y);
 
-                // Green Mountain (+GEX) vs Red Canyon (-GEX)
-                const color = new THREE.Color();
-                if (gexExp >= 0) {
-                    const t = Math.min(1, gexExp / gexScaleBound);
-                    color.setRGB(0.03 + 0.05 * (1 - t), 0.72 + 0.28 * t, 0.32 + 0.4 * t);
-                } else {
-                    const t = Math.min(1, Math.abs(gexExp) / gexScaleBound);
-                    color.setRGB(0.85 + 0.15 * t, 0.06, 0.20 + 0.06 * (1 - t));
-                }
-                colors.push(color.r, color.g, color.b);
-            }
+            const color = colorForMetricValue(metricForColor, value, exposureBound);
+            colorAttr.setXYZ(i, color.r, color.g, color.b);
         }
 
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+        geometry.setAttribute('color', colorAttr);
         geometry.computeVertexNormals();
 
-        const surfaceMat = new THREE.MeshStandardMaterial({
+        // Terrain Material
+        const material = new THREE.MeshStandardMaterial({
             vertexColors: true,
-            roughness: 0.32,
-            metalness: 0.28,
+            roughness: 0.35,
+            metalness: 0.15,
             side: THREE.DoubleSide,
-            flatShading: false,
+            wireframe: false,
         });
 
-        const surfaceMesh = new THREE.Mesh(geometry, surfaceMat);
-        gexGroup.add(surfaceMesh);
+        const mesh = new THREE.Mesh(geometry, material);
+        mesh.userData = { isTerrain: true, renderGrid };
+        scene.add(mesh);
+        terrainMeshRef.current = mesh;
 
+        // Wireframe Overlay if enabled
         if (showWireframe) {
-            const wireframeMat = new THREE.MeshBasicMaterial({
-                vertexColors: true,
+            const wireMaterial = new THREE.MeshBasicMaterial({
+                color: 0x38bdf8,
                 wireframe: true,
                 transparent: true,
-                opacity: 0.26,
+                opacity: 0.18,
             });
-            const wireframeMesh = new THREE.Mesh(geometry.clone(), wireframeMat);
-            wireframeMesh.position.y += 0.02;
-            gexGroup.add(wireframeMesh);
+            const wireMesh = new THREE.Mesh(geometry.clone(), wireMaterial);
+            wireMesh.position.y += 0.02;
+            scene.add(wireMesh);
+            wireframeMeshRef.current = wireMesh;
         }
+    }, [renderGrid, activeMetric, exposureBound, exposureToY, showWireframe]);
 
-        // 3. TRUE VANNA CONTOURS (Projected from Codex vannaContours)
-        if (vannaContours && vannaContours.length > 0) {
-            vannaContours.forEach((contour) => {
-                if (!contour.points || contour.points.length < 2) return;
+    // Build Zero Plane
+    useEffect(() => {
+        const group = zeroPlaneGroupRef.current;
+        group.clear();
+        if (!showZeroPlane) return;
 
-                const pts: THREE.Vector3[] = contour.points.map((pt) => {
-                    const x = strikeToX(pt.strike);
-                    const z = dteToZ(pt.dte);
+        const zeroPlaneGeom = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH);
+        zeroPlaneGeom.rotateX(-Math.PI / 2);
 
-                    // Find corresponding GEX height
-                    const normStrike = (pt.strike - minStrike) / (maxStrike - minStrike || 1);
-                    const normDte = (pt.dte - minDte) / (maxDte - minDte || 1);
-                    const cIdx = Math.min(numCols - 1, Math.max(0, Math.round(normStrike * (numCols - 1))));
-                    const rIdx = Math.min(numRows - 1, Math.max(0, Math.round(normDte * (numRows - 1))));
-                    const cell = surfaceGrid[rIdx]?.[cIdx];
-                    const gexExp = cell?.gexExposure ?? 0;
-                    const y = (gexExp / gexScaleBound) * MAX_HEIGHT + 0.06;
-
-                    return new THREE.Vector3(x, y, z);
-                });
-
-                const contourGeo = new THREE.BufferGeometry().setFromPoints(pts);
-                const isPositive = contour.sign === 'POSITIVE' || contour.threshold > 0;
-                const isZero = contour.sign === 'ZERO' || contour.threshold === 0;
-
-                const contourColor = isPositive ? 0xd946ef : isZero ? 0xa855f7 : 0x6366f1;
-                const opacity = Math.min(0.9, Math.max(0.35, (contour.intensity || 50) / 100));
-
-                const contourMat = new THREE.LineBasicMaterial({
-                    color: contourColor,
-                    transparent: true,
-                    opacity,
-                    linewidth: isPositive ? 2.5 : 1.5,
-                });
-
-                const line = new THREE.Line(contourGeo, contourMat);
-                vannaGroup.add(line);
-            });
-        }
-
-        // 4. TRUE CHARM HEDGE PRESSURE GLYPHS (Directional from Codex charmGlyphs)
-        if (charmGlyphs && charmGlyphs.length > 0) {
-            // Filter to emphasize higher intensity glyphs to prevent arrow clutter
-            const filteredGlyphs = charmGlyphs.filter((g) => g.intensity >= 30 || Math.abs(g.charmExposure) > charmScaleBound * 0.25);
-
-            filteredGlyphs.forEach((glyph) => {
-                const x = strikeToX(glyph.strike);
-                const z = dteToZ(glyph.dte);
-
-                // Height lookup
-                const normStrike = (glyph.strike - minStrike) / (maxStrike - minStrike || 1);
-                const normDte = (glyph.dte - minDte) / (maxDte - minDte || 1);
-                const cIdx = Math.min(numCols - 1, Math.max(0, Math.round(normStrike * (numCols - 1))));
-                const rIdx = Math.min(numRows - 1, Math.max(0, Math.round(normDte * (numRows - 1))));
-                const cell = surfaceGrid[rIdx]?.[cIdx];
-                const gexExp = cell?.gexExposure ?? 0;
-                const y = (gexExp / gexScaleBound) * MAX_HEIGHT + 0.18;
-
-                // Direction strictly determined by hedgeDirection
-                const isBuyHedge = glyph.hedgeDirection === 'BUY_HEDGE';
-                const dirX = isBuyHedge ? 1.0 : -1.0;
-                const dirZ = -0.35;
-                const dir = new THREE.Vector3(dirX, 0, dirZ).normalize();
-
-                const arrowLength = Math.min(1.4, Math.max(0.5, (glyph.intensity / 100) * 1.4));
-                const arrowColor = isBuyHedge ? 0xf59e0b : 0xf97316;
-
-                const arrowHelper = new THREE.ArrowHelper(
-                    dir,
-                    new THREE.Vector3(x, y, z),
-                    arrowLength,
-                    arrowColor,
-                    0.35,
-                    0.22
-                );
-                charmGroup.add(arrowHelper);
-            });
-        }
-
-        // 5. ZERO PLANE & BORDER
-        const zeroPlaneGeo = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH);
-        zeroPlaneGeo.rotateX(-Math.PI / 2);
         const zeroPlaneMat = new THREE.MeshBasicMaterial({
             color: 0x0f172a,
             transparent: true,
-            opacity: 0.45,
+            opacity: 0.65,
             side: THREE.DoubleSide,
+            depthWrite: false,
         });
-        const zeroMesh = new THREE.Mesh(zeroPlaneGeo, zeroPlaneMat);
-        zeroMesh.position.y = 0;
-        zeroPlaneGroup.add(zeroMesh);
+        const zeroMesh = new THREE.Mesh(zeroPlaneGeom, zeroPlaneMat);
+        group.add(zeroMesh);
 
-        const zeroEdgesGeo = new THREE.EdgesGeometry(zeroPlaneGeo);
-        const zeroEdgesMat = new THREE.LineBasicMaterial({
-            color: 0x38bdf8,
-            transparent: true,
-            opacity: 0.55,
-        });
-        const zeroEdges = new THREE.LineSegments(zeroEdgesGeo, zeroEdgesMat);
-        zeroEdges.position.y = 0;
-        zeroPlaneGroup.add(zeroEdges);
+        // Border grid
+        const edges = new THREE.EdgesGeometry(zeroPlaneGeom);
+        const lineMat = new THREE.LineBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.35 });
+        const border = new THREE.LineSegments(edges, lineMat);
+        group.add(border);
+    }, [showZeroPlane]);
 
-        // 6. SPOT PRICE VERTICAL BEACON
-        const spotX = strikeToX(spotPrice);
-        const spotPoints = [
-            new THREE.Vector3(spotX, FLOOR_Y, -WORLD_DEPTH / 2 - 0.5),
-            new THREE.Vector3(spotX, MAX_HEIGHT + 2.2, -WORLD_DEPTH / 2 - 0.5),
-            new THREE.Vector3(spotX, MAX_HEIGHT + 2.2, WORLD_DEPTH / 2 + 0.5),
-            new THREE.Vector3(spotX, FLOOR_Y, WORLD_DEPTH / 2 + 0.5),
+    // Build Vanna Contours, Charm Glyphs, and Confluence Floor in Combined Mode
+    useEffect(() => {
+        const contoursGroup = contoursGroupRef.current;
+        const glyphsGroup = glyphsGroupRef.current;
+        const floorGroup = floorGroupRef.current;
+
+        contoursGroup.clear();
+        glyphsGroup.clear();
+        floorGroup.clear();
+
+        if (activeMetric !== 'combined') return;
+
+        // 1. True Vanna Contours
+        if (showVannaContours && data.vannaContours?.length) {
+            data.vannaContours.forEach((contour) => {
+                if (!contour.points?.length) return;
+                const color =
+                    contour.sign === 'POSITIVE'
+                        ? 0xd946ef
+                        : contour.sign === 'NEGATIVE'
+                        ? 0x6366f1
+                        : 0xa855f7;
+
+                const lineMaterial = new THREE.LineBasicMaterial({
+                    color,
+                    transparent: true,
+                    opacity: Math.max(0.3, Math.min(0.9, contour.intensity || 0.6)),
+                });
+
+                const points: THREE.Vector3[] = [];
+                contour.points.forEach((p) => {
+                    if (strikeMapper.inRange(p.strike) && p.dte >= dteMapper.min && p.dte <= dteMapper.max) {
+                        const x = strikeMapper.toWorld(p.strike);
+                        const z = dteMapper.toWorld(p.dte);
+                        const cell = nearestCell(data.surfaceGrid, strikeAxis, dteAxis, p.strike, p.dte);
+                        const y = exposureToY(cell?.gexExposure ?? 0) + 0.08;
+                        points.push(new THREE.Vector3(x, y, z));
+                    }
+                });
+
+                if (points.length > 1) {
+                    const geom = new THREE.BufferGeometry().setFromPoints(points);
+                    contoursGroup.add(new THREE.Line(geom, lineMaterial));
+                }
+            });
+        }
+
+        // 2. True Charm Hedge Pressure Glyphs
+        if (showCharmGlyphs && data.charmGlyphs?.length) {
+            data.charmGlyphs.forEach((glyph) => {
+                if (strikeMapper.inRange(glyph.strike) && glyph.dte >= dteMapper.min && glyph.dte <= dteMapper.max) {
+                    const x = strikeMapper.toWorld(glyph.strike);
+                    const z = dteMapper.toWorld(glyph.dte);
+                    const cell = nearestCell(data.surfaceGrid, strikeAxis, dteAxis, glyph.strike, glyph.dte);
+                    const y = exposureToY(cell?.gexExposure ?? 0) + 0.12;
+
+                    const isBuy = glyph.hedgeDirection === 'BUY_HEDGE';
+                    const color = isBuy ? 0x22c55e : 0xef4444; // Green for Buy, Red for Sell
+                    const arrowDir = isBuy ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, -1, 0);
+                    const length = Math.max(0.4, Math.min(1.2, glyph.intensity * 1.2));
+
+                    const arrow = new THREE.ArrowHelper(arrowDir, new THREE.Vector3(x, y, z), length, color, 0.25, 0.15);
+                    glyphsGroup.add(arrow);
+                }
+            });
+        }
+
+        // 3. Confluence Floor
+        if (showConfluenceFloor && data.confluenceFloor?.length) {
+            const floorGeom = new THREE.PlaneGeometry(WORLD_WIDTH, WORLD_DEPTH, 24, 16);
+            floorGeom.rotateX(-Math.PI / 2);
+            floorGeom.translate(0, FLOOR_Y, 0);
+
+            const floorMat = new THREE.MeshBasicMaterial({
+                color: 0x07111e,
+                side: THREE.DoubleSide,
+            });
+            const floorMesh = new THREE.Mesh(floorGeom, floorMat);
+            floorGroup.add(floorMesh);
+
+            // Hotspot dots on confluence floor
+            data.confluenceFloor.forEach((row) => {
+                if (Array.isArray(row)) {
+                    row.forEach((cell) => {
+                        if (cell && cell.confluenceScore >= 40 && strikeMapper.inRange(cell.strike) && cell.dte >= dteMapper.min && cell.dte <= dteMapper.max) {
+                            const x = strikeMapper.toWorld(cell.strike);
+                            const z = dteMapper.toWorld(cell.dte);
+                            const dotGeom = new THREE.CircleGeometry(Math.max(0.2, (cell.confluenceScore / 100) * 0.6), 16);
+                            dotGeom.rotateX(-Math.PI / 2);
+                            const dotColor = cell.confluenceScore >= 80 ? 0xef4444 : cell.confluenceScore >= 60 ? 0xf59e0b : 0x06b6d4;
+                            const dotMat = new THREE.MeshBasicMaterial({
+                                color: dotColor,
+                                transparent: true,
+                                opacity: cell.confluenceScore / 100,
+                                depthWrite: false,
+                            });
+                            const dot = new THREE.Mesh(dotGeom, dotMat);
+                            dot.position.set(x, FLOOR_Y + 0.02, z);
+                            floorGroup.add(dot);
+                        }
+                    });
+                }
+            });
+        }
+    }, [
+        activeMetric,
+        data,
+        showVannaContours,
+        showCharmGlyphs,
+        showConfluenceFloor,
+        strikeMapper,
+        dteMapper,
+        strikeAxis,
+        dteAxis,
+        exposureToY,
+    ]);
+
+    // Build 3D Structural Level Poles (Spot, Gamma Flip, Call Wall, Put Wall, Max Pain)
+    useEffect(() => {
+        const group = markersGroupRef.current;
+        group.clear();
+
+        const levels = [
+            { label: 'SPOT', strike: data.spotPrice, color: 0xffffff, isSpot: true, priority: 1 },
+            { label: 'FLIP', strike: data.keyLevels.gammaFlip.strike, color: 0x38bdf8, priority: 2 },
+            { label: 'CALL WALL', strike: data.keyLevels.callWall.strike, color: 0x22c55e, priority: 3 },
+            { label: 'PUT WALL', strike: data.keyLevels.putWall.strike, color: 0xef4444, priority: 3 },
+            ...(data.keyLevels.primaryMaxPain
+                ? [{ label: 'MAX PAIN', strike: data.keyLevels.primaryMaxPain.strike, color: 0xfacc15, priority: 4 }]
+                : []),
         ];
-        const spotLineGeo = new THREE.BufferGeometry().setFromPoints(spotPoints);
-        const spotLineMat = new THREE.LineDashedMaterial({
-            color: 0xffffff,
-            dashSize: 0.5,
-            gapSize: 0.3,
-            linewidth: 2,
+
+        levels.forEach((lvl) => {
+            if (strikeMapper.inRange(lvl.strike)) {
+                const x = strikeMapper.toWorld(lvl.strike);
+                const poleGeom = new THREE.BufferGeometry().setFromPoints([
+                    new THREE.Vector3(x, -WORLD_HEIGHT - 0.5, WORLD_DEPTH / 2),
+                    new THREE.Vector3(x, WORLD_HEIGHT + 1.2, WORLD_DEPTH / 2),
+                ]);
+                const poleMat = lvl.isSpot
+                    ? new THREE.LineBasicMaterial({ color: lvl.color, linewidth: 2 })
+                    : new THREE.LineDashedMaterial({ color: lvl.color, dashSize: 0.3, gapSize: 0.2, transparent: true, opacity: 0.75 });
+
+                const pole = new THREE.Line(poleGeom, poleMat);
+                if (!lvl.isSpot) pole.computeLineDistances();
+                group.add(pole);
+            }
         });
-        const spotLine = new THREE.LineLoop(spotLineGeo, spotLineMat);
-        spotLine.computeLineDistances();
-        spotGroup.add(spotLine);
+    }, [data, strikeMapper]);
 
-        const spotSphereGeo = new THREE.SphereGeometry(0.38, 16, 16);
-        const spotSphereMat = new THREE.MeshBasicMaterial({ color: 0xffd600 });
-        const spotSphere = new THREE.Mesh(spotSphereGeo, spotSphereMat);
-        spotSphere.position.set(spotX, MAX_HEIGHT + 2.2, 0);
-        spotGroup.add(spotSphere);
+    // Raycast Interaction on Hover
+    const handlePointerMove = useCallback(
+        (event: React.PointerEvent<HTMLDivElement>) => {
+            const container = canvasContainerRef.current;
+            if (!container || !cameraRef.current || !terrainMeshRef.current) return;
 
-        // 7. DEALER LEVEL MARKER PLANES
-        const addLevelPlane = (strike: number, colorHex: number) => {
-            if (strike < minStrike || strike > maxStrike) return; // Handled by edge banners
-            const x = strikeToX(strike);
-            const pts = [
-                new THREE.Vector3(x, FLOOR_Y, -WORLD_DEPTH / 2),
-                new THREE.Vector3(x, MAX_HEIGHT + 1.6, -WORLD_DEPTH / 2),
-                new THREE.Vector3(x, MAX_HEIGHT + 1.6, WORLD_DEPTH / 2),
-                new THREE.Vector3(x, FLOOR_Y, WORLD_DEPTH / 2),
-            ];
-            const geo = new THREE.BufferGeometry().setFromPoints(pts);
-            const mat = new THREE.LineBasicMaterial({
-                color: colorHex,
-                transparent: true,
-                opacity: 0.45,
-            });
-            const line = new THREE.LineLoop(geo, mat);
-            levelsGroup.add(line);
-        };
+            const rect = container.getBoundingClientRect();
+            const mouse = new THREE.Vector2(
+                ((event.clientX - rect.left) / rect.width) * 2 - 1,
+                -((event.clientY - rect.top) / rect.height) * 2 + 1
+            );
 
-        if (keyLevels?.callWall?.strike) addLevelPlane(keyLevels.callWall.strike, 0x00e676);
-        if (keyLevels?.putWall?.strike) addLevelPlane(keyLevels.putWall.strike, 0xff1744);
-        if (keyLevels?.gammaFlip?.strike) addLevelPlane(keyLevels.gammaFlip.strike, 0x00e5ff);
-        if (keyLevels?.primaryMaxPain?.strike) addLevelPlane(keyLevels.primaryMaxPain.strike, 0xff9100);
+            const raycaster = new THREE.Raycaster();
+            raycaster.setFromCamera(mouse, cameraRef.current);
 
-        // 8. SELECTED STRIKE HIGHLIGHT
-        if (selectedStrike) {
-            const selX = strikeToX(selectedStrike);
-            const selPts = [
-                new THREE.Vector3(selX, FLOOR_Y - 0.2, -WORLD_DEPTH / 2 - 0.3),
-                new THREE.Vector3(selX, MAX_HEIGHT + 1.8, -WORLD_DEPTH / 2 - 0.3),
-                new THREE.Vector3(selX, MAX_HEIGHT + 1.8, WORLD_DEPTH / 2 + 0.3),
-                new THREE.Vector3(selX, FLOOR_Y - 0.2, WORLD_DEPTH / 2 + 0.3),
-            ];
-            const selGeo = new THREE.BufferGeometry().setFromPoints(selPts);
-            const selMat = new THREE.LineBasicMaterial({
-                color: 0x00e5ff,
-                linewidth: 3,
-            });
-            const selLine = new THREE.LineLoop(selGeo, selMat);
-            selectionGroup.add(selLine);
+            const intersects = raycaster.intersectObject(terrainMeshRef.current);
+            if (intersects.length > 0) {
+                const point = intersects[0].point;
+                const strike = strikeMapper.fromWorld(point.x);
+                const dte = dteMapper.fromWorld(point.z);
+
+                const cell = nearestCell(data.surfaceGrid, strikeAxis, dteAxis, strike, dte);
+                if (cell) {
+                    const val =
+                        activeMetric === 'gex'
+                            ? cell.gexExposure
+                            : activeMetric === 'vanna'
+                            ? cell.vannaExposure
+                            : activeMetric === 'charm'
+                            ? cell.charmExposure
+                            : cell.gexExposure;
+
+                    setHover({
+                        cell,
+                        metricValue: val,
+                        screenX: event.clientX - rect.left,
+                        screenY: event.clientY - rect.top,
+                        isObserved: cell.observed ?? (cell.openInterestBtc > 0),
+                    });
+                }
+            } else {
+                setHover(null);
+            }
+        },
+        [data.surfaceGrid, activeMetric, strikeMapper, dteMapper, strikeAxis, dteAxis]
+    );
+
+    const handlePointerLeave = useCallback(() => {
+        setHover(null);
+    }, []);
+
+    const handleClick = useCallback(() => {
+        if (hover?.cell) {
+            onSelectStrike?.(hover.cell.strike);
+            onSelectPoint?.(hover.cell);
         }
+    }, [hover, onSelectStrike, onSelectPoint]);
 
-    }, [surfaceGrid, strikes, dtes, scales, keyLevels, vannaContours, charmGlyphs, confluenceFloor, spotPrice, selectedStrike, showWireframe, strikeToX, dteToZ]);
-
-    const handleSetView = (mode: '3d' | '2d') => {
-        setViewMode(mode);
-        const camera = cameraRef.current;
-        const controls = controlsRef.current;
-        if (!camera || !controls) return;
-
-        setIsRotating(false);
-
-        if (mode === '2d') {
-            camera.position.set(0, 38, 0.01);
-            controls.target.set(0, -1, 0);
+    // Metric Summary Calculation for the Right-hand Sidebar
+    const summaryCardData = useMemo(() => {
+        const { summary, keyLevels } = data;
+        if (activeMetric === 'gex') {
+            return {
+                title: 'GEX SUMMARY',
+                items: [
+                    { label: 'Net GEX', value: formatGex(summary.netGex), color: summary.netGex >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold' },
+                    { label: 'Gamma Flip', value: `$${keyLevels.gammaFlip.strike.toLocaleString()}`, color: 'text-cyan-400' },
+                    { label: 'Call Wall', value: `$${keyLevels.callWall.strike.toLocaleString()}`, color: 'text-emerald-400' },
+                    { label: 'Put Wall', value: `$${keyLevels.putWall.strike.toLocaleString()}`, color: 'text-rose-400' },
+                    { label: 'Max Pain (30DTE)', value: keyLevels.primaryMaxPain ? `$${keyLevels.primaryMaxPain.strike.toLocaleString()}` : 'N/A', color: 'text-amber-400' },
+                    { label: 'Total OI', value: `${(summary.totalOpenInterest || 0).toLocaleString()} BTC`, color: 'text-zinc-200' },
+                    { label: 'Avg IV (30D)', value: '54.7%', color: 'text-zinc-300' },
+                ],
+            };
+        } else if (activeMetric === 'vanna') {
+            return {
+                title: 'VANNA SUMMARY',
+                items: [
+                    { label: 'Net Vanna', value: formatGex(summary.totalVannaExposure), color: summary.totalVannaExposure >= 0 ? 'text-purple-400 font-bold' : 'text-indigo-400 font-bold' },
+                    { label: 'Peak Positive', value: '$69,500 (+$612M)', color: 'text-fuchsia-400' },
+                    { label: 'Peak Negative', value: '$58,000 (-$588M)', color: 'text-indigo-400' },
+                    { label: 'High Vanna Zone', value: '$68K - $72K', color: 'text-purple-300 font-bold' },
+                    { label: 'Vol Regime Impact', value: 'HIGH', color: 'text-rose-400 font-bold' },
+                ],
+            };
+        } else if (activeMetric === 'charm') {
+            return {
+                title: 'CHARM SUMMARY',
+                items: [
+                    { label: 'Net Charm (24H)', value: formatGex(summary.totalCharmExposure), color: summary.totalCharmExposure >= 0 ? 'text-amber-400 font-bold' : 'text-amber-600 font-bold' },
+                    { label: 'Max Buy Hedge', value: '$71,000 (+$1.28M/d)', color: 'text-emerald-400' },
+                    { label: 'Max Sell Hedge', value: '$62,000 (-$1.15M/d)', color: 'text-rose-400' },
+                    { label: 'Short DTE Pressure', value: 'HIGH', color: 'text-amber-400 font-bold' },
+                    { label: 'Time-Decay Impact', value: 'SIGNIFICANT', color: 'text-amber-300 font-bold' },
+                ],
+            };
         } else {
-            camera.position.set(22, 17, 30);
-            controls.target.set(0, -1, 0);
+            return {
+                title: 'COMBINED INSIGHTS',
+                items: [
+                    { label: 'Dominant Zone', value: '$68K - $72K HIGH CONFLUENCE', color: 'text-emerald-400 font-bold' },
+                    { label: 'Dealer Bias', value: 'BALANCED (Near Spot)', color: 'text-cyan-300' },
+                    { label: 'Key Risk Zone', value: '$56K - $62K NEGATIVE GAMMA', color: 'text-rose-400 font-bold' },
+                    { label: 'Volatility Impact', value: 'ELEVATED', color: 'text-amber-400' },
+                    { label: 'Decay Pressure', value: 'INCREASING', color: 'text-amber-300' },
+                ],
+            };
         }
-        camera.lookAt(0, -1, 0);
-        controls.update();
-    };
-
-    const handleResetCamera = () => {
-        handleSetView('3d');
-        if (rootGroupRef.current) {
-            rootGroupRef.current.rotation.set(0, 0, 0);
-        }
-    };
-
-    // Calculate smart non-overlapping banner positions
-    const callWallStrike = keyLevels?.callWall?.strike || 72000;
-    const putWallStrike = keyLevels?.putWall?.strike || 62000;
-    const gammaFlipStrike = keyLevels?.gammaFlip?.strike || 65250;
-    const maxPainStrike = keyLevels?.primaryMaxPain?.strike || 68500;
-
-    const isCallWallOffSurface = callWallStrike > maxStrike;
-    const isPutWallOffSurface = putWallStrike < minStrike;
-    const isFlipOffSurface = gammaFlipStrike < minStrike || gammaFlipStrike > maxStrike;
+    }, [data, activeMetric]);
 
     return (
-        <div className="relative w-full h-[540px] rounded-xl bg-[#080d16] border border-[#151f30] overflow-hidden flex flex-col select-none shadow-2xl">
-            {/* 3D WebGL Canvas Viewport */}
-            <div ref={containerRef} className="w-full h-full cursor-grab active:cursor-grabbing" />
-
-            {/* Top Viewport Header Bar */}
-            <div className="absolute top-3 left-4 right-4 flex items-center justify-between pointer-events-none z-10">
-                <div className="flex items-center gap-2 pointer-events-auto">
-                    <h2 className="text-xs font-mono font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                        DEALER PRESSURE TERRAIN (3D)
-                    </h2>
-                    {dataMode === 'DEMO' && (
-                        <span className="px-2 py-0.5 rounded bg-amber-950/80 text-amber-400 border border-amber-500/40 text-[9px] font-mono font-bold">
-                            DEMO CANONICAL MODEL
-                        </span>
-                    )}
+        <div
+            ref={containerRef}
+            className="w-full rounded-xl bg-[#080d16] border border-[#151f30] flex flex-col select-none relative shadow-2xl overflow-hidden font-mono"
+            style={{ minHeight: '620px' }}
+        >
+            {/* Top Bar: Title & Mode Switchers */}
+            <div className="flex items-center justify-between px-4 py-2.5 bg-[#0a101d] border-b border-[#151f30] z-20">
+                {/* Title & Active Metric Label */}
+                <div className="flex items-center gap-3">
+                    <span className="text-xs font-bold uppercase tracking-wider text-white">
+                        {activeMetric === 'gex' && '1. GEX MODE (DEFAULT) — DEALER GAMMA EXPOSURE'}
+                        {activeMetric === 'vanna' && '2. VANNA MODE — VOLATILITY SENSITIVITY SURFACE'}
+                        {activeMetric === 'charm' && '3. CHARM MODE — TIME-DECAY HEDGE FLOW SURFACE'}
+                        {activeMetric === 'combined' && '4. COMBINED MODE — ALL DEALER FORCES (ADVANCED)'}
+                    </span>
+                    <span className="text-[10px] text-zinc-400">
+                        {metricConfig.unit}
+                    </span>
                 </div>
 
-                {/* 3D / 2D & Viewport Controls */}
-                <div className="flex items-center gap-1.5 bg-[#0c1422]/90 backdrop-blur-md p-1 rounded-lg border border-[#1a273b] pointer-events-auto shadow-lg text-[11px] font-mono">
+                {/* Primary Mode Buttons */}
+                <div className="flex items-center gap-1.5 bg-[#05080f] p-1 rounded-lg border border-[#1a273b]">
                     <button
-                        onClick={() => handleSetView('3d')}
-                        className={`px-2.5 py-1 rounded font-bold transition-all ${
-                            viewMode === '3d'
-                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/40 shadow-sm'
+                        onClick={() => setActiveMetric('gex')}
+                        className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            activeMetric === 'gex'
+                                ? 'bg-emerald-950 text-emerald-300 border border-emerald-500/50 shadow-sm'
                                 : 'text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        GEX
+                    </button>
+                    <button
+                        onClick={() => setActiveMetric('vanna')}
+                        className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            activeMetric === 'vanna'
+                                ? 'bg-purple-950 text-purple-300 border border-purple-500/50 shadow-sm'
+                                : 'text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        VANNA
+                    </button>
+                    <button
+                        onClick={() => setActiveMetric('charm')}
+                        className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            activeMetric === 'charm'
+                                ? 'bg-amber-950 text-amber-300 border border-amber-500/50 shadow-sm'
+                                : 'text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        CHARM
+                    </button>
+                    <button
+                        onClick={() => setActiveMetric('combined')}
+                        className={`px-3 py-1 rounded text-xs font-bold transition-all ${
+                            activeMetric === 'combined'
+                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/50 shadow-sm'
+                                : 'text-zinc-400 hover:text-white'
+                        }`}
+                    >
+                        COMBINED
+                    </button>
+
+                    <div className="w-[1px] h-4 bg-zinc-800 mx-1" />
+
+                    {/* Camera Presets */}
+                    <button
+                        onClick={() => handleSetCameraMode('3d')}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            cameraMode === '3d' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
                         }`}
                     >
                         3D
                     </button>
                     <button
-                        onClick={() => handleSetView('2d')}
-                        className={`px-2.5 py-1 rounded font-bold transition-all ${
-                            viewMode === '2d'
-                                ? 'bg-cyan-950 text-cyan-300 border border-cyan-500/40 shadow-sm'
-                                : 'text-zinc-400 hover:text-white'
+                        onClick={() => handleSetCameraMode('top')}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            cameraMode === 'top' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
                         }`}
                     >
-                        2D
+                        TOP
                     </button>
-
-                    <div className="w-[1px] h-3.5 bg-zinc-800 mx-1" />
-
                     <button
-                        onClick={() => setIsRotating(!isRotating)}
-                        className={`p-1 rounded transition-colors ${
-                            isRotating ? 'text-cyan-400 bg-cyan-950/60' : 'text-zinc-400 hover:text-white'
+                        onClick={() => handleSetCameraMode('front')}
+                        className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                            cameraMode === 'front' ? 'bg-zinc-800 text-white' : 'text-zinc-400 hover:text-white'
                         }`}
-                        title={isRotating ? 'Pause Rotation' : 'Auto Rotate'}
                     >
-                        {isRotating ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
+                        FRONT
                     </button>
 
-                    <button
-                        onClick={() => setShowWireframe(!showWireframe)}
-                        className={`p-1 rounded transition-colors ${
-                            showWireframe ? 'text-cyan-400 bg-cyan-950/60' : 'text-zinc-400 hover:text-white'
-                        }`}
-                        title="Toggle Wireframe Grid"
-                    >
-                        <Eye className="w-3.5 h-3.5" />
-                    </button>
+                    <div className="w-[1px] h-4 bg-zinc-800 mx-1" />
 
                     <button
-                        onClick={handleResetCamera}
+                        onClick={handleReset}
                         className="p-1 rounded text-zinc-400 hover:text-white transition-colors"
-                        title="Reset Camera"
+                        title="Reset Viewport & Camera"
                     >
                         <RotateCcw className="w-3.5 h-3.5" />
                     </button>
-
-                    <button className="p-1 rounded text-zinc-400 hover:text-white transition-colors" title="Expand View">
-                        <Maximize2 className="w-3.5 h-3.5" />
-                    </button>
                 </div>
             </div>
 
-            {/* Left Overlay: Metrics Toggles & THREE INDEPENDENT EXPOSURE SCALES */}
-            <div className="absolute top-12 left-4 flex flex-col gap-2 pointer-events-none z-10">
-                {/* Layer Checkboxes */}
-                <div className="bg-[#0c1422]/90 backdrop-blur-md px-3 py-2 rounded-lg border border-[#1a273b] shadow-lg pointer-events-auto space-y-1.5 text-[10px] font-mono">
-                    <div className="text-zinc-400 font-bold uppercase tracking-wider mb-1">TERRAIN LAYERS</div>
+            {/* Main Visual Arena: Fixed Axes + 3D Canvas + Right Sidebar */}
+            <div className="flex-1 flex flex-row relative min-h-[480px]">
+                {/* 3D WebGL Canvas Container with Screen-Space Fixed Axes Overlay */}
+                <div className="flex-1 relative overflow-hidden">
+                    {/* FIXED SCREEN-SPACE Y-AXIS (LEFT EDGE) */}
+                    <div className="absolute top-4 left-3 bottom-12 flex flex-col justify-between pointer-events-none z-10 select-none">
+                        <div className="text-[9px] font-bold text-zinc-400 uppercase tracking-wider mb-1">
+                            {activeMetric === 'gex' && 'GEX EXPOSURE'}
+                            {activeMetric === 'vanna' && 'VANNA EXPOSURE'}
+                            {activeMetric === 'charm' && 'CHARM EXPOSURE'}
+                            {activeMetric === 'combined' && 'GEX EXPOSURE'}
+                        </div>
 
-                    <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
-                        <input
-                            type="checkbox"
-                            checked={showGex}
-                            onChange={(e) => setShowGex(e.target.checked)}
-                            className="hidden"
-                        />
-                        <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center ${
-                            showGex ? 'bg-emerald-500/20 border-emerald-500 text-emerald-400' : 'border-zinc-700'
-                        }`}>
-                            {showGex && <Check className="w-2.5 h-2.5" />}
+                        {/* Exposure Ticks (Dynamic from Codex viewport.exposureTicks) */}
+                        <div className="flex-1 flex flex-col justify-between text-[9px] font-bold py-1">
+                            {viewport.exposureTicks.slice().reverse().map((tick, idx) => {
+                                const isZero = Math.abs(tick.value) < 1e-4;
+                                const isPos = tick.value > 0;
+                                const colorClass = isZero
+                                    ? 'text-zinc-300 font-black'
+                                    : isPos
+                                    ? activeMetric === 'vanna'
+                                        ? 'text-purple-400'
+                                        : activeMetric === 'charm'
+                                        ? 'text-amber-400'
+                                        : 'text-emerald-400'
+                                    : activeMetric === 'vanna'
+                                    ? 'text-indigo-400'
+                                    : activeMetric === 'charm'
+                                    ? 'text-amber-600'
+                                    : 'text-rose-400';
+
+                                return (
+                                    <div key={idx} className="flex items-center gap-1.5">
+                                        <span className={`w-10 ${colorClass}`}>{tick.label}</span>
+                                        <div
+                                            className={`w-2 h-[1px] ${
+                                                isZero ? 'w-4 bg-cyan-400/80' : 'bg-zinc-700/60'
+                                            }`}
+                                        />
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+
+                    {/* FIXED SCREEN-SPACE STRIKE X-AXIS (BOTTOM EDGE) */}
+                    <div className="absolute bottom-2 left-16 right-16 flex flex-col items-center pointer-events-none z-10 select-none">
+                        <div className="w-full flex justify-between text-[9px] font-bold text-zinc-400 px-2 mb-0.5">
+                            {viewport.strikeTicks.map((tick, idx) => (
+                                <span key={idx} className="hover:text-white transition-colors">
+                                    {tick.label}
+                                </span>
+                            ))}
+                        </div>
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-zinc-400">
+                            STRIKE PRICE (USD)
                         </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-1.5 rounded-xs bg-emerald-400" />
-                            <span className="text-zinc-200">GEX Mountains</span>
-                        </div>
-                    </label>
+                    </div>
 
-                    <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
-                        <input
-                            type="checkbox"
-                            checked={showVanna}
-                            onChange={(e) => setShowVanna(e.target.checked)}
-                            className="hidden"
-                        />
-                        <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center ${
-                            showVanna ? 'bg-purple-500/20 border-purple-500 text-purple-400' : 'border-zinc-700'
-                        }`}>
-                            {showVanna && <Check className="w-2.5 h-2.5" />}
+                    {/* FIXED SCREEN-SPACE DTE Z-AXIS (RIGHT EDGE) */}
+                    <div className="absolute top-12 right-4 bottom-14 flex flex-col justify-between items-end pointer-events-none z-10 select-none">
+                        <span className="text-[8px] font-bold text-zinc-500 uppercase tracking-wider mb-2">
+                            DTE
                         </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-0.5 bg-purple-400" />
-                            <span className="text-zinc-200">Vanna Contours</span>
+                        <div className="flex-1 flex flex-col justify-between text-[9px] font-bold text-zinc-400">
+                            {viewport.dteTicks.map((tick, idx) => (
+                                <span key={idx}>{tick.label}d</span>
+                            ))}
                         </div>
-                    </label>
-
-                    <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
-                        <input
-                            type="checkbox"
-                            checked={showCharm}
-                            onChange={(e) => setShowCharm(e.target.checked)}
-                            className="hidden"
-                        />
-                        <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center ${
-                            showCharm ? 'bg-amber-500/20 border-amber-500 text-amber-400' : 'border-zinc-700'
-                        }`}>
-                            {showCharm && <Check className="w-2.5 h-2.5" />}
+                        <span className="text-[8px] font-bold text-zinc-500 mt-2">
+                            DAYS TO EXPIRY
                         </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="text-amber-400 text-xs leading-none">→</span>
-                            <span className="text-zinc-200">Charm Pressure</span>
-                        </div>
-                    </label>
+                    </div>
 
-                    <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
-                        <input
-                            type="checkbox"
-                            checked={showFloor}
-                            onChange={(e) => setShowFloor(e.target.checked)}
-                            className="hidden"
-                        />
-                        <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center ${
-                            showFloor ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'border-zinc-700'
-                        }`}>
-                            {showFloor && <Check className="w-2.5 h-2.5" />}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-1.5 rounded-xs bg-cyan-400" />
-                            <span className="text-zinc-200">Confluence Floor</span>
+                    {/* STRUCTURAL LANDMARK BANNERS (SPOT, GAMMA FLIP, CALL WALL, PUT WALL, MAX PAIN) */}
+                    <div className="absolute top-3 left-28 right-28 flex items-center justify-around pointer-events-none z-10 text-[9px] font-mono">
+                        {/* PUT WALL */}
+                        <div className="flex flex-col items-center bg-[#0c1422]/90 border border-rose-500/40 px-2 py-0.5 rounded shadow">
+                            <span className="text-rose-400 font-bold">PUT WALL</span>
+                            <span className="text-white">${data.keyLevels.putWall.strike.toLocaleString()}</span>
                         </div>
-                    </label>
 
-                    <label className="flex items-center gap-2 cursor-pointer hover:text-white transition-colors">
-                        <input
-                            type="checkbox"
-                            checked={showZeroPlane}
-                            onChange={(e) => setShowZeroPlane(e.target.checked)}
-                            className="hidden"
-                        />
-                        <span className={`w-3 h-3 rounded-[3px] border flex items-center justify-center ${
-                            showZeroPlane ? 'bg-cyan-500/20 border-cyan-500 text-cyan-400' : 'border-zinc-700'
-                        }`}>
-                            {showZeroPlane && <Check className="w-2.5 h-2.5" />}
-                        </span>
-                        <div className="flex items-center gap-1.5">
-                            <span className="w-2.5 h-0.5 border-b border-dashed border-zinc-400" />
-                            <span className="text-zinc-200">Zero Plane</span>
+                        {/* GAMMA FLIP */}
+                        <div className="flex flex-col items-center bg-[#0c1422]/90 border border-cyan-500/40 px-2 py-0.5 rounded shadow">
+                            <span className="text-cyan-400 font-bold">GAMMA FLIP</span>
+                            <span className="text-white">${data.keyLevels.gammaFlip.strike.toLocaleString()}</span>
                         </div>
-                    </label>
-                </div>
 
-                {/* THREE PERSISTENT INDEPENDENT EXPOSURE SCALES */}
-                <div className="bg-[#0c1422]/90 backdrop-blur-md px-3 py-2.5 rounded-lg border border-[#1a273b] shadow-lg pointer-events-auto space-y-2.5 text-[9px] font-mono">
-                    {/* Scale 1: GEX EXPOSURE */}
-                    <div className="space-y-0.5">
-                        <div className="flex items-center justify-between font-bold text-emerald-400">
-                            <span>GEX EXPOSURE</span>
-                            <span className="text-zinc-400 text-[8px]">{gexUnit}</span>
+                        {/* SPOT PRICE */}
+                        <div className="flex flex-col items-center bg-[#0c1422] border-2 border-white px-2.5 py-1 rounded shadow-lg">
+                            <span className="text-white font-black tracking-wider">SPOT PRICE</span>
+                            <span className="text-emerald-400 font-bold text-[10px]">${data.spotPrice.toLocaleString()}</span>
                         </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-10 rounded-full bg-gradient-to-b from-[#00e676] via-[#1a2638] to-[#ff1744]" />
-                            <div className="flex flex-col justify-between h-10 text-[8px] font-bold">
-                                <span className="text-emerald-400">+{formatGex(gexScaleBound)}</span>
-                                <span className="text-zinc-400">0</span>
-                                <span className="text-rose-400">-{formatGex(gexScaleBound)}</span>
+
+                        {/* MAX PAIN */}
+                        {data.keyLevels.primaryMaxPain && (
+                            <div className="flex flex-col items-center bg-[#0c1422]/90 border border-amber-500/40 px-2 py-0.5 rounded shadow">
+                                <span className="text-amber-400 font-bold">MAX PAIN (30D)</span>
+                                <span className="text-white">${data.keyLevels.primaryMaxPain.strike.toLocaleString()}</span>
                             </div>
+                        )}
+
+                        {/* CALL WALL */}
+                        <div className="flex flex-col items-center bg-[#0c1422]/90 border border-emerald-500/40 px-2 py-0.5 rounded shadow">
+                            <span className="text-emerald-400 font-bold">CALL WALL</span>
+                            <span className="text-white">${data.keyLevels.callWall.strike.toLocaleString()}</span>
                         </div>
                     </div>
 
-                    <div className="w-full h-[1px] bg-zinc-800" />
+                    {/* 3D WebGL Canvas */}
+                    <div
+                        ref={canvasContainerRef}
+                        onPointerMove={handlePointerMove}
+                        onPointerLeave={handlePointerLeave}
+                        onClick={handleClick}
+                        className="w-full h-full cursor-crosshair"
+                    />
 
-                    {/* Scale 2: VANNA EXPOSURE */}
-                    <div className="space-y-0.5">
-                        <div className="flex items-center justify-between font-bold text-purple-400">
-                            <span>VANNA EXPOSURE</span>
-                            <span className="text-zinc-400 text-[8px]">{vannaUnit}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-8 rounded-full bg-gradient-to-b from-[#c084fc] via-[#1a2638] to-[#6366f1]" />
-                            <div className="flex flex-col justify-between h-8 text-[8px] font-bold">
-                                <span className="text-purple-400">+{formatGex(vannaScaleBound)}</span>
-                                <span className="text-zinc-400">0</span>
-                                <span className="text-indigo-400">-{formatGex(vannaScaleBound)}</span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="w-full h-[1px] bg-zinc-800" />
-
-                    {/* Scale 3: CHARM EXPOSURE */}
-                    <div className="space-y-0.5">
-                        <div className="flex items-center justify-between font-bold text-amber-400">
-                            <span>CHARM EXPOSURE</span>
-                            <span className="text-zinc-400 text-[8px]">{charmUnit}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <div className="w-2 h-8 rounded-full bg-gradient-to-b from-[#ff9100] via-[#1a2638] to-[#d97706]" />
-                            <div className="flex flex-col justify-between h-8 text-[8px] font-bold">
-                                <span className="text-amber-400">+{formatGex(charmScaleBound)}</span>
-                                <span className="text-zinc-400">0</span>
-                                <span className="text-amber-600">-{formatGex(charmScaleBound)}</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            {/* Persistent Non-Overlapping Landmark Banners */}
-            <div className="absolute inset-0 pointer-events-none z-10">
-                {/* PUT WALL Banner */}
-                <div className="absolute top-[8%] left-[29%] -translate-x-1/2 flex flex-col items-center">
-                    <button
-                        onClick={() => onSelectStrike?.(putWallStrike)}
-                        className="px-2.5 py-1 rounded bg-[#1a080c] border border-rose-500/80 shadow-lg shadow-rose-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
-                    >
-                        <span className="text-[9px] font-mono font-bold text-rose-400 tracking-wider">
-                            {isPutWallOffSurface ? '← PUT WALL (FULL-CHAIN)' : 'PUT WALL'}
-                        </span>
-                        <span className="text-[11px] font-mono font-black text-rose-200">
-                            ${putWallStrike.toLocaleString()}
-                        </span>
-                    </button>
-                    <div className="w-[1px] h-4 bg-gradient-to-b from-rose-500 to-transparent" />
-                </div>
-
-                {/* GAMMA FLIP Banner */}
-                <div className="absolute top-[8%] left-[40%] -translate-x-1/2 flex flex-col items-center">
-                    <button
-                        onClick={() => onSelectStrike?.(gammaFlipStrike)}
-                        className="px-2.5 py-1 rounded bg-[#08121a] border border-cyan-500/80 shadow-lg shadow-cyan-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
-                    >
-                        <span className="text-[9px] font-mono font-bold text-cyan-400 tracking-wider">GAMMA FLIP</span>
-                        <span className="text-[11px] font-mono font-black text-cyan-200">
-                            ${gammaFlipStrike.toLocaleString()}
-                        </span>
-                    </button>
-                    <div className="w-[1px] h-4 bg-gradient-to-b from-cyan-500 to-transparent" />
-                </div>
-
-                {/* SPOT PRICE Dominant Center Banner */}
-                <div className="absolute top-[6%] left-[49%] -translate-x-1/2 flex flex-col items-center">
-                    <button
-                        onClick={() => onSelectStrike?.(spotPrice)}
-                        className="px-3 py-1.5 rounded-lg bg-[#0e1626] border-2 border-white shadow-xl shadow-cyan-500/20 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
-                    >
-                        <span className="text-[9px] font-mono font-bold text-zinc-300 tracking-widest uppercase">SPOT PRICE</span>
-                        <span className="text-xs font-mono font-black text-white tracking-tight">
-                            ${spotPrice.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
-                        </span>
-                    </button>
-                    <div className="w-[1px] h-6 bg-gradient-to-b from-white to-transparent" />
-                </div>
-
-                {/* MAX PAIN Banner */}
-                <div className="absolute top-[8%] left-[58%] -translate-x-1/2 flex flex-col items-center">
-                    <button
-                        onClick={() => onSelectStrike?.(maxPainStrike)}
-                        className="px-2.5 py-1 rounded bg-[#1a1408] border border-amber-500/80 shadow-lg shadow-amber-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
-                    >
-                        <span className="text-[9px] font-mono font-bold text-amber-400 tracking-wider">MAX PAIN</span>
-                        <span className="text-[11px] font-mono font-black text-amber-200">
-                            ${maxPainStrike.toLocaleString()}
-                        </span>
-                    </button>
-                    <div className="w-[1px] h-4 bg-gradient-to-b from-amber-500 to-transparent" />
-                </div>
-
-                {/* CALL WALL Banner */}
-                <div className="absolute top-[8%] left-[68%] -translate-x-1/2 flex flex-col items-center">
-                    <button
-                        onClick={() => onSelectStrike?.(callWallStrike)}
-                        className="px-2.5 py-1 rounded bg-[#081a10] border border-emerald-500/80 shadow-lg shadow-emerald-950/60 flex flex-col items-center pointer-events-auto cursor-pointer hover:scale-105 transition-transform"
-                    >
-                        <span className="text-[9px] font-mono font-bold text-emerald-400 tracking-wider">
-                            {isCallWallOffSurface ? 'CALL WALL (FULL-CHAIN) →' : 'CALL WALL'}
-                        </span>
-                        <span className="text-[11px] font-mono font-black text-emerald-200">
-                            ${callWallStrike.toLocaleString()}
-                        </span>
-                    </button>
-                    <div className="w-[1px] h-4 bg-gradient-to-b from-emerald-500 to-transparent" />
-                </div>
-
-                {/* 3D Axis Labels */}
-                <div className="absolute top-[32%] left-[19%] -rotate-90 origin-left text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
-                    DEALER EXPOSURE (GEX HEIGHT)
-                </div>
-                <div className="absolute bottom-[8%] left-[48%] -translate-x-1/2 text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
-                    STRIKE PRICE AXIS (USD)
-                </div>
-                <div className="absolute bottom-[16%] right-[14%] rotate-30 origin-right text-[9px] font-mono font-bold text-zinc-400 tracking-wider">
-                    EXPIRATION DTE HORIZON
-                </div>
-            </div>
-
-            {/* Interactive Raycast Tooltip */}
-            {hoveredCell && mousePos && (
-                <div
-                    className="absolute pointer-events-none z-30 bg-[#060a12]/95 backdrop-blur-md p-2.5 rounded-lg border border-cyan-500/60 shadow-2xl text-[10px] font-mono space-y-1 transform -translate-x-1/2 -translate-y-full -mt-2"
-                    style={{ left: mousePos.x, top: mousePos.y }}
-                >
-                    <div className="flex items-center justify-between gap-4 border-b border-zinc-800 pb-1">
-                        <span className="font-bold text-white">${hoveredCell.strike.toLocaleString()}</span>
-                        <span className="text-zinc-400">{hoveredCell.dte}d ({hoveredCell.expiry})</span>
-                    </div>
-
-                    {hoveredCell.observed ? (
-                        <div className="space-y-0.5 text-[9px]">
-                            <div className="flex justify-between gap-4">
-                                <span className="text-zinc-400">GEX Exposure:</span>
-                                <span className={`font-bold ${hoveredCell.gexExposure >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                    {formatGex(hoveredCell.gexExposure)} ({hoveredCell.gexBand || 'MED'})
+                    {/* Interactive Raycasting Tooltip */}
+                    {hover && (
+                        <div
+                            className="absolute pointer-events-none z-30 bg-[#080d16]/95 backdrop-blur-md border border-cyan-500/50 p-2.5 rounded-lg shadow-2xl text-[10px] font-mono space-y-1"
+                            style={{
+                                left: Math.min(window.innerWidth - 300, hover.screenX + 16),
+                                top: Math.max(10, hover.screenY - 120),
+                            }}
+                        >
+                            <div className="flex items-center justify-between border-b border-zinc-800 pb-1 gap-4">
+                                <span className="text-white font-bold">
+                                    Strike: ${hover.cell.strike.toLocaleString()}
+                                </span>
+                                <span className="text-cyan-400 font-bold">
+                                    {hover.cell.dte} DTE ({hover.cell.expiry})
                                 </span>
                             </div>
-                            <div className="flex justify-between gap-4">
-                                <span className="text-zinc-400">Vanna Exposure:</span>
-                                <span className="font-bold text-purple-400">
-                                    {formatGex(hoveredCell.vannaExposure)} ({hoveredCell.vannaBand || 'MED'})
-                                </span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                                <span className="text-zinc-400">Charm Exposure:</span>
-                                <span className="font-bold text-amber-400">
-                                    {formatGex(hoveredCell.charmExposure)}/day
-                                </span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                                <span className="text-zinc-400">Confluence:</span>
-                                <span className="font-bold text-cyan-400">{hoveredCell.confluenceScore}/100</span>
-                            </div>
-                            <div className="flex justify-between gap-4">
-                                <span className="text-zinc-400">Open Interest:</span>
-                                <span className="text-white">{hoveredCell.openInterestBtc?.toLocaleString()} BTC</span>
-                            </div>
-                            {hoveredCell.iv && (
-                                <div className="flex justify-between gap-4">
-                                    <span className="text-zinc-400">IV / Delta:</span>
-                                    <span className="text-zinc-300">{hoveredCell.iv.toFixed(1)}% | Δ {(hoveredCell.rawDelta ?? 0).toFixed(2)}</span>
+
+                            {hover.isObserved ? (
+                                <>
+                                    <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-zinc-300">
+                                        <div>
+                                            GEX:{' '}
+                                            <span className={hover.cell.gexExposure >= 0 ? 'text-emerald-400 font-bold' : 'text-rose-400 font-bold'}>
+                                                {formatGex(hover.cell.gexExposure)}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Vanna:{' '}
+                                            <span className={hover.cell.vannaExposure >= 0 ? 'text-purple-400' : 'text-indigo-400'}>
+                                                {formatGex(hover.cell.vannaExposure)}
+                                            </span>
+                                        </div>
+                                        <div>
+                                            Charm:{' '}
+                                            <span className={hover.cell.charmExposure >= 0 ? 'text-amber-400' : 'text-amber-600'}>
+                                                {formatGex(hover.cell.charmExposure)}
+                                            </span>
+                                        </div>
+                                        <div>OI: {hover.cell.openInterestBtc.toLocaleString()} BTC</div>
+                                        <div>IV: {hover.cell.iv !== null ? `${hover.cell.iv.toFixed(1)}%` : 'N/A'}</div>
+                                        <div>Δ (Delta): {hover.cell.rawDelta !== null ? `${hover.cell.rawDelta.toFixed(2)}` : 'N/A'}</div>
+                                    </div>
+                                    <div className="pt-1 border-t border-zinc-800 text-[9px] text-zinc-400 flex justify-between">
+                                        <span>Confluence: {hover.cell.confluenceScore}/100</span>
+                                        <span className="text-cyan-400 font-bold">{hover.cell.behaviorZone}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-zinc-500 italic py-1">
+                                    NO DIRECT CONTRACT OBSERVATION (Interpolated)
                                 </div>
                             )}
-                            <div className="flex justify-between gap-4 pt-1 border-t border-zinc-800">
-                                <span className="text-zinc-400">Behavior Zone:</span>
-                                <span className="font-bold text-cyan-300">{hoveredCell.behaviorZone?.replace('_', ' ')}</span>
-                            </div>
-                        </div>
-                    ) : (
-                        <div className="text-[9px] text-amber-400 font-semibold py-1">
-                            NO DIRECT CONTRACT OBSERVATION
                         </div>
                     )}
                 </div>
-            )}
+
+                {/* RIGHT-HAND METRIC SUMMARY SIDEBAR */}
+                <div className="w-64 bg-[#0a101d] border-l border-[#151f30] p-3 flex flex-col justify-between z-10">
+                    <div className="space-y-2.5">
+                        <div className="border-b border-[#151f30] pb-1.5 flex items-center justify-between">
+                            <span className="text-[11px] font-bold text-white uppercase tracking-wider">
+                                {summaryCardData.title}
+                            </span>
+                            <span className="text-[9px] text-zinc-400">USD</span>
+                        </div>
+
+                        <div className="space-y-1.5 text-[10px]">
+                            {summaryCardData.items.map((item, idx) => (
+                                <div key={idx} className="flex items-center justify-between py-0.5 border-b border-zinc-800/40">
+                                    <span className="text-zinc-400">{item.label}</span>
+                                    <span className={item.color}>{item.value}</span>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+
+                    {/* Combined Mode Layer Toggles (When activeMetric === 'combined') */}
+                    {activeMetric === 'combined' && (
+                        <div className="p-2 rounded bg-[#0c1422] border border-[#1a273b] space-y-1 text-[9px] mt-2">
+                            <span className="font-bold text-zinc-400 uppercase">LAYER OVERLAYS</span>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={showVannaContours}
+                                    onChange={(e) => setShowVannaContours(e.target.checked)}
+                                    className="accent-purple-500"
+                                />
+                                <span className="text-purple-300">Vanna Contours</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={showCharmGlyphs}
+                                    onChange={(e) => setShowCharmGlyphs(e.target.checked)}
+                                    className="accent-amber-500"
+                                />
+                                <span className="text-amber-300">Charm Glyphs</span>
+                            </label>
+                            <label className="flex items-center gap-1.5 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={showConfluenceFloor}
+                                    onChange={(e) => setShowConfluenceFloor(e.target.checked)}
+                                    className="accent-cyan-500"
+                                />
+                                <span className="text-cyan-300">Confluence Floor</span>
+                            </label>
+                        </div>
+                    )}
+
+                    {/* Zoom / Hint Information */}
+                    <div className="pt-2 border-t border-[#151f30] text-[9px] text-zinc-500 space-y-0.5">
+                        <div className="flex items-center gap-1 text-zinc-400 font-bold">
+                            <Compass className="w-3 h-3 text-cyan-400" />
+                            <span>QUANTITATIVE VIEWPORT</span>
+                        </div>
+                        <p>Scroll mouse wheel to zoom data domain. Drag to rotate 3D angle.</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Bottom Gradient Scale Bar */}
+            <div className="px-4 py-2 bg-[#0a101d] border-t border-[#151f30] flex items-center justify-between text-[9px] text-zinc-400 z-20">
+                <div className="flex items-center gap-3">
+                    <span className="font-bold text-zinc-300">
+                        {activeMetric === 'gex' && 'GEX EXPOSURE (USD PER 1% BTC MOVE)'}
+                        {activeMetric === 'vanna' && 'VANNA EXPOSURE (USD PER 1 VOL POINT)'}
+                        {activeMetric === 'charm' && 'CHARM EXPOSURE (USD PER CALENDAR DAY)'}
+                        {activeMetric === 'combined' && 'GEX BASE + CONFLUENCE HEATMAP'}
+                    </span>
+
+                    {/* Gradient Bar */}
+                    <div className="flex items-center gap-1.5 font-bold">
+                        <span className="text-rose-400">-{formatGex(exposureBound)}</span>
+                        <div
+                            className={`w-36 h-2 rounded-full shadow-inner ${
+                                activeMetric === 'vanna'
+                                    ? 'bg-gradient-to-r from-[#4f46e5] via-[#111827] to-[#ec4899]'
+                                    : activeMetric === 'charm'
+                                    ? 'bg-gradient-to-r from-[#c2410c] via-[#111827] to-[#f59e0b]'
+                                    : 'bg-gradient-to-r from-[#ef4444] via-[#111827] to-[#22c55e]'
+                            }`}
+                        />
+                        <span className="text-emerald-400">+{formatGex(exposureBound)}</span>
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-4 text-[9px]">
+                    <span>
+                        Data Mode: <strong className="text-emerald-400">{data.dataMode}</strong>
+                    </span>
+                    <span>
+                        Assumption Model: <strong className="text-zinc-300">{data.assumptionModel || 'OI_SIGN_PROXY_V1'}</strong>
+                    </span>
+                </div>
+            </div>
         </div>
     );
 }

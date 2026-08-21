@@ -822,17 +822,28 @@ function sum(values: readonly number[]): number {
 }
 
 function buildDemoOptions(spotPrice: number, now: Date): NormalizedDeribitOption[] {
-    const dtes = [7, 14, 30, 60, 90, 180];
-    const strikeMultipliers = [0.75, 0.85, 0.95, 1, 1.05, 1.15, 1.25];
+    const dtes = [7, 14, 30, 60, 90, 180, 270, 365];
+    const strikeOffsets = [-11000, -9000, -7000, -5000, -3000, -1000, 1000, 3000, 5000, 7000, 9000, 11000];
     const options: NormalizedDeribitOption[] = [];
 
     for (const dte of dtes) {
         const expiryDate = new Date(now.getTime() + dte * 24 * 60 * 60 * 1000);
         const expiryStr = `${dte}D`;
-        for (const multiplier of strikeMultipliers) {
-            const strike = Math.round((spotPrice * multiplier) / 1000) * 1000;
+        const termWeight = 0.55 + 0.45 * Math.exp(-dte / 120);
+        for (const offset of strikeOffsets) {
+            const strike = Math.round((spotPrice + offset) / 1000) * 1000;
+            const normalizedStrike = (strike - spotPrice) / spotPrice;
             for (const type of ['call', 'put'] as const) {
-                const openInterest = Math.max(25, 900 * Math.exp(-Math.pow((strike - spotPrice) / (spotPrice * 0.18), 2)));
+                const callWallWeight = gaussian(strike, spotPrice + 5000, 2800);
+                const putWallWeight = gaussian(strike, spotPrice - 7000, 2600);
+                const spotWeight = gaussian(strike, spotPrice, 4600);
+                const shoulderWeight = gaussian(strike, spotPrice - 2000, 6200);
+                const openInterest = type === 'call'
+                    ? 80 + 1900 * callWallWeight * termWeight + 520 * spotWeight + 180 * shoulderWeight
+                    : 70 + 2200 * putWallWeight * termWeight + 430 * spotWeight + 260 * shoulderWeight;
+                const ivPercent = type === 'put'
+                    ? 61 + Math.max(0, -normalizedStrike) * 26 + dte * 0.012
+                    : 53 + Math.max(0, normalizedStrike) * 18 + dte * 0.008;
                 options.push({
                     instrument: `BTC-${expiryStr}-${strike}-${type === 'call' ? 'C' : 'P'}`,
                     currency: 'BTC',
@@ -843,8 +854,8 @@ function buildDemoOptions(spotPrice: number, now: Date): NormalizedDeribitOption
                     dte,
                     tte: dte / 365,
                     openInterest,
-                    ivDecimal: 0.55,
-                    ivPercent: 55,
+                    ivDecimal: ivPercent / 100,
+                    ivPercent,
                     volume: openInterest * 0.1,
                 } as unknown as NormalizedDeribitOption);
             }
@@ -852,4 +863,8 @@ function buildDemoOptions(spotPrice: number, now: Date): NormalizedDeribitOption
     }
 
     return options;
+}
+
+function gaussian(value: number, center: number, width: number): number {
+    return Math.exp(-Math.pow((value - center) / width, 2));
 }
