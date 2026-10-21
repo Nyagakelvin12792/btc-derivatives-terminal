@@ -1,8 +1,8 @@
 # UI/UX Technical Stack
 
 Version: 1.0  
-Status: PROPOSED FOR UI IMPLEMENTATION  
-Last updated: 2026-10-21
+Status: IMPLEMENTED AND VERIFIED
+Last updated: 2026-10-22
 
 ## 1. Stack Strategy
 
@@ -21,7 +21,7 @@ These packages are already present and should be retained unless a separate depe
 
 | Technology | Current version | UI responsibility |
 | --- | ---: | --- |
-| Next.js | 16.3.1 | Application shell, routes, client/server boundaries, build |
+| Next.js | 16.4.2 | Application shell, routes, client/server boundaries, build |
 | React / React DOM | 19.2.8 | UI composition and stateful interaction |
 | TypeScript | 5.x | Strict UI contracts and component safety |
 | Tailwind CSS | 4.x | Tokens, layout, responsive styling |
@@ -40,7 +40,7 @@ These packages are already present and should be retained unless a separate depe
 
 ## 3. Proposed UI Additions
 
-These packages are proposals, not installed dependencies. Versions must be pinned only after the UX1 compatibility spike passes against the repository's React and Next.js versions.
+The compatibility spike passed against React 19.2.8 and Next.js 16.4.2. The packages below are installed and covered by the production build and browser suite.
 
 ### 3.1 Lightweight Charts
 
@@ -295,4 +295,3 @@ No package should be added to `package.json` until this spike is approved.
 - Do not calculate order flow in the UI.
 - Do not use WebGL for menus, text controls, or accessibility-critical interface elements.
 - Do not introduce a second global state library.
-

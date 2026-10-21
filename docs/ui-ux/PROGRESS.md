@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 1.0  
-Last updated: 2026-10-21  
-Overall status: RESEARCH AND PLANNING COMPLETE — IMPLEMENTATION NOT STARTED  
-Current checkpoint: UX0 COMPLETE; UX1 requires Architect approval and Gemini ownership
+Version: 2.0
+Last updated: 2026-10-22
+Overall status: UI IMPLEMENTATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
+Current checkpoint: UX0–UX8 COMPLETE; UX9 awaits Architect acceptance
 
 ## Scope Statement
 
@@ -37,15 +37,15 @@ Observed UI limitations:
 | Milestone | Status | Notes |
 | --- | --- | --- |
 | UX0 — Research and plan | COMPLETE | Approved 16:9 direction stored; platform research and four planning documents completed |
-| UX1 — UI foundation and shell | NOT STARTED | Requires Gemini implementation branch and Architect approval |
-| UX2 — Resizable workspace mechanics | NOT STARTED | UI-only state and persistence |
-| UX3 — Options overlays and inspector | NOT STARTED | Existing data only; no new calculations |
-| UX4 — Layers and studies | NOT STARTED | Unified object tree and active-study controls |
-| UX5 — Fixed Range VP and AVWAP | NOT STARTED | Presentation/interaction work only |
-| UX6 — Order-flow panes | BLOCKED FOR LIVE DATA | UI shell can proceed; live values require an already-authorized frontend contract |
-| UX7 — Saved layouts and linked tools | NOT STARTED | Preserve 3D and analysis workspaces |
-| UX8 — Responsive/accessibility/performance | NOT STARTED | Includes browser and visual regression gates |
-| UX9 — Independent review/release | NOT STARTED | Requires zero-backend-diff audit |
+| UX1 — UI foundation and shell | COMPLETE | Compact shell, workspace rail, command bar, accessible controls, Ctrl+K palette |
+| UX2 — Resizable workspace mechanics | COMPLETE | Desktop chart/inspector split, collapsible panels, persisted UI preferences |
+| UX3 — Options overlays and inspector | COMPLETE | Walls, Gamma Flip, regime shading, DTE filters, provenance states |
+| UX4 — Layers and studies | COMPLETE | Layer popover, active chips, hide/show and reset controls |
+| UX5 — Fixed Range VP and AVWAP | COMPLETE IN DEMO | Draggable range/body and draggable anchor; production series awaits authorized contract |
+| UX6 — Order-flow panes | COMPLETE IN DEMO / BLOCKED FOR LIVE DATA | Cumulative CVD candles; Delta/Book/Liquidity show `UNAVAILABLE` |
+| UX7 — Saved layouts and linked tools | COMPLETE | UI persistence, save/reset controls, all legacy workspaces retained |
+| UX8 — Responsive/accessibility/performance | COMPLETE | 1920×1080 and 390×844 checks, mobile bottom sheet, axe and keyboard verification |
+| UX9 — Independent review/release | REVIEW REQUIRED | Zero backend/engine source diff confirmed; Architect acceptance remains external |
 
 ## UX0 Evidence
 
@@ -64,6 +64,18 @@ Verification completed on 2026-10-21:
 - `npm.cmd run build`: PASS — production build, TypeScript, static generation, and route collection.
 - Relative Markdown links: PASS.
 - Documentation scope audit: PASS — application source and backend/engine files unchanged.
+
+Implementation verification completed on 2026-10-22:
+
+- `npx.cmd vitest run`: PASS — 8 files, 51 tests.
+- `npm.cmd run lint`: PASS — zero errors; 34 pre-existing warnings remain in legacy components.
+- `npm.cmd run build`: PASS on Next.js 16.4.2.
+- Playwright desktop 1920×1080: PASS — chart render, command control, Ctrl+K, screenshot.
+- Playwright mobile 390×844: PASS — chart render, command control, Options Metrics bottom sheet, screenshot.
+- axe desktop/mobile: PASS — no serious or critical automated violations; color contrast is excluded from this automated gate.
+- Dependency audit: critical advisories reduced from 1 to 0 by updating Next.js and `eslint-config-next` to 16.4.2; remaining advisories are transitive development-tool findings.
+- Scope audit: PASS — no edits under `src/app/api/deribit/`, `src/lib/deribit/`, `src/lib/quant/`, or `src/lib/terrain/`.
+- Visual evidence: `/.artifacts/ui-overhaul/market-structure-desktop-16x9.png` and `market-structure-mobile.png`.
 
 ## Research Completed
 
@@ -111,13 +123,9 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 
 ## Next Authorized Work
 
-After approval:
-
-1. Architect reviews the information architecture, data-label semantics, and scope boundary.
-2. Gemini creates the UI implementation branch and owns dashboard/page/chart presentation files.
-3. Gemini completes UX1 without modifying backend-owned paths.
-4. Codex reviews TypeScript boundaries, accessibility, dependency risk, and the git diff.
-5. Architect accepts or rejects UX1 evidence before UX2 begins.
+1. Architect performs UX9 acceptance using the stored screenshots, tests, and zero-backend-diff evidence.
+2. Deploy the reviewed commit to Preview and complete a live browser smoke test.
+3. If live price/CVD is required, authorize a separate data-contract milestone; do not silently promote demo fixtures.
 
 ## Required Handoff Evidence Per Milestone
 
@@ -141,3 +149,12 @@ After approval:
 - Defined the UI-only technical approach, feature-attribution matrix, implementation sequence, acceptance criteria, and progress gates.
 - Copied the approved design preview into the repository documentation assets.
 - No application source, backend, API, formula, or engine file changed.
+
+### 2026-10-22 — UX1 through UX8
+
+- Implemented the chart-first desktop and mobile terminal shell.
+- Added options walls, Gamma Flip, regime shading, in-range Fixed Range VP, anchored VWAP, cumulative CVD candles, layer management, DTE filters, resizable inspector, command palette, and persisted UI preferences.
+- Preserved every original analytical workspace behind compact navigation.
+- Added explicit live/demo/unavailable presentation states and retained `NO LIVE EXECUTION` globally.
+- Added unit, browser, responsive screenshot, keyboard, and automated accessibility coverage.
+- Updated vulnerable Next.js 16.3.1 to 16.4.2 without changing backend/engine source.

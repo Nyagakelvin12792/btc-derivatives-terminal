@@ -1,12 +1,12 @@
 # Sourced UI Feature Matrix
 
 Version: 1.0  
-Status: RESEARCH COMPLETE — DESIGN INPUT  
-Last updated: 2026-10-21
+Status: RESEARCH APPLIED — UI IMPLEMENTED
+Last updated: 2026-10-22
 
 ## 1. Research Method
 
-This document records which interaction ideas informed the terminal redesign, where each idea will be applied, and what will deliberately not be copied.
+This document records which interaction ideas informed the terminal redesign, where each idea is applied, and what was deliberately not copied. The implementation is original project code; no proprietary assets, source code, or pixel-identical product skin was copied.
 
 Research rules:
 
@@ -276,4 +276,3 @@ The resulting product is intentionally not a clone of any single platform:
 - **This project** contributes the derivatives mechanics, dealer-terrain model, gamma regime, walls, confluence, and strict analysis-only safety boundary.
 
 The applied design keeps price and derivatives structure visible, moves configuration and detailed metrics into controlled surfaces, and makes every data state auditable.
-

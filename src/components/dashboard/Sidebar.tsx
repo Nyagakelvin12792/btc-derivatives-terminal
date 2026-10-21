@@ -25,6 +25,7 @@ interface SidebarProps {
 
 export default function Sidebar({ activeTab, onSelectTab, onOpenRoadmap }: SidebarProps) {
     const primaryNavItems: Array<{ name: WorkspaceTab; label: string; icon?: React.ElementType; badge?: string }> = [
+        { name: 'MARKET STRUCTURE', label: 'MARKET STRUCTURE', icon: Sparkles },
         { name: 'DASHBOARD', label: 'DASHBOARD', icon: LayoutDashboard },
         { name: 'GEX ANALYSIS', label: 'GEX ANALYSIS', icon: Activity },
         { name: 'VANNA', label: 'VANNA', badge: 'V' },

@@ -49,8 +49,9 @@ export default function SurfaceMesh({
     const [viewMode, setViewMode] = useState<'3d' | 'top' | 'side'>('3d');
     const [hoveredCell, setHoveredCell] = useState<GridCell | null>(null);
 
-    // Sync metric prop changes
+    // Keep the legacy controlled-prop behavior intact for the retained 3D workspace.
     useEffect(() => {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         setMetric(selectedMetric);
     }, [selectedMetric]);
 

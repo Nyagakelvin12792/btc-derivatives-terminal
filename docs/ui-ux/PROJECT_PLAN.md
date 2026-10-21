@@ -1,8 +1,8 @@
 # Bitcoin Derivatives Terminal UI/UX Overhaul Plan
 
 Version: 1.0  
-Status: APPROVED DESIGN DIRECTION — UI IMPLEMENTATION NOT STARTED  
-Last updated: 2026-10-21  
+Status: UI IMPLEMENTATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
+Last updated: 2026-10-22
 Scope owner: Antigravity / Gemini (Builder & Visual Engine)  
 Review owners: Architect (product and derivatives semantics), Codex (type safety, security, and boundary review)
 
@@ -15,6 +15,8 @@ Approved visual direction:
 ![Approved terminal direction](./assets/approved-terminal-direction-16x9.png)
 
 The image is a design target, not evidence that the feature is implemented.
+
+Implementation evidence is now available in `/.artifacts/ui-overhaul/` for the 1920×1080 desktop and 390×844 mobile layouts. Production price/CVD rendering remains explicitly unavailable in `LIVE` until an authorized frontend time-series contract exists; the complete interactive presentation is labelled `DEMO`.
 
 ## 2. Hard Scope Boundary
 
@@ -503,4 +505,3 @@ The milestone is complete only when:
 - Existing 3D, GEX, Vanna, Charm, and OI workspaces remain accessible.
 - No backend, API, Deribit, quant, or terrain-engine file is changed.
 - No live execution capability is added.
-

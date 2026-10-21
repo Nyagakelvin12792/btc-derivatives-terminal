@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import { WorkspaceTab } from '@/lib/dashboard/types';
 import { TerrainSurfaceCell } from '@/lib/terrain/types';
 
@@ -47,10 +48,39 @@ export interface TerminalState {
     setViewMode: (mode: '3d' | '2d') => void;
     isRotating: boolean;
     setIsRotating: (rotating: boolean) => void;
+
+    // UI-only workspace preferences. Market responses are never persisted here.
+    inspectorOpen: boolean;
+    setInspectorOpen: (open: boolean) => void;
+    inspectorTab: 'OPTIONS' | 'DECISION' | 'RISK' | 'DATA';
+    setInspectorTab: (tab: 'OPTIONS' | 'DECISION' | 'RISK' | 'DATA') => void;
+    studyPaneOpen: boolean;
+    setStudyPaneOpen: (open: boolean) => void;
+    activeOrderFlowStudy: 'CVD' | 'DELTA' | 'BOOK' | 'LIQUIDITY';
+    setActiveOrderFlowStudy: (study: 'CVD' | 'DELTA' | 'BOOK' | 'LIQUIDITY') => void;
+    dteFilter: '0-2D' | '7D' | '14D' | '30D' | 'ALL';
+    setDteFilter: (filter: '0-2D' | '7D' | '14D' | '30D' | 'ALL') => void;
+    chartLayers: {
+        walls: boolean;
+        gammaRegime: boolean;
+        gammaFlip: boolean;
+        volumeProfile: boolean;
+        avwap: boolean;
+    };
+    toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
+    resetWorkspaceUi: () => void;
 }
 
-export const useTerminalStore = create<TerminalState>((set) => ({
-    activeWorkspace: 'SURFACE MAP',
+const defaultChartLayers = {
+    walls: true,
+    gammaRegime: true,
+    gammaFlip: true,
+    volumeProfile: true,
+    avwap: true,
+};
+
+export const useTerminalStore = create<TerminalState>()(persist((set) => ({
+    activeWorkspace: 'MARKET STRUCTURE',
     setActiveWorkspace: (tab) => set({ activeWorkspace: tab }),
 
     dataMode: 'DEMO',
@@ -96,4 +126,39 @@ export const useTerminalStore = create<TerminalState>((set) => ({
     setViewMode: (mode) => set({ viewMode: mode }),
     isRotating: false,
     setIsRotating: (rotating) => set({ isRotating: rotating }),
+
+    inspectorOpen: true,
+    setInspectorOpen: (open) => set({ inspectorOpen: open }),
+    inspectorTab: 'OPTIONS',
+    setInspectorTab: (tab) => set({ inspectorTab: tab }),
+    studyPaneOpen: true,
+    setStudyPaneOpen: (open) => set({ studyPaneOpen: open }),
+    activeOrderFlowStudy: 'CVD',
+    setActiveOrderFlowStudy: (study) => set({ activeOrderFlowStudy: study }),
+    dteFilter: 'ALL',
+    setDteFilter: (filter) => set({ dteFilter: filter }),
+    chartLayers: defaultChartLayers,
+    toggleChartLayer: (layer) => set((state) => ({
+        chartLayers: { ...state.chartLayers, [layer]: !state.chartLayers[layer] },
+    })),
+    resetWorkspaceUi: () => set({
+        inspectorOpen: true,
+        inspectorTab: 'OPTIONS',
+        studyPaneOpen: true,
+        activeOrderFlowStudy: 'CVD',
+        dteFilter: 'ALL',
+        chartLayers: defaultChartLayers,
+    }),
+}), {
+    name: 'btc-terminal-ui-v1',
+    version: 1,
+    partialize: (state) => ({
+        activeWorkspace: state.activeWorkspace,
+        inspectorOpen: state.inspectorOpen,
+        inspectorTab: state.inspectorTab,
+        studyPaneOpen: state.studyPaneOpen,
+        activeOrderFlowStudy: state.activeOrderFlowStudy,
+        dteFilter: state.dteFilter,
+        chartLayers: state.chartLayers,
+    }),
 }));

@@ -24,6 +24,7 @@ import { createCanonicalDashboardData, extractKeyLevelProfileFromContractV2 } fr
 import type { DealerEnvironmentSummaryData } from '@/lib/dashboard/types';
 import type { TerrainDataContractV2 } from '@/lib/terrain/types';
 import { Info, AlertTriangle } from 'lucide-react';
+import MarketTerminal from '@/components/terminal/MarketTerminal';
 
 // Dynamically import 3D WebGL component to guarantee client-only execution
 const IntegratedDealerTerrain = dynamic(
@@ -104,8 +105,12 @@ export default function TerminalPage() {
         };
     }, [data]);
 
+    if (activeWorkspace === 'MARKET STRUCTURE') {
+        return <MarketTerminal data={data} isError={isError} />;
+    }
+
     return (
-        <div className="min-h-screen bg-[#05080f] text-zinc-100 flex flex-row font-sans selection:bg-cyan-500 selection:text-black overflow-x-hidden">
+        <div className="min-h-dvh bg-[#05080f] text-zinc-100 flex flex-row font-sans selection:bg-cyan-500 selection:text-black overflow-x-hidden">
             {/* Left Navigation Sidebar */}
             <Sidebar
                 activeTab={activeWorkspace}
@@ -113,7 +118,7 @@ export default function TerminalPage() {
             />
 
             {/* Main Terminal Workspace */}
-            <div className="flex-1 flex flex-col h-screen overflow-y-auto overflow-x-hidden">
+            <div className="flex-1 flex flex-col h-dvh overflow-y-auto overflow-x-hidden">
                 {/* Top Ticker Metric Bar */}
                 <TopTickerBar
                     summary={summaryData}
