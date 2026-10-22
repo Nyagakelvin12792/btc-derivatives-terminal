@@ -3,11 +3,19 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: 77bdeae
+>>> COMMIT: 6f19bae
 >>> TESTS: PASS — Vitest 8 files/52 tests; targeted ESLint 0 errors/0 warnings; Next production build; Playwright 5 passed/1 mobile-only skip; desktop/mobile axe 0 serious or critical violations
 >>> NEXT AGENT: Architect
 >>> ACTION REQUIRED: Review approved-reference parity, confirm UI-only scope, and approve Preview deployment or return specific visual corrections
 >>> TARGET: src/components/terminal/, src/lib/ui/, src/lib/dashboard/store.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/PROGRESS.md, .artifacts/ui-overhaul/
+
+## Approved Right-Inspector Refinement
+
+- Matched the user-supplied compact right-terminal reference without changing data calculations or backend contracts.
+- Tightened the tabs, gamma/GEX/flip summary, DTE selector, paired metric rows, chart toggles, display legend, and Decision card.
+- Reduced the desktop inspector default width from 24% to 20% while retaining resizing and a 300px readability floor.
+- Preserved every existing option metric, control, mobile sheet behavior, and honest data-state label.
+- Refreshed the tracked desktop and mobile screenshots.
 
 ## Ownership Decision
 
