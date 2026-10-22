@@ -3,7 +3,7 @@ import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('button', { name: 'OPTIONS METRICS' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible();
 });
 
 test('renders the chart-first terminal and keyboard command palette', async ({ page }, testInfo) => {
@@ -25,7 +25,7 @@ test('renders the chart-first terminal and keyboard command palette', async ({ p
     }
 
     if (testInfo.project.name === 'mobile') {
-        await page.getByRole('button', { name: 'OPTIONS METRICS' }).click();
+        await page.getByRole('button', { name: 'OPTIONS METRICS', exact: true }).click();
         const sheet = page.getByRole('dialog');
         await expect(sheet.getByText('GAMMA FLIP')).toBeVisible();
         await sheet.getByRole('button', { name: 'Close options metrics' }).click();
@@ -41,4 +41,22 @@ test('has no serious or critical automated accessibility violations', async ({ p
     const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze();
     const severe = results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''));
     expect(severe).toEqual([]);
+});
+
+test('exposes the approved market-structure controls and honest states', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop terminal control-density check');
+
+    await expect(page.getByText('POSITIVE GAMMA · MEAN-REVERSION')).toBeVisible();
+    await expect(page.getByText('NEGATIVE GAMMA · EXPANSION')).toBeVisible();
+    await expect(page.getByText('POC', { exact: false }).first()).toBeVisible();
+    await expect(page.getByText('Coverage 96%')).toBeVisible();
+    await expect(page.getByRole('toolbar', { name: 'VP controls' })).toBeVisible();
+
+    await page.getByRole('button', { name: 'Replay' }).click();
+    await expect(page.getByText('REPLAY PAUSED · HISTORICAL DEMO')).toBeVisible();
+
+    await page.getByRole('tab', { name: 'DECISION' }).click();
+    await expect(page.getByText('JEV SHADOW OPINION')).toBeVisible();
+    await expect(page.getByText('UNAVAILABLE', { exact: true })).toBeVisible();
+    await expect(page.getByText('NO LIVE EXECUTION', { exact: true }).first()).toBeVisible();
 });

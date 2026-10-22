@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 2.0
+Version: 2.1
 Last updated: 2026-10-22
-Overall status: UI IMPLEMENTATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8 COMPLETE; UX9 awaits Architect acceptance
+Overall status: APPROVED-STYLE UI PARITY IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
+Current checkpoint: UX0–UX8 and UX10 COMPLETE; UX9 awaits Architect acceptance
 
 ## Scope Statement
 
@@ -46,6 +46,7 @@ Observed UI limitations:
 | UX7 — Saved layouts and linked tools | COMPLETE | UI persistence, save/reset controls, all legacy workspaces retained |
 | UX8 — Responsive/accessibility/performance | COMPLETE | 1920×1080 and 390×844 checks, mobile bottom sheet, axe and keyboard verification |
 | UX9 — Independent review/release | REVIEW REQUIRED | Zero backend/engine source diff confirmed; Architect acceptance remains external |
+| UX10 — Approved-style parity | COMPLETE | Market header, drawing tools, wall hierarchy, dual gamma zones, VP levels, AVWAP bands, CVD controls, inspector metrics, provenance and status footer implemented |
 
 ## UX0 Evidence
 
@@ -158,3 +159,15 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Added explicit live/demo/unavailable presentation states and retained `NO LIVE EXECUTION` globally.
 - Added unit, browser, responsive screenshot, keyboard, and automated accessibility coverage.
 - Updated vulnerable Next.js 16.3.1 to 16.4.2 without changing backend/engine source.
+
+### 2026-10-22 — UX10 approved-style parity
+
+- Transferred UI ownership to Codex on `codex/ui-approved-parity` by explicit user approval.
+- Added market timeframes, expiry context, source states, drawing and measurement tools, replay presentation, chart-native active study controls, and a compact chart tool rail.
+- Made primary and secondary walls visible in the chart scale and added dual positive/negative gamma regime zones.
+- Completed the demo Fixed Range VP presentation with POC, VAH, VAL, value area, draggable range, row-density setting, lock, visibility, and removal controls.
+- Completed the demo AVWAP presentation with a candle-positioned draggable anchor, label, and optional deviation bands.
+- Added price volume, OHLC readout, Max Pain, synchronized CVD time range, session reset marker, coverage, provenance, and CVD state controls.
+- Expanded the Options inspector with Put/Call, ATM IV, honest IV Rank unavailability, Call/Put OI, chart toggles, GEX/OI display control, legend, and persistent deterministic Decision summary.
+- Added explicit Binance demo, Deribit live/demo/offline, and Jev shadow-off states without manufacturing live or AI output.
+- Retained `NO LIVE EXECUTION`; Long and Short chart tools are measurements only.

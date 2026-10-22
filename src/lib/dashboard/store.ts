@@ -60,12 +60,17 @@ export interface TerminalState {
     setActiveOrderFlowStudy: (study: 'CVD' | 'DELTA' | 'BOOK' | 'LIQUIDITY') => void;
     dteFilter: '0-2D' | '7D' | '14D' | '30D' | 'ALL';
     setDteFilter: (filter: '0-2D' | '7D' | '14D' | '30D' | 'ALL') => void;
+    optionsDisplay: 'GEX' | 'OI';
+    setOptionsDisplay: (display: 'GEX' | 'OI') => void;
     chartLayers: {
         walls: boolean;
+        secondaryWalls: boolean;
         gammaRegime: boolean;
         gammaFlip: boolean;
+        maxPain: boolean;
         volumeProfile: boolean;
         avwap: boolean;
+        volume: boolean;
     };
     toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
     resetWorkspaceUi: () => void;
@@ -73,10 +78,13 @@ export interface TerminalState {
 
 const defaultChartLayers = {
     walls: true,
+    secondaryWalls: true,
     gammaRegime: true,
     gammaFlip: true,
+    maxPain: true,
     volumeProfile: true,
     avwap: true,
+    volume: true,
 };
 
 export const useTerminalStore = create<TerminalState>()(persist((set) => ({
@@ -137,6 +145,8 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     setActiveOrderFlowStudy: (study) => set({ activeOrderFlowStudy: study }),
     dteFilter: 'ALL',
     setDteFilter: (filter) => set({ dteFilter: filter }),
+    optionsDisplay: 'GEX',
+    setOptionsDisplay: (display) => set({ optionsDisplay: display }),
     chartLayers: defaultChartLayers,
     toggleChartLayer: (layer) => set((state) => ({
         chartLayers: { ...state.chartLayers, [layer]: !state.chartLayers[layer] },
@@ -147,6 +157,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         studyPaneOpen: true,
         activeOrderFlowStudy: 'CVD',
         dteFilter: 'ALL',
+        optionsDisplay: 'GEX',
         chartLayers: defaultChartLayers,
     }),
 }), {
@@ -159,6 +170,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         studyPaneOpen: state.studyPaneOpen,
         activeOrderFlowStudy: state.activeOrderFlowStudy,
         dteFilter: state.dteFilter,
+        optionsDisplay: state.optionsDisplay,
         chartLayers: state.chartLayers,
     }),
 }));

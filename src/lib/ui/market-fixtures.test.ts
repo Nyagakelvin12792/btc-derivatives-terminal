@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
     createDemoAvwap,
+    createDemoAvwapBands,
     createDemoCvd,
     createDemoMarketBars,
     createDemoVolumeProfile,
+    calculateVolumeProfileLevels,
 } from './market-fixtures';
 
 describe('market UI demo fixtures', () => {
@@ -28,6 +30,17 @@ describe('market UI demo fixtures', () => {
         expect(avwap.every((point) => Number.isFinite(point.value))).toBe(true);
     });
 
+    it('creates ordered AVWAP deviation bands from the anchor', () => {
+        const bars = createDemoMarketBars(68_000, 40);
+        const bands = createDemoAvwapBands(bars, 12);
+
+        expect(bands.center).toHaveLength(28);
+        bands.center.forEach((point, index) => {
+            expect(bands.upper[index].value).toBeGreaterThanOrEqual(point.value);
+            expect(bands.lower[index].value).toBeLessThanOrEqual(point.value);
+        });
+    });
+
     it('produces cumulative CVD candles with matching timestamps', () => {
         const bars = createDemoMarketBars(68_000, 32);
         const cvd = createDemoCvd(bars);
@@ -47,5 +60,9 @@ describe('market UI demo fixtures', () => {
         expect(profile).toHaveLength(12);
         expect(profile.every((row) => row.price >= low && row.price <= high)).toBe(true);
         expect(profile.every((row) => row.buyShare >= 0 && row.buyShare <= 1)).toBe(true);
+        const levels = calculateVolumeProfileLevels(profile);
+        expect(levels).not.toBeNull();
+        expect(levels!.val).toBeLessThanOrEqual(levels!.poc);
+        expect(levels!.vah).toBeGreaterThanOrEqual(levels!.poc);
     });
 });
