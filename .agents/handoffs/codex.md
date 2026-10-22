@@ -29,6 +29,7 @@
 - Local live smoke: Binance endpoint returned LIVE candles/ticker/depth; Deribit endpoint returned LIVE option contracts and expirations; all five DTE selections returned bounded subsets.
 - Visual evidence: `.artifacts/ui-overhaul/market-structure-live-1664x936.png`.
 - Vercel Preview request `dpl_A9TCa5eGA7E5eDAMTjfcR2r1D82o` was received but blocked before build because the commit author is not recognized as having deployment permission for the linked Vercel team project; repository code and tests were not the cause.
+- The exact committed tree was then deployed from a Git-free archive to Preview `dpl_7CwAAvQYPYkuUcJoe6j6aXyBcDPk`; it reached `READY` at `https://btc-terminal-codex-bmidgtj7d-kelvin12792.vercel.app` and passed deployed page/Binance/Deribit smoke checks plus a 1664x936 browser capture.
 
 ## Explicit Data Boundaries
 
