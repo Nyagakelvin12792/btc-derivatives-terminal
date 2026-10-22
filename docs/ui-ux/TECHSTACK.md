@@ -1,6 +1,6 @@
 # UI/UX Technical Stack
 
-Version: 1.1
+Version: 1.2
 Status: IMPLEMENTED AND VERIFIED
 Last updated: 2026-10-22
 
@@ -135,6 +135,7 @@ Official reference: [Playwright visual comparisons](https://playwright.dev/docs/
 | Source | Transport | Authorized responsibility |
 | --- | --- | --- |
 | Binance Spot public market data | Server REST via `/api/binance/market` | Kline backfill, 24-hour ticker, validated order-book snapshot |
+| Binance Spot bounded intrabars | Server REST via `/api/binance/volume-profile` | Finest supported 1s–1d interval below a 5,000-bar ceiling for selected-range VP calculation |
 | Binance Spot public streams | Browser combined WebSocket | Active-interval kline updates and top-20 partial depth with reconnect/stale state |
 | Deribit public options feed | Existing server client via `/api/deribit` | Options structure, Greeks-derived exposures, walls, Gamma Flip, Max Pain, and cumulative DTE horizons |
 
@@ -147,7 +148,7 @@ TanStack Query owns REST freshness and retries. WebSocket state is held only in 
 | Price candles | Lightweight Charts | React toolbar | Existing data query + UI adapter |
 | Walls / Gamma Flip | LWC series primitives | Options inspector | Zustand UI slice |
 | Gamma regime shading | LWC pane/series primitive | Options inspector | Zustand UI slice |
-| Fixed Range VP | LWC custom series/primitive | Object toolbar + settings | Zustand UI slice |
+| Fixed Range VP | Chart-coordinate React overlay over persistent LWC instance | Object toolbar + Radix settings popover | Local drawing state + TanStack Query intrabar cache |
 | Anchored VWAP | LWC line series + primitives | Object toolbar + settings | Zustand UI slice |
 | CVD candles | LWC candlestick/custom series in lower pane | Study header/settings | Existing supplied series + UI slice |
 | Delta / Book / Liquidity | LWC or ECharts by data shape | Study tabs | Existing supplied data only |

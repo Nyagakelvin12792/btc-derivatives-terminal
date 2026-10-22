@@ -1,5 +1,5 @@
-import { buildBinanceMarketSnapshot } from './normalization';
-import type { BinanceInterval, BinanceMarketSnapshot } from './types';
+import { buildBinanceMarketSnapshot, normalizeBinanceKlines } from './normalization';
+import { BINANCE_MARKET_SCHEMA_VERSION, type BinanceInterval, type BinanceMarketSnapshot, type BinanceProfileInterval, type BinanceVolumeProfileSnapshot } from './types';
 
 const BINANCE_MARKET_BASE_URL = 'https://data-api.binance.vision/api/v3';
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -53,4 +53,44 @@ export async function fetchBinanceMarketSnapshot(interval: BinanceInterval, limi
     ]);
 
     return buildBinanceMarketSnapshot({ interval, now, startedAtMs, klinePayload, bookPayload, tickerPayload });
+}
+
+export async function fetchBinanceVolumeProfileBars(
+    interval: BinanceProfileInterval,
+    startTime: number,
+    endTime: number,
+    now = new Date(),
+): Promise<BinanceVolumeProfileSnapshot> {
+    const candles = [] as ReturnType<typeof normalizeBinanceKlines>;
+    let cursor = startTime;
+
+    while (cursor <= endTime && candles.length < 5_000) {
+        const query = new URLSearchParams({
+            symbol: 'BTCUSDT',
+            interval,
+            startTime: String(cursor),
+            endTime: String(endTime),
+            limit: String(Math.min(1_000, 5_000 - candles.length)),
+        });
+        const page = normalizeBinanceKlines(await fetchJson(`${BINANCE_MARKET_BASE_URL}/klines?${query}`));
+        if (!page.length) break;
+        const previousLength = candles.length;
+        page.forEach((bar) => {
+            if (!candles.length || bar.time > candles[candles.length - 1].time) candles.push(bar);
+        });
+        if (candles.length === previousLength) break;
+        cursor = page[page.length - 1].closeTime + 1;
+    }
+
+    return {
+        schemaVersion: BINANCE_MARKET_SCHEMA_VERSION,
+        dataMode: 'LIVE',
+        source: 'BINANCE_SPOT',
+        symbol: 'BTCUSDT',
+        interval,
+        startTime,
+        endTime,
+        timestamp: now.toISOString(),
+        candles,
+    };
 }

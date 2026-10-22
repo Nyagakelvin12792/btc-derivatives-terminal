@@ -1,13 +1,13 @@
 # UI/UX Overhaul Progress
 
-Version: 3.0
+Version: 3.1
 Last updated: 2026-10-22
 Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8, UX10, and UX11 COMPLETE; UX9 awaits Architect acceptance
+Current checkpoint: UX0–UX8 and UX10–UX12 COMPLETE; UX9 awaits Architect acceptance
 
 ## Scope Statement
 
-UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 was separately authorized to connect public Binance Spot market data and make the existing Deribit DTE controls functional. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
+UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 connected public Binance Spot data and made the existing Deribit DTE controls functional. UX12 repaired viewport persistence and brought Fixed Range VP interaction/calculation closer to TradingView using bounded Binance intrabars. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
 
 ## Current Baseline
 
@@ -43,13 +43,14 @@ Observed UI limitations:
 | UX2 — Resizable workspace mechanics | COMPLETE | Desktop chart/inspector split, collapsible panels, persisted UI preferences |
 | UX3 — Options overlays and inspector | COMPLETE | Walls, Gamma Flip, regime shading, DTE filters, provenance states |
 | UX4 — Layers and studies | COMPLETE | Layer popover, active chips, hide/show and reset controls |
-| UX5 — Fixed Range VP and AVWAP | COMPLETE | Draggable fixed range and anchor operate on live Binance bars; VP is bar-distributed and AVWAP is volume-weighted from the selected anchor |
+| UX5 — Fixed Range VP and AVWAP | COMPLETE | VP endpoints and AVWAP anchor use chart/bar coordinates; VP supports rows, mode, placement, width, value area, visible/all-loaded range, and extend-right |
 | UX6 — Order-flow panes | COMPLETE | Live bar-level CVD and Delta plus validated Book and Liquidity views from Binance Spot |
 | UX7 — Saved layouts and linked tools | COMPLETE | UI persistence, save/reset controls, all legacy workspaces retained |
 | UX8 — Responsive/accessibility/performance | COMPLETE | 1920×1080 and 390×844 checks, mobile bottom sheet, axe and keyboard verification |
 | UX9 — Independent review/release | REVIEW REQUIRED | Architect acceptance and deployment review remain external |
 | UX10 — Approved-style parity | COMPLETE | Market header, drawing tools, wall hierarchy, dual gamma zones, VP levels, AVWAP bands, CVD controls, inspector metrics, provenance and status footer implemented |
 | UX11 — Live market integration | COMPLETE | Validated Binance REST/WebSocket contract, live lower panes, functional Deribit DTE horizons, explicit stale/offline handling, no demo substitution in LIVE |
+| UX12 — Chart navigation and VP repair | COMPLETE | Persistent chart instance, viewport-preserving live updates, pannable overlay, 120-bar default, bounded 1s–1d intrabars, denser row allocation, and TradingView POC/VA rules |
 
 ## UX0 Evidence
 
@@ -119,7 +120,7 @@ Binance Spot klines now supply base-volume aggressor delta using taker-buy volum
 
 ### Fixed Range VP precision
 
-The current live profile distributes each selected candle's volume to its typical-price row. It is a validated bar-derived profile, not tick-by-tick historical volume-at-price. A tick-precise profile requires a separately reviewed aggregate-trade history contract.
+The live profile selects the finest supported Binance interval that keeps the selected range below 5,000 intrabars, then distributes each intrabar across its traversed price rows. This materially improves precision and avoids sparse typical-price bins, but it remains an intrabar approximation rather than tick-by-tick historical volume-at-price. Tick precision still requires a separately reviewed aggregate-trade history contract.
 
 ### Options metric provenance
 
@@ -185,3 +186,14 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Preserved strict live/demo separation: failed live requests render stale/offline states and never silently substitute fixtures.
 - Verified 240 Binance candles, 100×100 REST depth, 932 Deribit contracts, all five DTE filters, all four lower tabs, and the 1664×936 live render.
 - Final gates: 12 Vitest files / 66 tests; production build passed; Playwright 5 passed / 1 intentional mobile density skip; no serious or critical axe findings.
+
+### 2026-10-22 — UX12 chart navigation and Fixed Range VP repair
+
+- Stopped recreating the Lightweight Charts price chart and calling `fitContent()` on live candle, wall, AVWAP, and profile updates.
+- Preserved the user's logical viewport on updates while retaining right-edge follow behavior for newly appended bars.
+- Replaced screen-percentage VP endpoints with timestamp/chart coordinates and converted pointer movement through `coordinateToLogical`.
+- Made the VP surface pointer-transparent so users can pan through it; movement remains available through the label and endpoint handles.
+- Added 24/48/72/100 rows, Total/Up-Down/Delta, left/right placement, width, value-area %, visible/all-loaded range, and extend-right controls.
+- Added bounded Binance intrabar selection from 1 second through 1 day with a hard 5,000-bar ceiling and explicit stale fallback to chart bars.
+- Updated row allocation, up/down classification, POC, and value-area expansion to follow the documented TradingView methodology as closely as the available Binance kline data permits.
+- Added a browser regression that pans the chart, changes VP range/settings, and verifies that the chart instance and viewport do not reset.

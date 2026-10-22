@@ -1,6 +1,7 @@
 export const BINANCE_MARKET_SCHEMA_VERSION = 1 as const;
 
 export type BinanceInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+export type BinanceProfileInterval = '1s' | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 export type MarketFeedState = 'CONNECTING' | 'LIVE' | 'STALE' | 'OFFLINE';
 
 export interface BinanceMarketBar {
@@ -61,6 +62,18 @@ export interface BinanceMarketSnapshot {
     candles: BinanceMarketBar[];
     book: BinanceOrderBook;
     ticker: BinanceTicker24h;
+}
+
+export interface BinanceVolumeProfileSnapshot {
+    schemaVersion: typeof BINANCE_MARKET_SCHEMA_VERSION;
+    dataMode: 'LIVE';
+    source: 'BINANCE_SPOT';
+    symbol: 'BTCUSDT';
+    interval: BinanceProfileInterval;
+    startTime: number;
+    endTime: number;
+    timestamp: string;
+    candles: BinanceMarketBar[];
 }
 
 export interface BinanceKlineStreamEvent {

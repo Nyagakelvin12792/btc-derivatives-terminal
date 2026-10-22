@@ -1,6 +1,6 @@
 # Sourced UI Feature Matrix
 
-Version: 1.0  
+Version: 1.1
 Status: RESEARCH APPLIED — UI IMPLEMENTED
 Last updated: 2026-10-22
 
@@ -42,7 +42,7 @@ Research rules:
 | MetaTrader 5 | Data Window shows precise values at cursor | Crosshair data strip and Data inspector | Values come from the selected chart time/price and include source state | UX2/UX3 |
 | MetaTrader 5 | Fast navigation for symbol, timeframe, and date | Command bar and `Go to time` command | No order-entry commands | UX1/UX7 |
 | MetaTrader 5 | Docked/undocked charts and multiple monitors | Future detachable workspace architecture | Not required for initial web release; plan state model so it is not blocked | Later |
-| TradingView | Fixed Range Volume Profile defined by two chart coordinates | VP stays inside selected range with start/end handles | Preserve project calculation; borrow only interaction model | UX5 |
+| TradingView | Fixed Range Volume Profile uses two bar coordinates, lower-timeframe data, row controls, Total/Up-Down/Delta modes, placement/width, extend-right, and a configurable value area | VP stays attached while panning/zooming; live mode selects bounded Binance intrabars; settings expose rows, mode, placement, width, value-area %, visible/all-loaded range, and extend-right | Original implementation; 5,000-intrabar ceiling; no proprietary code or tick-level claims | UX5/UX12 |
 | TradingView | Anchored VWAP starts from a user-selected point | Draggable AVWAP anchor; line extends right only | Preserve project calculation and replay rules | UX5 |
 | TradingView | CVD uses cumulative OHLC candles with anchor resets | CVD candle pane, zero line, anchor, and reset dividers | Use Binance-supplied taker-buy volume for bar delta; no inferred trade classification | UX6/UX11 |
 | TradingView | Object Tree controls layer order and visibility | Unified Layer Manager and active-study chips | Include project-specific health/source state per object | UX4 |
@@ -185,7 +185,8 @@ Not copied:
 
 Primary sources:
 
-- [Fixed Range Volume Profile](https://www.tradingview.com/support/solutions/43000707985-fixed-range-volume-profile-drawing-tool/)
+- [Fixed Range Volume Profile indicator](https://www.tradingview.com/support/solutions/43000480324-fixed-range-volume-profile-indicator/)
+- [Volume Profile indicators: basic concepts](https://www.tradingview.com/support/solutions/43000502040-volume-profile-indicators-basic-concepts/)
 - [Anchored VWAP](https://www.tradingview.com/support/solutions/43000669764-anchored-vwap-drawing-tool/)
 - [Cumulative Volume Delta](https://www.tradingview.com/support/solutions/43000725058-cumulative-volume-delta/)
 - [Layouts](https://www.tradingview.com/support/solutions/43000746975-tradingview-layouts-a-quick-guide/)

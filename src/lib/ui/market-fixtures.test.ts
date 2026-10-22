@@ -59,10 +59,34 @@ describe('market UI demo fixtures', () => {
 
         expect(profile).toHaveLength(12);
         expect(profile.every((row) => row.price >= low && row.price <= high)).toBe(true);
-        expect(profile.every((row) => row.buyShare >= 0 && row.buyShare <= 1)).toBe(true);
+        expect(profile.every((row) => row.upShare >= 0 && row.upShare <= 1)).toBe(true);
+        expect(profile.reduce((sum, row) => sum + row.volume, 0)).toBeCloseTo(selected.reduce((sum, bar) => sum + bar.volume, 0), 6);
+        expect(profile.filter((row) => row.volume > 0).length).toBeGreaterThan(3);
         const levels = calculateVolumeProfileLevels(profile);
         expect(levels).not.toBeNull();
         expect(levels!.val).toBeLessThanOrEqual(levels!.poc);
         expect(levels!.vah).toBeGreaterThanOrEqual(levels!.poc);
+    });
+
+    it('classifies profile volume by TradingView-style up/down candle direction', () => {
+        const bars = [
+            { time: 1, open: 100, high: 104, low: 98, close: 103, volume: 60 },
+            { time: 2, open: 103, high: 105, low: 99, close: 101, volume: 40 },
+        ] as Parameters<typeof createDemoVolumeProfile>[0];
+        const profile = createDemoVolumeProfile(bars, 0, 1, 8);
+
+        expect(profile.reduce((sum, row) => sum + row.upVolume, 0)).toBeCloseTo(60, 8);
+        expect(profile.reduce((sum, row) => sum + row.downVolume, 0)).toBeCloseTo(40, 8);
+        expect(profile.reduce((sum, row) => sum + row.delta, 0)).toBeCloseTo(20, 8);
+    });
+
+    it('uses the official value-area tie break toward the row above the POC', () => {
+        const row = (price: number, volume: number) => ({
+            price, low: price - 0.5, high: price + 0.5, volume,
+            upVolume: volume, downVolume: 0, delta: volume, upShare: 1,
+        });
+        const levels = calculateVolumeProfileLevels([row(99, 20), row(100, 50), row(101, 20), row(102, 10)], 0.7);
+
+        expect(levels).toEqual({ poc: 100, val: 100, vah: 101 });
     });
 });

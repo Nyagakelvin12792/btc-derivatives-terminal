@@ -1,6 +1,6 @@
 # Bitcoin Derivatives Terminal UI/UX Overhaul Plan
 
-Version: 1.1
+Version: 1.2
 Status: UI + AUTHORIZED LIVE MARKET INTEGRATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
 Last updated: 2026-10-22
 Scope owner: Antigravity / Gemini (Builder & Visual Engine)  
@@ -22,9 +22,13 @@ Implementation evidence is available in `/.artifacts/ui-overhaul/` for desktop, 
 
 After the UI-only milestone, the user explicitly requested live, accurate data. That authorization added a narrow UX11 scope: a validated public Binance Spot boundary for candles, ticker, depth, bar-level aggressor delta/CVD, and cumulative Deribit DTE query filtering. It did not authorize changes to derivatives formulas, terrain mathematics, decision engines, Jev semantics, broker connectivity, or execution.
 
+### 1.2 Chart-navigation and Fixed Range VP correction addendum
+
+The user subsequently authorized a focused UX12 repair after reporting that live updates reset the chart viewport and the Fixed Range VP was buggy and limited. UX12 may preserve the chart instance across market updates, bind VP coordinates to chart bars, refine presentation-layer VP binning/value-area behavior, and request bounded Binance intrabars for profile precision. It does not change derivatives, decision, terrain, broker, or execution engines.
+
 ## 2. Hard Scope Boundary
 
-UX0–UX10 are UI/UX only. UX11 is limited to the public market-data boundaries described above.
+UX0–UX10 are UI/UX only. UX11 and UX12 are limited to the public market-data boundaries and chart/VP repairs described above.
 
 ### Allowed
 
@@ -42,7 +46,7 @@ UX0–UX10 are UI/UX only. UX11 is limited to the public market-data boundaries 
 - No edits to `src/lib/quant/`.
 - No edits to `src/lib/terrain/` or its formulas/contracts.
 - No persistent collector, signal, decision engine, or execution engine. UX11 may expose transient public Binance market snapshots and WebSocket updates.
-- No changes to GEX, gamma flip, wall, max-pain, Vanna, Charm, IV, OI, CVD, VWAP, or Volume Profile mathematics.
+- No changes to GEX, gamma flip, wall, max-pain, Vanna, Charm, IV, OI, CVD, or VWAP mathematics. UX12 may refine the presentation-layer Volume Profile using bounded Binance intrabars and TradingView's documented POC/value-area rules; it must not alter options-wall calculations.
 - No broker integration, order entry, one-click trading, or live execution.
 - No synthetic value may be presented as live.
 - No UI may convert missing data to zero.

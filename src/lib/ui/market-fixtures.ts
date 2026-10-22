@@ -8,8 +8,13 @@ export interface DemoMarketBar extends CandlestickData<UTCTimestamp> {
 
 export interface VolumeProfileRow {
     price: number;
+    low: number;
+    high: number;
     volume: number;
-    buyShare: number;
+    upVolume: number;
+    downVolume: number;
+    delta: number;
+    upShare: number;
 }
 
 export interface VolumeProfileLevels {
@@ -127,24 +132,54 @@ export function createDemoVolumeProfile(
 
     const low = Math.min(...selected.map((bar) => bar.low));
     const high = Math.max(...selected.map((bar) => bar.high));
-    const step = Math.max((high - low) / rowCount, 1);
-    const rows = Array.from({ length: rowCount }, (_, index) => ({
+    const safeRowCount = Math.max(1, Math.round(rowCount));
+    const step = Math.max((high - low) / safeRowCount, Number.EPSILON);
+    const rows = Array.from({ length: safeRowCount }, (_, index) => ({
+        low: low + step * index,
+        high: index === safeRowCount - 1 ? high : low + step * (index + 1),
         price: low + step * (index + 0.5),
         volume: 0,
-        buyVolume: 0,
+        upVolume: 0,
+        downVolume: 0,
     }));
 
     selected.forEach((bar) => {
-        const price = (bar.high + bar.low + bar.close) / 3;
-        const rowIndex = Math.min(rowCount - 1, Math.max(0, Math.floor((price - low) / step)));
-        rows[rowIndex].volume += bar.volume;
-        rows[rowIndex].buyVolume += bar.takerBuyVolume ?? (bar.close >= bar.open ? bar.volume : 0);
+        const barLow = Math.max(low, Math.min(bar.low, bar.high));
+        const barHigh = Math.min(high, Math.max(bar.low, bar.high));
+        const firstRow = Math.min(safeRowCount - 1, Math.max(0, Math.floor((barLow - low) / step)));
+        const lastRow = Math.min(safeRowCount - 1, Math.max(firstRow, Math.floor((barHigh - low) / step)));
+        const allocations: Array<{ index: number; weight: number }> = [];
+
+        for (let index = firstRow; index <= lastRow; index += 1) {
+            const overlap = Math.max(0, Math.min(barHigh, rows[index].high) - Math.max(barLow, rows[index].low));
+            allocations.push({ index, weight: overlap });
+        }
+
+        const totalWeight = allocations.reduce((sum, allocation) => sum + allocation.weight, 0);
+        if (totalWeight <= Number.EPSILON) {
+            const typicalPrice = (bar.high + bar.low + bar.close) / 3;
+            const index = Math.min(safeRowCount - 1, Math.max(0, Math.floor((typicalPrice - low) / step)));
+            allocations.splice(0, allocations.length, { index, weight: 1 });
+        }
+        const normalizer = allocations.reduce((sum, allocation) => sum + allocation.weight, 0);
+        const isUpBar = bar.close >= bar.open;
+        allocations.forEach(({ index, weight }) => {
+            const allocatedVolume = bar.volume * (weight / normalizer);
+            rows[index].volume += allocatedVolume;
+            if (isUpBar) rows[index].upVolume += allocatedVolume;
+            else rows[index].downVolume += allocatedVolume;
+        });
     });
 
     return rows.map((row) => ({
+        low: row.low,
+        high: row.high,
         price: row.price,
         volume: row.volume,
-        buyShare: row.volume ? row.buyVolume / row.volume : 0.5,
+        upVolume: row.upVolume,
+        downVolume: row.downVolume,
+        delta: row.upVolume - row.downVolume,
+        upShare: row.volume ? row.upVolume / row.volume : 0.5,
     }));
 }
 
@@ -152,23 +187,27 @@ export function calculateVolumeProfileLevels(rows: VolumeProfileRow[], valueArea
     if (!rows.length) return null;
     const pocIndex = rows.reduce((best, row, index) => row.volume > rows[best].volume ? index : best, 0);
     const totalVolume = rows.reduce((sum, row) => sum + row.volume, 0);
-    const target = totalVolume * valueAreaFraction;
+    const target = totalVolume * Math.max(0, Math.min(1, valueAreaFraction));
     let included = rows[pocIndex].volume;
     let lowIndex = pocIndex;
     let highIndex = pocIndex;
 
     while (included < target && (lowIndex > 0 || highIndex < rows.length - 1)) {
-        const below = lowIndex > 0 ? rows[lowIndex - 1].volume : -1;
-        const above = highIndex < rows.length - 1 ? rows[highIndex + 1].volume : -1;
-        if (above >= below && highIndex < rows.length - 1) {
-            highIndex += 1;
-            included += rows[highIndex].volume;
-        } else if (lowIndex > 0) {
-            lowIndex -= 1;
-            included += rows[lowIndex].volume;
-        } else {
-            break;
-        }
+        const belowIndex = lowIndex > 0 ? lowIndex - 1 : null;
+        const aboveIndex = highIndex < rows.length - 1 ? highIndex + 1 : null;
+        const belowVolume = belowIndex === null ? -1 : rows[belowIndex].volume;
+        const aboveVolume = aboveIndex === null ? -1 : rows[aboveIndex].volume;
+        const belowDistance = belowIndex === null ? Number.POSITIVE_INFINITY : pocIndex - belowIndex;
+        const aboveDistance = aboveIndex === null ? Number.POSITIVE_INFINITY : aboveIndex - pocIndex;
+        const chooseAbove = aboveVolume > belowVolume
+            || (aboveVolume === belowVolume && aboveDistance <= belowDistance);
+        const nextIndex = chooseAbove ? aboveIndex : belowIndex;
+        if (nextIndex === null) break;
+        const nextVolume = rows[nextIndex].volume;
+        if (included + nextVolume > target) break;
+        included += nextVolume;
+        if (chooseAbove) highIndex = nextIndex;
+        else lowIndex = nextIndex;
     }
 
     return {

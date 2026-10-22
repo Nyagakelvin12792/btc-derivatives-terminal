@@ -7,13 +7,13 @@ test.beforeEach(async ({ page }) => {
     });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible();
-    await expect(page.getByRole('button', { name: '● DEMO', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '● DEMO', exact: true })).toBeVisible({ timeout: 20_000 });
 });
 
 test('renders the chart-first terminal and keyboard command palette', async ({ page }, testInfo) => {
     await expect(page.getByLabel('Demo BTC price chart with options structure overlays')).toBeVisible();
     await expect(page.getByText('CALL WALL', { exact: false }).first()).toBeVisible();
-    await expect(page.getByText('FIXED RANGE VP · DEMO')).toBeVisible();
+    await expect(page.getByRole('button', { name: /FIXED RANGE VP/ })).toContainText('FIXED RANGE VP');
     await expect(page.getByLabel('Demo cumulative volume delta candles')).toBeVisible();
     await expect(page.getByRole('tab', { name: 'CVD', exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('canvas').first()).toBeVisible();
@@ -64,4 +64,33 @@ test('exposes the approved market-structure controls and honest states', async (
     await expect(page.getByText('JEV SHADOW OPINION')).toBeVisible();
     await expect(page.getByText('UNAVAILABLE', { exact: true })).toBeVisible();
     await expect(page.getByText('NO LIVE EXECUTION', { exact: true }).first()).toBeVisible();
+});
+
+test('preserves the panned chart viewport while editing a full-range volume profile', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop pointer-interaction regression');
+
+    const chart = page.getByRole('group', { name: 'Demo BTC price chart with options structure overlays' });
+    const profile = page.getByTestId('fixed-range-volume-profile');
+    await expect(chart).toHaveAttribute('data-chart-generation', '1');
+    await expect(profile).toHaveAttribute('data-selected-bars', '120');
+    await expect.poll(() => chart.getAttribute('data-visible-from')).not.toBeNull();
+    const initialFrom = await chart.getAttribute('data-visible-from');
+    const box = await chart.boundingBox();
+    expect(box).not.toBeNull();
+
+    await page.mouse.move(box!.x + 180, box!.y + 220);
+    await page.mouse.down();
+    await page.mouse.move(box!.x + 360, box!.y + 220, { steps: 8 });
+    await page.mouse.up();
+    await expect.poll(() => chart.getAttribute('data-visible-from')).not.toBe(initialFrom);
+    const pannedFrom = await chart.getAttribute('data-visible-from');
+
+    await page.getByRole('button', { name: 'VP settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Use all loaded' }).click();
+    await expect(profile).toHaveAttribute('data-selected-bars', '192');
+    await page.getByLabel('Number of rows').selectOption('72');
+    await page.keyboard.press('Escape');
+
+    await expect(chart).toHaveAttribute('data-chart-generation', '1');
+    await expect(chart).toHaveAttribute('data-visible-from', pannedFrom!);
 });

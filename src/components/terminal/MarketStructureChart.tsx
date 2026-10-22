@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import * as Popover from '@radix-ui/react-popover';
 import {
     CandlestickSeries,
     ColorType,
@@ -10,12 +11,15 @@ import {
     LineSeries,
     LineStyle,
     type IChartApi,
+    type IPriceLine,
     type ISeriesApi,
+    type LogicalRange,
 } from 'lightweight-charts';
 import { Eye, GripVertical, Lock, Move, RotateCcw, Settings, Trash2, Unlock } from 'lucide-react';
 import type { TerrainDataContractV2 } from '@/lib/terrain/types';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels } from '@/lib/binance/analytics';
 import type { BinanceMarketFeed } from '@/lib/binance/use-market-feed';
+import { useBinanceVolumeProfile } from '@/lib/binance/use-volume-profile';
 import { useTerminalStore } from '@/lib/dashboard/store';
 import { cn } from '@/lib/ui/cn';
 import {
@@ -30,6 +34,14 @@ import { TIMEFRAME_SECONDS, type ChartTimeframe, type ChartTool } from './types'
 
 type PriceSeries = ISeriesApi<'Candlestick'>;
 type LineSeriesApi = ISeriesApi<'Line'>;
+type HistogramSeriesApi = ISeriesApi<'Histogram'>;
+type ProfileVolumeMode = 'TOTAL' | 'UP_DOWN' | 'DELTA';
+type ProfilePlacement = 'LEFT' | 'RIGHT';
+
+interface ProfileRange {
+    startTime: number;
+    endTime: number;
+}
 
 interface MarketStructureChartProps {
     data: TerrainDataContractV2;
@@ -50,7 +62,10 @@ interface OverlayLayout {
     callY: number | null;
     putY: number | null;
     maxPainY: number | null;
+    anchorX: number | null;
     anchorY: number | null;
+    profileLeftX: number | null;
+    profileRightX: number | null;
     profileRows: OverlayLevel[];
     secondaryRows: Array<OverlayLevel & { dte: number }>;
     vahY: number | null;
@@ -86,6 +101,22 @@ const chartOptions = {
     handleScroll: true,
     handleScale: true,
 };
+
+function nearestBarIndex(bars: DemoMarketBar[], time: number): number {
+    if (!bars.length) return 0;
+    let low = 0;
+    let high = bars.length - 1;
+    while (low <= high) {
+        const middle = Math.floor((low + high) / 2);
+        const candidate = Number(bars[middle].time);
+        if (candidate === time) return middle;
+        if (candidate < time) low = middle + 1;
+        else high = middle - 1;
+    }
+    if (low >= bars.length) return bars.length - 1;
+    if (high < 0) return 0;
+    return Math.abs(Number(bars[low].time) - time) < Math.abs(Number(bars[high].time) - time) ? low : high;
+}
 
 function money(value: number) {
     return `$${Math.round(value).toLocaleString()}`;
@@ -167,23 +198,42 @@ function LiquidityPanel({ marketFeed, levels }: { marketFeed: BinanceMarketFeed;
 
 export default function MarketStructureChart({ data, marketFeed, activeTool, timeframe, replayActive }: MarketStructureChartProps) {
     const chartHostRef = useRef<HTMLDivElement>(null);
+    const chartSurfaceRef = useRef<HTMLDivElement>(null);
     const cvdHostRef = useRef<HTMLDivElement>(null);
     const deltaHostRef = useRef<HTMLDivElement>(null);
     const priceChartRef = useRef<IChartApi | null>(null);
     const cvdChartRef = useRef<IChartApi | null>(null);
     const priceSeriesRef = useRef<PriceSeries | null>(null);
+    const volumeSeriesRef = useRef<HistogramSeriesApi | null>(null);
+    const boundsSeriesRef = useRef<LineSeriesApi | null>(null);
     const cvdSeriesRef = useRef<PriceSeries | null>(null);
     const avwapSeriesRef = useRef<LineSeriesApi | null>(null);
     const upperBandSeriesRef = useRef<LineSeriesApi | null>(null);
     const lowerBandSeriesRef = useRef<LineSeriesApi | null>(null);
+    const priceLinesRef = useRef<IPriceLine[]>([]);
     const profileRef = useRef<ReturnType<typeof createDemoVolumeProfile>>([]);
+    const barsRef = useRef<DemoMarketBar[]>([]);
+    const cvdBarsRef = useRef<Array<{ time: DemoMarketBar['time']; close: number }>>([]);
+    const updateOverlayRef = useRef<() => void>(() => undefined);
+    const overlayFrameRef = useRef<number | null>(null);
+    const chartContextRef = useRef('');
+    const profileContextRef = useRef('');
+    const previousBarCountRef = useRef(0);
+    const chartGenerationRef = useRef(0);
     const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({
-        height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorY: null,
+        height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorX: null, anchorY: null,
+        profileLeftX: null, profileRightX: null,
         profileRows: [], secondaryRows: [], vahY: null, pocY: null, valY: null,
     });
-    const [range, setRange] = useState({ start: 72, end: 120 });
+    const [range, setRange] = useState<ProfileRange | null>(null);
     const [anchorIndex, setAnchorIndex] = useState(66);
-    const [profileRowCount, setProfileRowCount] = useState(24);
+    const [profileRowCount, setProfileRowCount] = useState(48);
+    const [profileWidthPercent, setProfileWidthPercent] = useState(40);
+    const [profileValueAreaPercent, setProfileValueAreaPercent] = useState(70);
+    const [profileVolumeMode, setProfileVolumeMode] = useState<ProfileVolumeMode>('UP_DOWN');
+    const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
+    const [extendProfileRight, setExtendProfileRight] = useState(false);
+    const [profileQueryRange, setProfileQueryRange] = useState<{ startTimeSeconds: number; endTimeSeconds: number; displayBarSeconds: number } | null>(null);
     const [showAvwapBands, setShowAvwapBands] = useState(true);
     const [selectedObject, setSelectedObject] = useState<'VP' | 'AVWAP' | null>('VP');
     const [objectLocked, setObjectLocked] = useState(false);
@@ -193,7 +243,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const [drawingStart, setDrawingStart] = useState<{ x: number; y: number } | null>(null);
     const [hoverBar, setHoverBar] = useState<DemoMarketBar | null>(null);
     const [drawingStatus, setDrawingStatus] = useState('');
-    const dragOriginRef = useRef<{ x: number; start: number; end: number } | null>(null);
+    const dragOriginRef = useRef<{ logical: number; start: number; end: number } | null>(null);
 
     const { dataMode, chartLayers, activeOrderFlowStudy, studyPaneOpen, dteFilter, toggleChartLayer, setActiveOrderFlowStudy } = useTerminalStore();
     const summary = data.summary as unknown as Record<string, unknown>;
@@ -206,9 +256,30 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const cvdBars = useMemo(() => dataMode === 'DEMO' ? createDemoCvd(bars) : buildCvdBars(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, dataMode]);
     const deltaBars = useMemo(() => dataMode === 'DEMO' ? cvdBars.map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' })) : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
     const liquidityLevels = useMemo(() => selectLiquidityLevels(marketFeed.book), [marketFeed.book]);
+    const rangeStartIndex = range ? nearestBarIndex(bars, range.startTime) : 0;
+    const rangeEndIndex = range ? nearestBarIndex(bars, range.endTime) : Math.max(0, bars.length - 1);
+    const profileStartIndex = Math.min(rangeStartIndex, rangeEndIndex);
+    const profileEndIndex = extendProfileRight ? Math.max(0, bars.length - 1) : Math.max(rangeStartIndex, rangeEndIndex);
+    const selectedBarCount = bars.length ? profileEndIndex - profileStartIndex + 1 : 0;
     const avwapBands = useMemo(() => createDemoAvwapBands(bars, Math.min(anchorIndex, bars.length - 1)), [bars, anchorIndex]);
-    const profile = useMemo(() => createDemoVolumeProfile(bars, range.start, range.end, profileRowCount), [bars, range, profileRowCount]);
-    const profileLevels = useMemo(() => calculateVolumeProfileLevels(profile), [profile]);
+    const selectedStartTime = bars[profileStartIndex] ? Number(bars[profileStartIndex].time) : null;
+    const selectedEndTime = bars[profileEndIndex] ? Number(bars[profileEndIndex].time) : null;
+    useEffect(() => {
+        if (dataMode !== 'LIVE' || selectedStartTime === null || selectedEndTime === null) return;
+        const timer = setTimeout(() => setProfileQueryRange({
+            startTimeSeconds: selectedStartTime,
+            endTimeSeconds: selectedEndTime,
+            displayBarSeconds: TIMEFRAME_SECONDS[timeframe],
+        }), 300);
+        return () => clearTimeout(timer);
+    }, [dataMode, selectedEndTime, selectedStartTime, timeframe]);
+    const intrabarProfile = useBinanceVolumeProfile(profileQueryRange, dataMode === 'LIVE');
+    const intrabarProfileBars = useMemo<DemoMarketBar[]>(() => intrabarProfile.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [intrabarProfile.candles]);
+    const profileSourceBars = dataMode === 'LIVE' && intrabarProfileBars.length ? intrabarProfileBars : bars;
+    const profileSourceStart = profileSourceBars === bars ? profileStartIndex : 0;
+    const profileSourceEnd = profileSourceBars === bars ? profileEndIndex : Math.max(0, profileSourceBars.length - 1);
+    const profile = useMemo(() => createDemoVolumeProfile(profileSourceBars, profileSourceStart, profileSourceEnd, profileRowCount), [profileRowCount, profileSourceBars, profileSourceEnd, profileSourceStart]);
+    const profileLevels = useMemo(() => calculateVolumeProfileLevels(profile, profileValueAreaPercent / 100), [profile, profileValueAreaPercent]);
 
     const callWall = levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? numeric(summary.callWall) ?? spot * 1.05;
     const putWall = levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? numeric(summary.putWall) ?? spot * 0.95;
@@ -237,39 +308,45 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const lastBar = hoverBar ?? bars.at(-1) ?? null;
     const lastCvd = cvdBars.at(-1)?.close ?? 0;
     const lastDelta = deltaBars.at(-1)?.value ?? 0;
-    const leftPct = (range.start / Math.max(bars.length - 1, 1)) * 100;
-    const rightPct = (Math.min(range.end, bars.length - 1) / Math.max(bars.length - 1, 1)) * 100;
-    const anchorPct = (Math.min(anchorIndex, bars.length - 1) / Math.max(bars.length - 1, 1)) * 100;
-    const maxProfile = Math.max(...profile.map((row) => row.volume), 1);
-
-    useEffect(() => { profileRef.current = profile; }, [profile]);
+    const maxProfile = Math.max(...profile.map((row) => profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume), 1);
+    const profileSourceLabel = dataMode === 'LIVE'
+        ? intrabarProfile.state === 'LIVE' && intrabarProfile.interval ? `${intrabarProfile.interval} INTRABARS` : `${timeframe} CHART BARS`
+        : `${timeframe} DEMO BARS`;
+    const chartContextKey = `${dataMode}:${timeframe}:${replayActive ? 'REPLAY' : 'LIVE'}`;
+    const hasChartData = bars.length >= 2;
 
     useEffect(() => {
-        if (!chartHostRef.current || bars.length < 2) return;
+        barsRef.current = bars;
+        cvdBarsRef.current = cvdBars;
+        profileRef.current = profile;
+    }, [bars, cvdBars, profile]);
+
+    useEffect(() => {
+        if (bars.length < (dataMode === 'LIVE' ? 50 : 2) || profileContextRef.current === chartContextKey) return;
+        profileContextRef.current = chartContextKey;
+        const end = bars.length - 1;
+        const start = Math.max(0, end - 119);
+        setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
+        setAnchorIndex(Math.max(0, end - 126));
+    }, [bars, chartContextKey, dataMode]);
+
+    useEffect(() => {
+        if (!chartHostRef.current || !hasChartData) return;
         const chart = createChart(chartHostRef.current, chartOptions);
+        chartGenerationRef.current += 1;
+        if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.chartGeneration = String(chartGenerationRef.current);
         const candles = chart.addSeries(CandlestickSeries, {
             upColor: '#27d3aa', downColor: '#ef5d73', borderVisible: false,
             wickUpColor: '#27d3aa', wickDownColor: '#ef5d73', priceLineVisible: true,
             priceLineColor: '#27d3aa', lastValueVisible: true,
         });
-        candles.setData(bars);
         const volume = chart.addSeries(HistogramSeries, {
             priceScaleId: 'volume', priceFormat: { type: 'volume' }, priceLineVisible: false, lastValueVisible: false,
         });
         volume.priceScale().applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-        volume.setData(chartLayers.volume ? bars.map((bar) => ({
-            time: bar.time, value: bar.volume,
-            color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.42)' : 'rgba(239, 93, 115, 0.42)',
-        })) : []);
-
         const bounds = chart.addSeries(LineSeries, {
             color: 'rgba(0,0,0,0)', lineWidth: 1, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         });
-        const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)];
-        const lowBound = Math.min(...bars.map((bar) => bar.low), ...visibleLevels) * 0.998;
-        const highBound = Math.max(...bars.map((bar) => bar.high), ...visibleLevels) * 1.002;
-        bounds.setData([{ time: bars[0].time, value: lowBound }, { time: bars[bars.length - 1].time, value: highBound }]);
-
         const avwapSeries = chart.addSeries(LineSeries, {
             color: '#32aef4', lineWidth: 2, priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         });
@@ -281,32 +358,147 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
             color: 'rgba(115, 190, 235, 0.55)', lineWidth: 1, lineStyle: LineStyle.Dashed,
             priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         });
+        const scheduleOverlayUpdate = () => {
+            if (overlayFrameRef.current !== null) return;
+            overlayFrameRef.current = requestAnimationFrame(() => {
+                overlayFrameRef.current = requestAnimationFrame(() => {
+                    overlayFrameRef.current = null;
+                    updateOverlayRef.current();
+                });
+            });
+        };
+        const handleVisibleRangeChange = (rangeValue: LogicalRange | null) => {
+            scheduleOverlayUpdate();
+            if (rangeValue && chartSurfaceRef.current) {
+                chartSurfaceRef.current.dataset.visibleFrom = rangeValue.from.toFixed(4);
+                chartSurfaceRef.current.dataset.visibleTo = rangeValue.to.toFixed(4);
+            }
+            if (rangeValue && cvdChartRef.current) cvdChartRef.current.timeScale().setVisibleLogicalRange(rangeValue);
+        };
+        const handleCrosshairMove: Parameters<IChartApi['subscribeCrosshairMove']>[0] = (param) => {
+            const point = param.seriesData.get(candles) as DemoMarketBar | undefined;
+            setHoverBar(point ?? null);
+            if (!param.time || !cvdSeriesRef.current || !cvdChartRef.current) return;
+            const cvdPoint = cvdBarsRef.current.find((bar) => Number(bar.time) === Number(param.time));
+            if (cvdPoint) cvdChartRef.current.setCrosshairPosition(cvdPoint.close, param.time, cvdSeriesRef.current);
+        };
+        chart.timeScale().subscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+        chart.subscribeCrosshairMove(handleCrosshairMove);
+        priceChartRef.current = chart;
+        priceSeriesRef.current = candles;
+        volumeSeriesRef.current = volume;
+        boundsSeriesRef.current = bounds;
+        avwapSeriesRef.current = avwapSeries;
+        upperBandSeriesRef.current = upperBand;
+        lowerBandSeriesRef.current = lowerBand;
+        const observer = new ResizeObserver(scheduleOverlayUpdate);
+        observer.observe(chartHostRef.current);
+        scheduleOverlayUpdate();
 
-        if (chartLayers.walls) {
-            candles.createPriceLine({ price: callWall, color: '#2fd8af', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: 'CALL WALL' });
-            candles.createPriceLine({ price: putWall, color: '#f05c73', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: 'PUT WALL' });
+        return () => {
+            observer.disconnect();
+            chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleVisibleRangeChange);
+            chart.unsubscribeCrosshairMove(handleCrosshairMove);
+            if (overlayFrameRef.current !== null) cancelAnimationFrame(overlayFrameRef.current);
+            chart.remove(); priceChartRef.current = null; priceSeriesRef.current = null;
+            volumeSeriesRef.current = null; boundsSeriesRef.current = null; priceLinesRef.current = [];
+            avwapSeriesRef.current = null; upperBandSeriesRef.current = null; lowerBandSeriesRef.current = null;
+        };
+    }, [hasChartData]);
+
+    useEffect(() => {
+        const chart = priceChartRef.current;
+        const candles = priceSeriesRef.current;
+        const volume = volumeSeriesRef.current;
+        if (!chart || !candles || !volume || bars.length < 2) return;
+        const previousRange = chart.timeScale().getVisibleLogicalRange();
+        const previousCount = previousBarCountRef.current;
+        const contextChanged = chartContextRef.current !== chartContextKey;
+        const wasAtRealtimeEdge = previousRange !== null && previousRange.to >= previousCount - 1.5;
+        candles.setData(bars);
+        volume.setData(chartLayers.volume ? bars.map((bar) => ({
+            time: bar.time, value: bar.volume,
+            color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.42)' : 'rgba(239, 93, 115, 0.42)',
+        })) : []);
+        if (contextChanged || previousRange === null) {
+            chartContextRef.current = chartContextKey;
+            chart.timeScale().fitContent();
+        } else if (wasAtRealtimeEdge && bars.length > previousCount) {
+            chart.timeScale().setVisibleLogicalRange({
+                from: previousRange.from + (bars.length - previousCount),
+                to: previousRange.to + (bars.length - previousCount),
+            });
+        } else {
+            chart.timeScale().setVisibleLogicalRange(previousRange);
         }
-        if (chartLayers.secondaryWalls) secondaryLevels.forEach((level) => candles.createPriceLine({
+        previousBarCountRef.current = bars.length;
+        requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
+    }, [bars, chartContextKey, chartLayers.volume]);
+
+    useEffect(() => {
+        const bounds = boundsSeriesRef.current;
+        if (!bounds || bars.length < 2) return;
+        const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)];
+        const lowBound = Math.min(...bars.map((bar) => bar.low), ...visibleLevels) * 0.998;
+        const highBound = Math.max(...bars.map((bar) => bar.high), ...visibleLevels) * 1.002;
+        bounds.setData([{ time: bars[0].time, value: lowBound }, { time: bars[bars.length - 1].time, value: highBound }]);
+    }, [bars, callWall, gammaFlip, maxPain, putWall, secondaryLevels]);
+
+    useEffect(() => {
+        const candles = priceSeriesRef.current;
+        if (!candles) return;
+        priceLinesRef.current.forEach((line) => candles.removePriceLine(line));
+        const lines: IPriceLine[] = [];
+        if (chartLayers.walls) {
+            lines.push(candles.createPriceLine({ price: callWall, color: '#2fd8af', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: 'CALL WALL' }));
+            lines.push(candles.createPriceLine({ price: putWall, color: '#f05c73', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: 'PUT WALL' }));
+        }
+        if (chartLayers.secondaryWalls) secondaryLevels.forEach((level) => lines.push(candles.createPriceLine({
             price: level.price, color: 'rgba(180, 192, 209, 0.7)', lineWidth: 1,
             lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `${level.dte}D`,
-        }));
-        if (chartLayers.gammaFlip) candles.createPriceLine({ price: gammaFlip, color: '#3da7ff', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'GAMMA FLIP' });
-        if (chartLayers.maxPain) candles.createPriceLine({ price: maxPain, color: '#d6dae1', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'MAX PAIN' });
+        })));
+        if (chartLayers.gammaFlip) lines.push(candles.createPriceLine({ price: gammaFlip, color: '#3da7ff', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'GAMMA FLIP' }));
+        if (chartLayers.maxPain) lines.push(candles.createPriceLine({ price: maxPain, color: '#d6dae1', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'MAX PAIN' }));
+        priceLinesRef.current = lines;
+        requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
+    }, [callWall, chartLayers.gammaFlip, chartLayers.maxPain, chartLayers.secondaryWalls, chartLayers.walls, gammaFlip, maxPain, putWall, secondaryLevels]);
 
-        chart.timeScale().fitContent();
-        const updateOverlayLayout = () => {
+    useEffect(() => {
+        avwapSeriesRef.current?.setData(chartLayers.avwap ? avwapBands.center : []);
+        upperBandSeriesRef.current?.setData(chartLayers.avwap && showAvwapBands ? avwapBands.upper : []);
+        lowerBandSeriesRef.current?.setData(chartLayers.avwap && showAvwapBands ? avwapBands.lower : []);
+    }, [avwapBands, chartLayers.avwap, showAvwapBands]);
+
+    useEffect(() => {
+        updateOverlayRef.current = () => {
+            const chart = priceChartRef.current;
+            const candles = priceSeriesRef.current;
             const hostHeight = chartHostRef.current?.clientHeight || 460;
+            if (!chart || !candles || !bars.length) return;
             const coordinate = (price: number) => {
                 const y = candles.priceToCoordinate(price);
                 return y === null ? null : Number(y);
             };
             const anchorBar = bars[Math.min(anchorIndex, bars.length - 1)];
+            const startBar = bars[profileStartIndex];
+            const endBar = bars[profileEndIndex];
+            const startCenter = startBar ? chart.timeScale().timeToCoordinate(startBar.time) : null;
+            const endCenter = endBar ? chart.timeScale().timeToCoordinate(endBar.time) : null;
+            const observedSpacing = startCenter !== null && endCenter !== null && profileEndIndex > profileStartIndex
+                ? Math.abs(Number(endCenter) - Number(startCenter)) / (profileEndIndex - profileStartIndex)
+                : 5;
+            const left = startCenter === null ? null : Number(startCenter) - observedSpacing / 2;
+            const right = endCenter === null ? null : Number(endCenter) + observedSpacing / 2;
+            const anchorX = anchorBar ? chart.timeScale().timeToCoordinate(anchorBar.time) : null;
             setOverlayLayout({
                 height: hostHeight,
                 flipY: coordinate(gammaFlip) ?? hostHeight * 0.52,
                 callY: coordinate(callWall), putY: coordinate(putWall), maxPainY: coordinate(maxPain),
+                anchorX: anchorX === null ? null : Number(anchorX),
                 anchorY: anchorBar ? coordinate(anchorBar.low) : null,
-                profileRows: profileRef.current.flatMap((row) => {
+                profileLeftX: left === null ? null : Number(left),
+                profileRightX: right === null ? null : Number(right),
+                profileRows: profile.flatMap((row) => {
                     const y = coordinate(row.price); return y === null ? [] : [{ price: row.price, y }];
                 }),
                 secondaryRows: secondaryLevels.flatMap((level) => {
@@ -317,56 +509,15 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                 valY: profileLevels ? coordinate(profileLevels.val) : null,
             });
         };
-        const scheduleOverlayUpdate = () => requestAnimationFrame(updateOverlayLayout);
-        chart.timeScale().subscribeVisibleLogicalRangeChange((rangeValue) => {
-            scheduleOverlayUpdate();
-            if (rangeValue && cvdChartRef.current) cvdChartRef.current.timeScale().setVisibleLogicalRange(rangeValue);
-        });
-        chart.subscribeCrosshairMove((param) => {
-            const point = param.seriesData.get(candles) as DemoMarketBar | undefined;
-            setHoverBar(point ?? null);
-            if (!param.time || !cvdSeriesRef.current || !cvdChartRef.current) return;
-            const cvdPoint = cvdBars.find((bar) => Number(bar.time) === Number(param.time));
-            if (cvdPoint) cvdChartRef.current.setCrosshairPosition(cvdPoint.close, param.time, cvdSeriesRef.current);
-        });
-        priceChartRef.current = chart;
-        priceSeriesRef.current = candles;
-        avwapSeriesRef.current = avwapSeries;
-        upperBandSeriesRef.current = upperBand;
-        lowerBandSeriesRef.current = lowerBand;
-        const observer = new ResizeObserver(scheduleOverlayUpdate);
-        observer.observe(chartHostRef.current);
-        scheduleOverlayUpdate();
-
-        return () => {
-            observer.disconnect(); chart.remove(); priceChartRef.current = null; priceSeriesRef.current = null;
-            avwapSeriesRef.current = null; upperBandSeriesRef.current = null; lowerBandSeriesRef.current = null;
-        };
-    }, [anchorIndex, bars, callWall, chartLayers.gammaFlip, chartLayers.maxPain, chartLayers.secondaryWalls, chartLayers.volume, chartLayers.walls, cvdBars, dataMode, gammaFlip, maxPain, profileLevels, putWall, secondaryLevels]);
-
-    useEffect(() => {
-        avwapSeriesRef.current?.setData(chartLayers.avwap ? avwapBands.center : []);
-        upperBandSeriesRef.current?.setData(chartLayers.avwap && showAvwapBands ? avwapBands.upper : []);
-        lowerBandSeriesRef.current?.setData(chartLayers.avwap && showAvwapBands ? avwapBands.lower : []);
-    }, [avwapBands, chartLayers.avwap, showAvwapBands]);
-
-    useEffect(() => {
+        let nestedFrame: number | null = null;
         const frame = requestAnimationFrame(() => {
-            const series = priceSeriesRef.current;
-            if (!series) return;
-            const coordinate = (price: number) => {
-                const y = series.priceToCoordinate(price); return y === null ? null : Number(y);
-            };
-            setOverlayLayout((current) => ({
-                ...current,
-                profileRows: profile.flatMap((row) => { const y = coordinate(row.price); return y === null ? [] : [{ price: row.price, y }]; }),
-                vahY: profileLevels ? coordinate(profileLevels.vah) : null,
-                pocY: profileLevels ? coordinate(profileLevels.poc) : null,
-                valY: profileLevels ? coordinate(profileLevels.val) : null,
-            }));
+            nestedFrame = requestAnimationFrame(() => updateOverlayRef.current());
         });
-        return () => cancelAnimationFrame(frame);
-    }, [profile, profileLevels]);
+        return () => {
+            cancelAnimationFrame(frame);
+            if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
+        };
+    }, [anchorIndex, bars, callWall, gammaFlip, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels]);
 
     useEffect(() => {
         if (!studyPaneOpen) return;
@@ -408,25 +559,69 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         if (!dragTarget || objectLocked) return;
         const move = (event: PointerEvent) => {
             const host = chartHostRef.current;
-            if (!host) return;
+            const chart = priceChartRef.current;
+            if (!host || !chart || !bars.length) return;
             const rect = host.getBoundingClientRect();
-            const index = Math.max(0, Math.min(bars.length - 1, Math.round(((event.clientX - rect.left) / rect.width) * (bars.length - 1))));
-            if (dragTarget === 'range-start') setRange((current) => ({ ...current, start: Math.min(index, current.end - 6) }));
-            if (dragTarget === 'range-end') setRange((current) => ({ ...current, end: Math.max(index, current.start + 6) }));
+            const logical = chart.timeScale().coordinateToLogical(event.clientX - rect.left);
+            if (logical === null) return;
+            const index = Math.max(0, Math.min(bars.length - 1, Math.round(logical)));
+            if (dragTarget === 'range-start') {
+                const next = Math.min(index, profileEndIndex - 1);
+                setRange((current) => current && ({ ...current, startTime: Number(bars[Math.max(0, next)].time) }));
+            }
+            if (dragTarget === 'range-end' && !extendProfileRight) {
+                const next = Math.max(index, profileStartIndex + 1);
+                setRange((current) => current && ({ ...current, endTime: Number(bars[Math.min(bars.length - 1, next)].time) }));
+            }
             if (dragTarget === 'anchor') setAnchorIndex(index);
             if (dragTarget === 'range-body' && dragOriginRef.current) {
-                const originIndex = Math.round(((dragOriginRef.current.x - rect.left) / rect.width) * (bars.length - 1));
-                const delta = index - originIndex;
+                const delta = Math.round(logical - dragOriginRef.current.logical);
                 const width = dragOriginRef.current.end - dragOriginRef.current.start;
                 const start = Math.max(0, Math.min(bars.length - 1 - width, dragOriginRef.current.start + delta));
-                setRange({ start, end: start + width });
+                setRange({ startTime: Number(bars[start].time), endTime: Number(bars[start + width].time) });
             }
         };
         const up = () => { setDragTarget(null); dragOriginRef.current = null; };
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up, { once: true });
         return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
-    }, [bars.length, dragTarget, objectLocked]);
+    }, [bars, dragTarget, extendProfileRight, objectLocked, profileEndIndex, profileStartIndex]);
+
+    function beginProfileDrag(event: React.PointerEvent<HTMLElement>, target: 'range-start' | 'range-end' | 'range-body') {
+        event.stopPropagation();
+        if (objectLocked || !chartHostRef.current || !priceChartRef.current) return;
+        const rect = chartHostRef.current.getBoundingClientRect();
+        const logical = priceChartRef.current.timeScale().coordinateToLogical(event.clientX - rect.left);
+        if (logical === null) return;
+        setSelectedObject('VP');
+        dragOriginRef.current = { logical, start: profileStartIndex, end: profileEndIndex };
+        setDragTarget(target);
+    }
+
+    function setProfileToAllLoadedBars() {
+        if (!bars.length) return;
+        setExtendProfileRight(false);
+        setRange({ startTime: Number(bars[0].time), endTime: Number(bars[bars.length - 1].time) });
+    }
+
+    function setProfileToVisibleBars() {
+        const visible = priceChartRef.current?.timeScale().getVisibleLogicalRange();
+        if (!visible || !bars.length) return;
+        const start = Math.max(0, Math.min(bars.length - 1, Math.floor(visible.from)));
+        const end = Math.max(start + 1, Math.min(bars.length - 1, Math.ceil(visible.to)));
+        setExtendProfileRight(false);
+        setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
+    }
+
+    function resetChartViewAndObjects() {
+        const end = bars.length - 1;
+        const start = Math.max(0, end - 119);
+        setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
+        setAnchorIndex(Math.max(0, end - 126));
+        setDrawings([]);
+        priceChartRef.current?.timeScale().fitContent();
+        requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
+    }
 
     function handleDrawing(event: React.PointerEvent<HTMLDivElement>) {
         if (activeTool === 'cursor') return;
@@ -461,10 +656,19 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
 
     const valueAreaTop = overlayLayout.vahY === null || overlayLayout.valY === null ? null : Math.min(overlayLayout.vahY, overlayLayout.valY);
     const valueAreaHeight = overlayLayout.vahY === null || overlayLayout.valY === null ? 0 : Math.abs(overlayLayout.valY - overlayLayout.vahY);
+    const profileLeft = overlayLayout.profileLeftX === null || overlayLayout.profileRightX === null
+        ? null
+        : Math.min(overlayLayout.profileLeftX, overlayLayout.profileRightX);
+    const profileWidth = overlayLayout.profileLeftX === null || overlayLayout.profileRightX === null
+        ? 0
+        : Math.max(2, Math.abs(overlayLayout.profileRightX - overlayLayout.profileLeftX));
+    const profileRowHeight = overlayLayout.profileRows.length > 1
+        ? Math.max(1, Math.abs(overlayLayout.profileRows[1].y - overlayLayout.profileRows[0].y) - 1)
+        : 6;
 
     return (
         <div className="flex h-full min-h-0 flex-col bg-[#080d14]">
-            <div className="relative min-h-[310px] flex-1 overflow-hidden" role="group" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} BTC price chart with options structure overlays`}>
+            <div ref={chartSurfaceRef} className="relative min-h-[310px] flex-1 overflow-hidden" role="group" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} BTC price chart with options structure overlays`}>
                 <div ref={chartHostRef} className="absolute inset-0" />
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
@@ -480,36 +684,61 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                 {chartLayers.secondaryWalls && overlayLayout.secondaryRows.map((level) => <div key={`${level.price}-${level.dte}`} className="pointer-events-none absolute inset-x-0 z-20 border-t border-dashed border-zinc-400/45" style={{ top: level.y }}><span className="absolute right-16 -top-4 text-[8px] font-semibold text-zinc-400">{money(level.price)} · {level.dte}D</span></div>)}
                 {chartLayers.maxPain && overlayLayout.maxPainY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 border-t border-dotted border-zinc-300/45" style={{ top: overlayLayout.maxPainY }}><span className="absolute left-[52%] -top-4 text-[8px] font-semibold text-zinc-300">MAX PAIN {money(maxPain)}</span></div>}
 
-                {chartLayers.volumeProfile && <div
-                    className={cn('absolute bottom-7 top-0 z-20 border-x border-cyan-400/40 bg-cyan-400/[0.025]', selectedObject === 'VP' && 'ring-1 ring-inset ring-cyan-300/30')}
-                    style={{ left: `${leftPct}%`, width: `${Math.max(4, rightPct - leftPct)}%` }}
-                    onPointerDown={(event) => { if (objectLocked) return; setSelectedObject('VP'); dragOriginRef.current = { x: event.clientX, start: range.start, end: range.end }; setDragTarget('range-body'); }}
+                {chartLayers.volumeProfile && profileLeft !== null && <div
+                    className={cn('pointer-events-none absolute bottom-7 top-0 z-20 border-x border-cyan-400/40 bg-cyan-400/[0.025]', selectedObject === 'VP' && 'ring-1 ring-inset ring-cyan-300/30')}
+                    style={{ left: profileLeft, width: profileWidth }}
+                    data-testid="fixed-range-volume-profile"
+                    data-selected-bars={selectedBarCount}
+                    data-start-index={profileStartIndex}
+                    data-end-index={profileEndIndex}
+                    data-left-coordinate={overlayLayout.profileLeftX ?? ''}
+                    data-right-coordinate={overlayLayout.profileRightX ?? ''}
                 >
                     {valueAreaTop !== null && <div className="pointer-events-none absolute inset-x-0 bg-sky-400/[0.045]" style={{ top: valueAreaTop, height: valueAreaHeight }} />}
                     {profile.map((row) => {
                         const y = overlayLayout.profileRows.find((position) => position.price === row.price)?.y;
                         if (y === undefined) return null;
-                        const width = (row.volume / maxProfile) * 68;
-                        return <div key={row.price} className="pointer-events-none absolute right-0 flex h-2 -translate-y-1/2 justify-end" style={{ top: y, width: `${width}%` }}><span className="h-full bg-rose-400/55" style={{ width: `${(1 - row.buyShare) * 100}%` }} /><span className="h-full bg-sky-400/65" style={{ width: `${row.buyShare * 100}%` }} /></div>;
+                        const metric = profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume;
+                        const width = (metric / maxProfile) * profileWidthPercent;
+                        const inValueArea = profileLevels !== null && row.price >= profileLevels.val && row.price <= profileLevels.vah;
+                        const placementClass = profilePlacement === 'RIGHT' ? 'right-0 justify-end' : 'left-0 justify-start';
+                        if (profileVolumeMode === 'TOTAL') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', inValueArea ? 'bg-sky-300/75' : 'bg-sky-500/45')} /></div>;
+                        if (profileVolumeMode === 'DELTA') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', row.delta >= 0 ? inValueArea ? 'bg-cyan-300/80' : 'bg-cyan-500/50' : inValueArea ? 'bg-rose-300/80' : 'bg-rose-500/50')} /></div>;
+                        return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={inValueArea ? 'bg-rose-300/75' : 'bg-rose-500/45'} style={{ width: `${(1 - row.upShare) * 100}%` }} /><span className={inValueArea ? 'bg-cyan-300/80' : 'bg-cyan-500/55'} style={{ width: `${row.upShare * 100}%` }} /></div>;
                     })}
                     {[
                         ['VAH', profileLevels?.vah, overlayLayout.vahY, 'border-sky-300/50 text-sky-200'],
                         ['POC', profileLevels?.poc, overlayLayout.pocY, 'border-rose-300/70 text-rose-300'],
                         ['VAL', profileLevels?.val, overlayLayout.valY, 'border-sky-300/50 text-sky-200'],
                     ].map(([label, price, y, classes]) => typeof y === 'number' && typeof price === 'number' ? <div key={String(label)} className={cn('pointer-events-none absolute inset-x-0 border-t', String(classes).split(' ')[0])} style={{ top: y }}><span className={cn('absolute right-1 -top-4 bg-[#08101a]/95 px-1 text-[8px] font-semibold', String(classes).split(' ')[1])}>{label} {Math.round(price).toLocaleString()}</span></div> : null)}
-                    {!objectLocked && <><button type="button" aria-label="Adjust volume profile start" onPointerDown={(event) => { event.stopPropagation(); setDragTarget('range-start'); }} className="absolute -left-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button><button type="button" aria-label="Adjust volume profile end" onPointerDown={(event) => { event.stopPropagation(); setDragTarget('range-end'); }} className="absolute -right-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button></>}
-                    <span className="pointer-events-none absolute left-2 top-2 rounded bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200">FIXED RANGE VP · {dataMode}</span>
+                    {!objectLocked && <><button type="button" aria-label="Adjust volume profile start" onPointerDown={(event) => beginProfileDrag(event, 'range-start')} className="pointer-events-auto absolute -left-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>{!extendProfileRight && <button type="button" aria-label="Adjust volume profile end" onPointerDown={(event) => beginProfileDrag(event, 'range-end')} className="pointer-events-auto absolute -right-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>}</>}
+                    <button type="button" title="Drag to move the fixed range volume profile" onPointerDown={(event) => beginProfileDrag(event, 'range-body')} className="pointer-events-auto absolute left-2 top-2 flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200"><Move className="size-3" />FIXED RANGE VP · {selectedBarCount} BARS · {profileSourceLabel}</button>
                 </div>}
 
-                {chartLayers.avwap && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: `${anchorPct}%`, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: `calc(${anchorPct}% + 12px)`, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
+                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
 
                 {selectedObject && ((selectedObject === 'VP' && chartLayers.volumeProfile) || (selectedObject === 'AVWAP' && chartLayers.avwap)) && <div className="absolute left-1/2 top-11 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg" role="toolbar" aria-label={`${selectedObject} controls`}>
-                    <button type="button" aria-label={`Move ${selectedObject}`} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Move className="size-3.5" /></button>
+                    <button type="button" aria-label={`Move ${selectedObject}`} onPointerDown={(event) => selectedObject === 'VP' ? beginProfileDrag(event, 'range-body') : setDragTarget('anchor')} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Move className="size-3.5" /></button>
                     <button type="button" aria-label={objectLocked ? `Unlock ${selectedObject}` : `Lock ${selectedObject}`} onClick={() => setObjectLocked((locked) => !locked)} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100">{objectLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}</button>
-                    <button type="button" aria-label={`${selectedObject} settings`} onClick={() => setSettingsOpen((open) => !open)} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Settings className="size-3.5" /></button>
+                    <Popover.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
+                        <Popover.Trigger asChild><button type="button" aria-label={`${selectedObject} settings`} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Settings className="size-3.5" /></button></Popover.Trigger>
+                        <Popover.Portal><Popover.Content side="bottom" align="center" sideOffset={8} className="z-50 w-72 rounded-md border border-[#33445a] bg-[#0b121c] p-3 text-[10px] text-zinc-300 shadow-lg">
+                            {selectedObject === 'VP' ? <div className="space-y-3">
+                                <div className="flex items-center justify-between"><span className="font-semibold text-zinc-100">Fixed Range Volume Profile</span><span className="font-mono tabular-nums text-cyan-300">{selectedBarCount} bars</span></div>
+                                <div className="grid grid-cols-2 gap-2"><button type="button" onClick={setProfileToVisibleBars} className="rounded border border-[#33445a] px-2 py-1.5 hover:bg-white/5">Use visible range</button><button type="button" onClick={setProfileToAllLoadedBars} className="rounded border border-[#33445a] px-2 py-1.5 hover:bg-white/5">Use all loaded</button></div>
+                                <label htmlFor="profile-rows" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Number of rows</span><select id="profile-rows" value={profileRowCount} onChange={(event) => setProfileRowCount(Number(event.target.value))} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value={24}>24</option><option value={48}>48</option><option value={72}>72</option><option value={100}>100</option></select></label>
+                                <label htmlFor="profile-volume-mode" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Volume</span><select id="profile-volume-mode" value={profileVolumeMode} onChange={(event) => setProfileVolumeMode(event.target.value as ProfileVolumeMode)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="TOTAL">Total</option><option value="UP_DOWN">Up / Down</option><option value="DELTA">Delta</option></select></label>
+                                <label htmlFor="profile-placement" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Placement</span><select id="profile-placement" value={profilePlacement} onChange={(event) => setProfilePlacement(event.target.value as ProfilePlacement)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="RIGHT">Right</option><option value="LEFT">Left</option></select></label>
+                                <label htmlFor="profile-width" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Width (% of box)</span><span className="font-mono tabular-nums text-zinc-200">{profileWidthPercent}%</span></span><input id="profile-width" type="range" min="10" max="100" step="5" value={profileWidthPercent} onChange={(event) => setProfileWidthPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
+                                <label htmlFor="profile-value-area" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Value area volume</span><span className="font-mono tabular-nums text-zinc-200">{profileValueAreaPercent}%</span></span><input id="profile-value-area" type="range" min="50" max="99" step="1" value={profileValueAreaPercent} onChange={(event) => setProfileValueAreaPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
+                                <label className="flex items-center justify-between gap-3"><span className="text-zinc-400">Extend right with new bars</span><input type="checkbox" checked={extendProfileRight} onChange={(event) => setExtendProfileRight(event.target.checked)} className="size-4 accent-cyan-400" /></label>
+                                <p className="text-pretty text-[9px] leading-4 text-zinc-500">Source: {profileSourceLabel}. Live mode selects the finest bounded Binance interval below 5,000 intrabars. Up/down classification follows candle direction; the chart remains pannable through the profile.</p>
+                            </div> : <label className="flex items-center justify-between gap-3"><span>Deviation bands</span><input type="checkbox" checked={showAvwapBands} onChange={(event) => setShowAvwapBands(event.target.checked)} className="size-4 accent-cyan-400" /></label>}
+                            <Popover.Arrow className="fill-[#33445a]" />
+                        </Popover.Content></Popover.Portal>
+                    </Popover.Root>
                     <button type="button" aria-label={`Hide ${selectedObject}`} onClick={() => toggleChartLayer(selectedObject === 'VP' ? 'volumeProfile' : 'avwap')} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Eye className="size-3.5" /></button>
                     <button type="button" aria-label={`Remove ${selectedObject}`} onClick={() => { toggleChartLayer(selectedObject === 'VP' ? 'volumeProfile' : 'avwap'); setSelectedObject(null); }} className="rounded p-1.5 text-rose-300 hover:bg-rose-400/10"><Trash2 className="size-3.5" /></button>
-                    {settingsOpen && <div className="absolute left-1/2 top-10 w-48 -translate-x-1/2 rounded-md border border-[#33445a] bg-[#0b121c] p-2 text-[9px] text-zinc-300 shadow-lg">{selectedObject === 'VP' ? <><label htmlFor="profile-rows" className="mb-1 block text-zinc-500">Profile rows</label><select id="profile-rows" value={profileRowCount} onChange={(event) => setProfileRowCount(Number(event.target.value))} className="h-8 w-full rounded border border-[#33445a] bg-[#080d14] px-2"><option value={18}>18 rows</option><option value={24}>24 rows</option><option value={36}>36 rows</option></select></> : <label className="flex items-center justify-between gap-3"><span>Deviation bands</span><input type="checkbox" checked={showAvwapBands} onChange={(event) => setShowAvwapBands(event.target.checked)} /></label>}</div>}
                 </div>}
 
                 <DrawingLayer drawings={drawings} />
@@ -529,9 +758,9 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                         className={cn('min-w-20 border-b-2 border-transparent px-3 text-[10px] font-semibold capitalize text-zinc-500 hover:text-zinc-200', activeOrderFlowStudy === study && 'border-sky-400 bg-sky-400/[0.06] text-sky-200')}
                     >{study === 'CVD' ? 'CVD' : study.charAt(0) + study.slice(1).toLowerCase()}</button>)}
                 </div>
-                <div className="flex h-9 shrink-0 items-center justify-between border-y border-[#263346] bg-[#090f18] px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy === 'DELTA' ? 'Aggressor Volume Delta' : activeOrderFlowStudy === 'BOOK' ? 'BTCUSDT Order Book' : 'Observed Liquidity'}</span>{activeOrderFlowStudy === 'CVD' && <span className={cn('font-mono text-sm font-semibold tabular-nums', lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastCvd)}</span>}{activeOrderFlowStudy === 'DELTA' && <span className={cn('font-mono text-sm font-semibold tabular-nums', lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastDelta)}</span>}<span className="hidden text-zinc-500 sm:inline">Anchor: visible range</span><span className="hidden text-zinc-500 lg:inline">Source: {dataMode === 'LIVE' ? 'Binance Spot' : 'demo fixture'}</span></div><div className="flex items-center gap-2"><span className={cn('rounded border px-1.5 py-0.5', dataMode === 'LIVE' && marketFeed.state === 'LIVE' ? 'border-emerald-400/35 text-emerald-300' : 'border-sky-400/35 text-sky-300')}>{dataMode === 'LIVE' ? marketFeed.state : 'SHADOW DATA'}</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">Coverage {dataMode === 'LIVE' ? marketFeed.coveragePercent : 96}%</span><button type="button" aria-label="Reset chart objects" onClick={() => { setRange({ start: 72, end: 120 }); setAnchorIndex(66); setDrawings([]); }} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div>
+                <div className="flex h-9 shrink-0 items-center justify-between border-y border-[#263346] bg-[#090f18] px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy === 'DELTA' ? 'Aggressor Volume Delta' : activeOrderFlowStudy === 'BOOK' ? 'BTCUSDT Order Book' : 'Observed Liquidity'}</span>{activeOrderFlowStudy === 'CVD' && <span className={cn('font-mono text-sm font-semibold tabular-nums', lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastCvd)}</span>}{activeOrderFlowStudy === 'DELTA' && <span className={cn('font-mono text-sm font-semibold tabular-nums', lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastDelta)}</span>}<span className="hidden text-zinc-500 sm:inline">Anchor: visible range</span><span className="hidden text-zinc-500 lg:inline">Source: {dataMode === 'LIVE' ? 'Binance Spot' : 'demo fixture'}</span></div><div className="flex items-center gap-2"><span className={cn('rounded border px-1.5 py-0.5', dataMode === 'LIVE' && marketFeed.state === 'LIVE' ? 'border-emerald-400/35 text-emerald-300' : 'border-sky-400/35 text-sky-300')}>{dataMode === 'LIVE' ? marketFeed.state : 'SHADOW DATA'}</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">Coverage {dataMode === 'LIVE' ? marketFeed.coveragePercent : 96}%</span><button type="button" aria-label="Reset chart view and objects" onClick={resetChartViewAndObjects} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div>
                 <div className="relative h-[15%] min-h-[115px] shrink-0 bg-[#070b11]">
-                    {activeOrderFlowStudy === 'CVD' && <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`} /><div className="pointer-events-none absolute inset-y-0 left-[62%] z-20 border-l border-dashed border-zinc-400/65"><span className="absolute left-1 top-1 text-[8px] text-zinc-400">Visible-range reset</span></div></>}
+                    {activeOrderFlowStudy === 'CVD' && <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`} /><div className="pointer-events-none absolute inset-y-0 left-[62%] z-20 border-l border-dashed border-zinc-400/65"><span className="absolute left-1 top-1 text-[8px] text-zinc-400">Session reset</span></div></>}
                     {activeOrderFlowStudy === 'DELTA' && <div ref={deltaHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} aggressor volume delta histogram`} />}
                     {activeOrderFlowStudy === 'BOOK' && <BookPanel marketFeed={marketFeed} />}
                     {activeOrderFlowStudy === 'LIQUIDITY' && <LiquidityPanel marketFeed={marketFeed} levels={liquidityLevels} />}
