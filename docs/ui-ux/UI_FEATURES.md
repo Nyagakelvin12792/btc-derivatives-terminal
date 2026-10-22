@@ -44,7 +44,7 @@ Research rules:
 | MetaTrader 5 | Docked/undocked charts and multiple monitors | Future detachable workspace architecture | Not required for initial web release; plan state model so it is not blocked | Later |
 | TradingView | Fixed Range Volume Profile defined by two chart coordinates | VP stays inside selected range with start/end handles | Preserve project calculation; borrow only interaction model | UX5 |
 | TradingView | Anchored VWAP starts from a user-selected point | Draggable AVWAP anchor; line extends right only | Preserve project calculation and replay rules | UX5 |
-| TradingView | CVD uses cumulative OHLC candles with anchor resets | CVD candle pane, zero line, anchor, and reset dividers | Render only supplied values; no frontend trade classification | UX6 |
+| TradingView | CVD uses cumulative OHLC candles with anchor resets | CVD candle pane, zero line, anchor, and reset dividers | Use Binance-supplied taker-buy volume for bar delta; no inferred trade classification | UX6/UX11 |
 | TradingView | Object Tree controls layer order and visibility | Unified Layer Manager and active-study chips | Include project-specific health/source state per object | UX4 |
 | TradingView | Favorites for tools, indicators, and timeframes | Favorite tools/timeframes at top of menus | Stored locally in versioned UI preferences | UX7 |
 | TradingView | Lock, hide, keep-drawing, snap, and remove controls | Drawing toolbar modes and global drawing actions | Default one-shot tools; keep-drawing must be explicitly enabled | UX4/UX5 |

@@ -2,8 +2,12 @@ import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
 
 test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => {
+        localStorage.setItem('btc-terminal-ui-v1', JSON.stringify({ state: { dataMode: 'DEMO', activeWorkspace: 'MARKET STRUCTURE' }, version: 1 }));
+    });
     await page.goto('/', { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: '● DEMO', exact: true })).toBeVisible();
 });
 
 test('renders the chart-first terminal and keyboard command palette', async ({ page }, testInfo) => {
@@ -11,6 +15,7 @@ test('renders the chart-first terminal and keyboard command palette', async ({ p
     await expect(page.getByText('CALL WALL', { exact: false }).first()).toBeVisible();
     await expect(page.getByText('FIXED RANGE VP · DEMO')).toBeVisible();
     await expect(page.getByLabel('Demo cumulative volume delta candles')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'CVD', exact: true })).toHaveAttribute('aria-selected', 'true');
     await expect(page.locator('canvas').first()).toBeVisible();
 
     await page.getByRole('button', { name: /Open command palette/ }).click();

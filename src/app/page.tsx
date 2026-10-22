@@ -50,12 +50,13 @@ export default function TerminalPage() {
         setDataMode,
         selectedStrike,
         selectedDte,
+        dteFilter,
         setSelectedStrike,
         setSelectedPoint,
     } = useTerminalStore();
 
     // Query live or demo terrain data using TanStack Query
-    const { data: queryData, isError } = useTerrainQuery(dataMode);
+    const { data: queryData, isError } = useTerrainQuery(dataMode, dteFilter);
 
     // Fallback data when loading or in demo mode
     const fallbackDemoData = useMemo(() => createCanonicalDashboardData('DEMO') as unknown as TerrainDataContractV2, []);

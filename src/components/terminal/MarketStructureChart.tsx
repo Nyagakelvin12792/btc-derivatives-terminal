@@ -14,6 +14,8 @@ import {
 } from 'lightweight-charts';
 import { Eye, GripVertical, Lock, Move, RotateCcw, Settings, Trash2, Unlock } from 'lucide-react';
 import type { TerrainDataContractV2 } from '@/lib/terrain/types';
+import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels } from '@/lib/binance/analytics';
+import type { BinanceMarketFeed } from '@/lib/binance/use-market-feed';
 import { useTerminalStore } from '@/lib/dashboard/store';
 import { cn } from '@/lib/ui/cn';
 import {
@@ -31,6 +33,7 @@ type LineSeriesApi = ISeriesApi<'Line'>;
 
 interface MarketStructureChartProps {
     data: TerrainDataContractV2;
+    marketFeed: BinanceMarketFeed;
     activeTool: ChartTool;
     timeframe: ChartTimeframe;
     replayActive: boolean;
@@ -143,9 +146,29 @@ function DrawingLayer({ drawings }: { drawings: DrawingObject[] }) {
     );
 }
 
-export default function MarketStructureChart({ data, activeTool, timeframe, replayActive }: MarketStructureChartProps) {
+function BookPanel({ marketFeed }: { marketFeed: BinanceMarketFeed }) {
+    const book = marketFeed.book;
+    if (!book) return <div className="flex h-full items-center justify-center text-[10px] text-zinc-500">Waiting for validated Binance order-book depth…</div>;
+    const rows = Math.min(10, book.bids.length, book.asks.length);
+    return <div className="grid h-full grid-cols-2 divide-x divide-[#263346] font-mono text-[9px] tabular-nums">
+        <div className="overflow-hidden p-2"><div className="mb-1 grid grid-cols-2 text-zinc-500"><span>Bid price</span><span className="text-right">BTC / USD</span></div>{book.bids.slice(0, rows).map((level, index) => <div key={`bid-${level.price}`} className="relative grid grid-cols-2 py-0.5"><span className="absolute inset-y-0 right-0 bg-emerald-400/10" style={{ width: `${Math.min(100, (level.notionalUsd / Math.max(book.bidDepthUsd, 1)) * 500)}%` }} /><span className="relative text-emerald-300">{level.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span><span className="relative text-right text-zinc-300">{level.quantity.toFixed(index < 3 ? 5 : 4)} / ${compact(level.notionalUsd)}</span></div>)}</div>
+        <div className="overflow-hidden p-2"><div className="mb-1 grid grid-cols-2 text-zinc-500"><span>Ask price</span><span className="text-right">BTC / USD</span></div>{book.asks.slice(0, rows).map((level, index) => <div key={`ask-${level.price}`} className="relative grid grid-cols-2 py-0.5"><span className="absolute inset-y-0 left-0 bg-rose-400/10" style={{ width: `${Math.min(100, (level.notionalUsd / Math.max(book.askDepthUsd, 1)) * 500)}%` }} /><span className="relative text-rose-300">{level.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span><span className="relative text-right text-zinc-300">{level.quantity.toFixed(index < 3 ? 5 : 4)} / ${compact(level.notionalUsd)}</span></div>)}</div>
+    </div>;
+}
+
+function LiquidityPanel({ marketFeed, levels }: { marketFeed: BinanceMarketFeed; levels: ReturnType<typeof selectLiquidityLevels> }) {
+    const book = marketFeed.book;
+    if (!book) return <div className="flex h-full items-center justify-center text-[10px] text-zinc-500">Waiting for validated Binance liquidity depth…</div>;
+    return <div className="grid h-full grid-cols-[0.7fr_1.3fr] divide-x divide-[#263346] p-2 text-[9px]">
+        <div className="grid grid-cols-2 content-start gap-2 pr-2"><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Spread</div><div className="mt-1 font-mono text-sm tabular-nums text-zinc-100">{book.spread.toFixed(2)}</div><div className="text-[8px] text-zinc-500">{book.spreadBps.toFixed(2)} bps</div></div><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Imbalance</div><div className={cn('mt-1 font-mono text-sm tabular-nums', book.imbalance >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{(book.imbalance * 100).toFixed(1)}%</div><div className="text-[8px] text-zinc-500">top 20 levels</div></div><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Bid depth</div><div className="mt-1 font-mono text-xs tabular-nums text-emerald-300">${compact(book.bidDepthUsd)}</div></div><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Ask depth</div><div className="mt-1 font-mono text-xs tabular-nums text-rose-300">${compact(book.askDepthUsd)}</div></div></div>
+        <div className="space-y-1 pl-3"><div className="mb-1 flex justify-between text-zinc-500"><span>Largest observed depth levels</span><span>Notional</span></div>{levels.map((level) => <div key={`${level.side}-${level.price}`} className="grid grid-cols-[48px_1fr_70px] items-center gap-2"><span className={level.side === 'BID' ? 'text-emerald-300' : 'text-rose-300'}>{level.side}</span><div className="relative h-3 overflow-hidden rounded-sm bg-[#111a25]"><span className={cn('absolute inset-y-0', level.side === 'BID' ? 'left-0 bg-emerald-400/35' : 'right-0 bg-rose-400/35')} style={{ width: `${level.share * 100}%` }} /><span className="relative px-1 font-mono text-[8px] tabular-nums text-zinc-200">{level.price.toLocaleString()}</span></div><span className="text-right font-mono tabular-nums text-zinc-300">${compact(level.notionalUsd)}</span></div>)}</div>
+    </div>;
+}
+
+export default function MarketStructureChart({ data, marketFeed, activeTool, timeframe, replayActive }: MarketStructureChartProps) {
     const chartHostRef = useRef<HTMLDivElement>(null);
     const cvdHostRef = useRef<HTMLDivElement>(null);
+    const deltaHostRef = useRef<HTMLDivElement>(null);
     const priceChartRef = useRef<IChartApi | null>(null);
     const cvdChartRef = useRef<IChartApi | null>(null);
     const priceSeriesRef = useRef<PriceSeries | null>(null);
@@ -158,7 +181,7 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
         height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorY: null,
         profileRows: [], secondaryRows: [], vahY: null, pocY: null, valY: null,
     });
-    const [range, setRange] = useState({ start: 78, end: 152 });
+    const [range, setRange] = useState({ start: 72, end: 120 });
     const [anchorIndex, setAnchorIndex] = useState(66);
     const [profileRowCount, setProfileRowCount] = useState(24);
     const [showAvwapBands, setShowAvwapBands] = useState(true);
@@ -172,13 +195,17 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
     const [drawingStatus, setDrawingStatus] = useState('');
     const dragOriginRef = useRef<{ x: number; start: number; end: number } | null>(null);
 
-    const { dataMode, chartLayers, activeOrderFlowStudy, studyPaneOpen, dteFilter, toggleChartLayer } = useTerminalStore();
+    const { dataMode, chartLayers, activeOrderFlowStudy, studyPaneOpen, dteFilter, toggleChartLayer, setActiveOrderFlowStudy } = useTerminalStore();
     const summary = data.summary as unknown as Record<string, unknown>;
     const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
     const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
-    const allBars = useMemo(() => createDemoMarketBars(spot, 192, TIMEFRAME_SECONDS[timeframe]), [spot, timeframe]);
-    const bars = useMemo(() => replayActive ? allBars.slice(0, 160) : allBars, [allBars, replayActive]);
-    const cvdBars = useMemo(() => createDemoCvd(bars), [bars]);
+    const demoBars = useMemo(() => createDemoMarketBars(spot, 192, TIMEFRAME_SECONDS[timeframe]), [spot, timeframe]);
+    const liveBars = useMemo<DemoMarketBar[]>(() => marketFeed.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [marketFeed.candles]);
+    const allBars = dataMode === 'DEMO' ? demoBars : liveBars;
+    const bars = useMemo(() => replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, replayActive]);
+    const cvdBars = useMemo(() => dataMode === 'DEMO' ? createDemoCvd(bars) : buildCvdBars(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, dataMode]);
+    const deltaBars = useMemo(() => dataMode === 'DEMO' ? cvdBars.map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' })) : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
+    const liquidityLevels = useMemo(() => selectLiquidityLevels(marketFeed.book), [marketFeed.book]);
     const avwapBands = useMemo(() => createDemoAvwapBands(bars, Math.min(anchorIndex, bars.length - 1)), [bars, anchorIndex]);
     const profile = useMemo(() => createDemoVolumeProfile(bars, range.start, range.end, profileRowCount), [bars, range, profileRowCount]);
     const profileLevels = useMemo(() => calculateVolumeProfileLevels(profile), [profile]);
@@ -209,6 +236,7 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
     }, [callWall, data.confluenceLevels, dataMode, gammaFlip, putWall, spot]);
     const lastBar = hoverBar ?? bars.at(-1) ?? null;
     const lastCvd = cvdBars.at(-1)?.close ?? 0;
+    const lastDelta = deltaBars.at(-1)?.value ?? 0;
     const leftPct = (range.start / Math.max(bars.length - 1, 1)) * 100;
     const rightPct = (Math.min(range.end, bars.length - 1) / Math.max(bars.length - 1, 1)) * 100;
     const anchorPct = (Math.min(anchorIndex, bars.length - 1) / Math.max(bars.length - 1, 1)) * 100;
@@ -217,7 +245,7 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
     useEffect(() => { profileRef.current = profile; }, [profile]);
 
     useEffect(() => {
-        if (dataMode !== 'DEMO' || !chartHostRef.current) return;
+        if (!chartHostRef.current || bars.length < 2) return;
         const chart = createChart(chartHostRef.current, chartOptions);
         const candles = chart.addSeries(CandlestickSeries, {
             upColor: '#27d3aa', downColor: '#ef5d73', borderVisible: false,
@@ -341,25 +369,40 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
     }, [profile, profileLevels]);
 
     useEffect(() => {
-        if (dataMode !== 'DEMO' || activeOrderFlowStudy !== 'CVD' || !studyPaneOpen || !cvdHostRef.current) return;
-        const chart = createChart(cvdHostRef.current, {
-            ...chartOptions,
-            layout: { ...chartOptions.layout, background: { type: ColorType.Solid, color: '#070b11' } },
-            rightPriceScale: { borderColor: '#263346', scaleMargins: { top: 0.16, bottom: 0.14 } },
-        });
-        const series = chart.addSeries(CandlestickSeries, {
-            upColor: '#27d3aa', downColor: '#ef5d73', borderVisible: false,
-            wickUpColor: '#27d3aa', wickDownColor: '#ef5d73', priceLineVisible: false, lastValueVisible: true,
-        });
-        series.setData(cvdBars);
-        series.createPriceLine({ price: 0, color: '#657287', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'ZERO' });
-        chart.timeScale().fitContent();
-        const mainRange = priceChartRef.current?.timeScale().getVisibleLogicalRange();
-        if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
-        cvdChartRef.current = chart;
-        cvdSeriesRef.current = series;
-        return () => { chart.remove(); cvdChartRef.current = null; cvdSeriesRef.current = null; };
-    }, [activeOrderFlowStudy, cvdBars, dataMode, studyPaneOpen]);
+        if (!studyPaneOpen) return;
+        if (activeOrderFlowStudy === 'CVD' && cvdHostRef.current && cvdBars.length) {
+            const chart = createChart(cvdHostRef.current, {
+                ...chartOptions,
+                layout: { ...chartOptions.layout, background: { type: ColorType.Solid, color: '#070b11' } },
+                rightPriceScale: { borderColor: '#263346', scaleMargins: { top: 0.16, bottom: 0.14 } },
+            });
+            const series = chart.addSeries(CandlestickSeries, {
+                upColor: '#27d3aa', downColor: '#ef5d73', borderVisible: false,
+                wickUpColor: '#27d3aa', wickDownColor: '#ef5d73', priceLineVisible: false, lastValueVisible: true,
+            });
+            series.setData(cvdBars);
+            series.createPriceLine({ price: 0, color: '#657287', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'ZERO' });
+            chart.timeScale().fitContent();
+            const mainRange = priceChartRef.current?.timeScale().getVisibleLogicalRange();
+            if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
+            cvdChartRef.current = chart;
+            cvdSeriesRef.current = series;
+            return () => { chart.remove(); cvdChartRef.current = null; cvdSeriesRef.current = null; };
+        }
+        if (activeOrderFlowStudy === 'DELTA' && deltaHostRef.current && deltaBars.length) {
+            const chart = createChart(deltaHostRef.current, {
+                ...chartOptions,
+                layout: { ...chartOptions.layout, background: { type: ColorType.Solid, color: '#070b11' } },
+                rightPriceScale: { borderColor: '#263346', scaleMargins: { top: 0.12, bottom: 0.12 } },
+            });
+            const series = chart.addSeries(HistogramSeries, { priceLineVisible: false, lastValueVisible: true, base: 0 });
+            series.setData(deltaBars);
+            chart.timeScale().fitContent();
+            const mainRange = priceChartRef.current?.timeScale().getVisibleLogicalRange();
+            if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
+            return () => chart.remove();
+        }
+    }, [activeOrderFlowStudy, cvdBars, deltaBars, studyPaneOpen]);
 
     useEffect(() => {
         if (!dragTarget || objectLocked) return;
@@ -404,13 +447,13 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
         setDrawingStatus(`${activeTool} added`);
     }
 
-    if (dataMode !== 'DEMO') {
+    if (!bars.length) {
         return (
             <div className="flex h-full min-h-0 items-center justify-center bg-[#080c13] p-6">
                 <div className="max-w-md rounded-lg border border-amber-500/25 bg-[#0b111a] p-5 text-center">
-                    <div className="mb-2 text-[10px] font-bold text-amber-300">PRICE SERIES · UNAVAILABLE</div>
-                    <p className="text-pretty text-sm text-zinc-300">The live frontend contract supplies options structure, but no authorized candle or order-flow series. Switch to Demo to inspect the complete UI safely.</p>
-                    <button type="button" onClick={() => useTerminalStore.getState().setDataMode('DEMO')} className="mt-4 rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200">OPEN DEMO WORKSPACE</button>
+                    <div className="mb-2 text-[10px] font-bold text-amber-300">BINANCE MARKET FEED · {marketFeed.state}</div>
+                    <p className="text-pretty text-sm text-zinc-300">Waiting for validated BTCUSDT candles and order-flow data. Demo values are not substituted into the live workspace.</p>
+                    {marketFeed.state === 'OFFLINE' && <button type="button" onClick={() => useTerminalStore.getState().setDataMode('DEMO')} className="mt-4 rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200">OPEN DEMO WORKSPACE</button>}
                 </div>
             </div>
         );
@@ -421,15 +464,15 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
 
     return (
         <div className="flex h-full min-h-0 flex-col bg-[#080d14]">
-            <div className="relative min-h-[310px] flex-1 overflow-hidden" role="group" aria-label="Demo BTC price chart with options structure overlays">
+            <div className="relative min-h-[310px] flex-1 overflow-hidden" role="group" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} BTC price chart with options structure overlays`}>
                 <div ref={chartHostRef} className="absolute inset-0" />
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
                 </div>}
 
                 {chartLayers.gammaRegime && <div className="pointer-events-none absolute inset-0 z-10">
-                    <div className={cn('absolute inset-x-0 top-0 border-b border-emerald-400/25 bg-emerald-400/[0.045]', positiveGamma && 'bg-emerald-400/[0.075]')} style={{ height: Math.max(0, overlayLayout.flipY) }}><span className="absolute left-3 top-10 rounded border border-emerald-400/20 bg-[#07120f]/90 px-2 py-1 text-[9px] font-bold text-emerald-300">POSITIVE GAMMA · MEAN-REVERSION</span></div>
-                    <div className={cn('absolute inset-x-0 bottom-0 border-t border-rose-400/20 bg-rose-400/[0.035]', !positiveGamma && 'bg-rose-400/[0.07]')} style={{ top: Math.max(0, overlayLayout.flipY) }}><span className="absolute bottom-8 left-3 rounded border border-rose-400/20 bg-[#140a0e]/90 px-2 py-1 text-[9px] font-bold text-rose-300">NEGATIVE GAMMA · EXPANSION</span></div>
+                    <div className={cn('absolute inset-x-0 top-0 border-b border-emerald-400/25 bg-emerald-400/[0.045]', positiveGamma && 'bg-emerald-400/[0.075]')} style={{ height: Math.max(0, overlayLayout.flipY) }}><span className="absolute left-3 top-10 rounded border border-emerald-400/20 bg-[#07120f]/90 px-2 py-1 text-[10px] font-bold text-emerald-300">POSITIVE GAMMA · MEAN-REVERSION</span></div>
+                    <div className={cn('absolute inset-x-0 bottom-0 border-t border-rose-400/20 bg-rose-400/[0.035]', !positiveGamma && 'bg-rose-400/[0.07]')} style={{ top: Math.max(0, overlayLayout.flipY) }}><span className="absolute bottom-8 left-3 rounded border border-rose-400/20 bg-[#140a0e]/90 px-2 py-1 text-[10px] font-bold text-rose-300">NEGATIVE GAMMA · EXPANSION</span></div>
                 </div>}
 
                 {chartLayers.walls && overlayLayout.callY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 h-2 -translate-y-1/2 border-y border-emerald-300/35 bg-emerald-400/15" style={{ top: overlayLayout.callY }}><span className="absolute right-16 -top-5 rounded bg-[#07130f]/95 px-2 py-0.5 text-[9px] font-bold text-emerald-300">CALL WALL {money(callWall)} · {dteFilter}</span></div>}
@@ -455,7 +498,7 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
                         ['VAL', profileLevels?.val, overlayLayout.valY, 'border-sky-300/50 text-sky-200'],
                     ].map(([label, price, y, classes]) => typeof y === 'number' && typeof price === 'number' ? <div key={String(label)} className={cn('pointer-events-none absolute inset-x-0 border-t', String(classes).split(' ')[0])} style={{ top: y }}><span className={cn('absolute right-1 -top-4 bg-[#08101a]/95 px-1 text-[8px] font-semibold', String(classes).split(' ')[1])}>{label} {Math.round(price).toLocaleString()}</span></div> : null)}
                     {!objectLocked && <><button type="button" aria-label="Adjust volume profile start" onPointerDown={(event) => { event.stopPropagation(); setDragTarget('range-start'); }} className="absolute -left-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button><button type="button" aria-label="Adjust volume profile end" onPointerDown={(event) => { event.stopPropagation(); setDragTarget('range-end'); }} className="absolute -right-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button></>}
-                    <span className="pointer-events-none absolute left-2 top-2 rounded bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200">FIXED RANGE VP · DEMO</span>
+                    <span className="pointer-events-none absolute left-2 top-2 rounded bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200">FIXED RANGE VP · {dataMode}</span>
                 </div>}
 
                 {chartLayers.avwap && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: `${anchorPct}%`, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: `calc(${anchorPct}% + 12px)`, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
@@ -472,10 +515,28 @@ export default function MarketStructureChart({ data, activeTool, timeframe, repl
                 <DrawingLayer drawings={drawings} />
                 <div className={cn('absolute inset-0 z-40', activeTool === 'cursor' ? 'pointer-events-none' : 'cursor-crosshair')} onPointerDown={handleDrawing} aria-hidden={activeTool === 'cursor'} />
                 <span className="sr-only" aria-live="polite">{drawingStatus}</span>
-                {replayActive && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">REPLAY PAUSED · HISTORICAL DEMO</div>}
+                {replayActive && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">REPLAY PAUSED · HISTORICAL {dataMode}</div>}
             </div>
 
-            {studyPaneOpen && <><div className="flex h-9 shrink-0 items-center justify-between border-y border-[#263346] bg-[#090f18] px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy}</span>{activeOrderFlowStudy === 'CVD' && <span className="font-mono text-sm font-semibold tabular-nums text-emerald-300">{compact(lastCvd)}</span>}<span className="hidden text-zinc-500 sm:inline">Anchor: 1D</span><span className="hidden text-zinc-500 lg:inline">Intrabar: Trades</span></div><div className="flex items-center gap-2"><span className="rounded border border-sky-400/35 px-1.5 py-0.5 text-sky-300">SHADOW DATA</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">Coverage 96%</span><button type="button" aria-label="Reset chart objects" onClick={() => { setRange({ start: 78, end: 152 }); setAnchorIndex(66); setDrawings([]); }} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div><div className="relative h-[28%] min-h-[135px] shrink-0 bg-[#070b11]">{activeOrderFlowStudy === 'CVD' ? <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label="Demo cumulative volume delta candles" /><div className="pointer-events-none absolute inset-y-0 left-[62%] z-20 border-l border-dashed border-zinc-400/65"><span className="absolute left-1 top-1 text-[8px] text-zinc-400">Session reset</span></div></> : <div className="flex h-full items-center justify-center text-center"><div><div className="text-[10px] font-bold text-amber-300">{activeOrderFlowStudy} · UNAVAILABLE</div><p className="mt-1 text-pretty text-xs text-zinc-500">No authorized frontend series is connected for this study.</p></div></div>}</div></>}
+            {studyPaneOpen && <>
+                <div className="flex h-8 shrink-0 items-stretch border-y border-[#263346] bg-[#080d14] px-1" role="tablist" aria-label="Order-flow studies">
+                    {(['CVD', 'DELTA', 'BOOK', 'LIQUIDITY'] as const).map((study) => <button
+                        key={study}
+                        type="button"
+                        role="tab"
+                        aria-selected={activeOrderFlowStudy === study}
+                        onClick={() => setActiveOrderFlowStudy(study)}
+                        className={cn('min-w-20 border-b-2 border-transparent px-3 text-[10px] font-semibold capitalize text-zinc-500 hover:text-zinc-200', activeOrderFlowStudy === study && 'border-sky-400 bg-sky-400/[0.06] text-sky-200')}
+                    >{study === 'CVD' ? 'CVD' : study.charAt(0) + study.slice(1).toLowerCase()}</button>)}
+                </div>
+                <div className="flex h-9 shrink-0 items-center justify-between border-y border-[#263346] bg-[#090f18] px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy === 'DELTA' ? 'Aggressor Volume Delta' : activeOrderFlowStudy === 'BOOK' ? 'BTCUSDT Order Book' : 'Observed Liquidity'}</span>{activeOrderFlowStudy === 'CVD' && <span className={cn('font-mono text-sm font-semibold tabular-nums', lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastCvd)}</span>}{activeOrderFlowStudy === 'DELTA' && <span className={cn('font-mono text-sm font-semibold tabular-nums', lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastDelta)}</span>}<span className="hidden text-zinc-500 sm:inline">Anchor: visible range</span><span className="hidden text-zinc-500 lg:inline">Source: {dataMode === 'LIVE' ? 'Binance Spot' : 'demo fixture'}</span></div><div className="flex items-center gap-2"><span className={cn('rounded border px-1.5 py-0.5', dataMode === 'LIVE' && marketFeed.state === 'LIVE' ? 'border-emerald-400/35 text-emerald-300' : 'border-sky-400/35 text-sky-300')}>{dataMode === 'LIVE' ? marketFeed.state : 'SHADOW DATA'}</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">Coverage {dataMode === 'LIVE' ? marketFeed.coveragePercent : 96}%</span><button type="button" aria-label="Reset chart objects" onClick={() => { setRange({ start: 72, end: 120 }); setAnchorIndex(66); setDrawings([]); }} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div>
+                <div className="relative h-[15%] min-h-[115px] shrink-0 bg-[#070b11]">
+                    {activeOrderFlowStudy === 'CVD' && <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`} /><div className="pointer-events-none absolute inset-y-0 left-[62%] z-20 border-l border-dashed border-zinc-400/65"><span className="absolute left-1 top-1 text-[8px] text-zinc-400">Visible-range reset</span></div></>}
+                    {activeOrderFlowStudy === 'DELTA' && <div ref={deltaHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} aggressor volume delta histogram`} />}
+                    {activeOrderFlowStudy === 'BOOK' && <BookPanel marketFeed={marketFeed} />}
+                    {activeOrderFlowStudy === 'LIQUIDITY' && <LiquidityPanel marketFeed={marketFeed} levels={liquidityLevels} />}
+                </div>
+            </>}
         </div>
     );
 }

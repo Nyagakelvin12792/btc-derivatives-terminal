@@ -1,20 +1,21 @@
 # UI/UX Overhaul Progress
 
-Version: 2.1
+Version: 3.0
 Last updated: 2026-10-22
-Overall status: APPROVED-STYLE UI PARITY IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8 and UX10 COMPLETE; UX9 awaits Architect acceptance
+Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
+Current checkpoint: UX0–UX8, UX10, and UX11 COMPLETE; UX9 awaits Architect acceptance
 
 ## Scope Statement
 
-This tracker covers only the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). Backend feeds, APIs, derivatives formulas, terrain calculations, order-flow engines, decision engines, and execution are outside scope.
+UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 was separately authorized to connect public Binance Spot market data and make the existing Deribit DTE controls functional. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
 
 ## Current Baseline
 
 The repository currently provides:
 
 - Next.js/React terminal shell.
-- Deribit live/demo mode presentation.
+- Live Deribit options structure with cumulative DTE filtering.
+- Live Binance Spot candles, 24-hour ticker, top-of-book depth, aggressor delta, and bar-level CVD.
 - 3D dealer-pressure terrain.
 - GEX, Vanna, Charm, and Open Interest analytical workspaces.
 - Key levels, key contracts, confluence tables, and environment summaries.
@@ -29,7 +30,8 @@ Observed UI limitations:
 - Controls are distributed across multiple components without a unified layer manager.
 - Workspaces are selectable but not user-arrangeable, linkable, or persistently saved.
 - Options levels are primarily presented as cards/tables rather than a controlled chart-native overlay system.
-- CVD, Fixed Range VP, and Anchored VWAP are not currently implemented in this repository's UI.
+- IV Rank has no historical contract and remains `N/A`.
+- Jev has no frontend response contract and remains `SHADOW OFF`.
 - Some presentation values are demo/fallback values and require unmistakable provenance labels.
 
 ## Milestone Status
@@ -41,12 +43,13 @@ Observed UI limitations:
 | UX2 — Resizable workspace mechanics | COMPLETE | Desktop chart/inspector split, collapsible panels, persisted UI preferences |
 | UX3 — Options overlays and inspector | COMPLETE | Walls, Gamma Flip, regime shading, DTE filters, provenance states |
 | UX4 — Layers and studies | COMPLETE | Layer popover, active chips, hide/show and reset controls |
-| UX5 — Fixed Range VP and AVWAP | COMPLETE IN DEMO | Draggable range/body and draggable anchor; production series awaits authorized contract |
-| UX6 — Order-flow panes | COMPLETE IN DEMO / BLOCKED FOR LIVE DATA | Cumulative CVD candles; Delta/Book/Liquidity show `UNAVAILABLE` |
+| UX5 — Fixed Range VP and AVWAP | COMPLETE | Draggable fixed range and anchor operate on live Binance bars; VP is bar-distributed and AVWAP is volume-weighted from the selected anchor |
+| UX6 — Order-flow panes | COMPLETE | Live bar-level CVD and Delta plus validated Book and Liquidity views from Binance Spot |
 | UX7 — Saved layouts and linked tools | COMPLETE | UI persistence, save/reset controls, all legacy workspaces retained |
 | UX8 — Responsive/accessibility/performance | COMPLETE | 1920×1080 and 390×844 checks, mobile bottom sheet, axe and keyboard verification |
-| UX9 — Independent review/release | REVIEW REQUIRED | Zero backend/engine source diff confirmed; Architect acceptance remains external |
+| UX9 — Independent review/release | REVIEW REQUIRED | Architect acceptance and deployment review remain external |
 | UX10 — Approved-style parity | COMPLETE | Market header, drawing tools, wall hierarchy, dual gamma zones, VP levels, AVWAP bands, CVD controls, inspector metrics, provenance and status footer implemented |
+| UX11 — Live market integration | COMPLETE | Validated Binance REST/WebSocket contract, live lower panes, functional Deribit DTE horizons, explicit stale/offline handling, no demo substitution in LIVE |
 
 ## UX0 Evidence
 
@@ -108,15 +111,15 @@ Implementation verification completed on 2026-10-22:
 | UI-012 | Broker execution workflows are excluded | ACCEPTED |
 | UI-013 | No proprietary product assets, code, or pixel-identical skins will be copied | ACCEPTED |
 
-## Dependencies and Blockers
+## Remaining Boundaries
 
 ### Live CVD and order flow
 
-The UI can implement the pane, empty state, interaction model, settings, and fixture-based visual tests. It cannot claim or display live CVD until an existing authorized frontend contract supplies timestamped CVD OHLC values, anchor/reset metadata, coverage, and freshness. Creating that feed or calculation is outside this milestone.
+Binance Spot klines now supply base-volume aggressor delta using taker-buy volume. CVD is cumulative at the selected bar interval. Book and Liquidity show the validated partial order-book snapshot; they are not a historical depth heatmap.
 
-### Price-series input
+### Fixed Range VP precision
 
-The chart workspace needs an existing frontend-consumable time-series contract. This plan does not authorize a new candle collector or API. Until a contract is formally available, the implementation must remain isolated to labelled demo fixtures and component tests.
+The current live profile distributes each selected candle's volume to its typical-price row. It is a validated bar-derived profile, not tick-by-tick historical volume-at-price. A tick-precise profile requires a separately reviewed aggregate-trade history contract.
 
 ### Options metric provenance
 
@@ -124,9 +127,10 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 
 ## Next Authorized Work
 
-1. Architect performs UX9 acceptance using the stored screenshots, tests, and zero-backend-diff evidence.
-2. Deploy the reviewed commit to Preview and complete a live browser smoke test.
-3. If live price/CVD is required, authorize a separate data-contract milestone; do not silently promote demo fixtures.
+1. Architect performs UX9 acceptance using the stored screenshots, tests, route contracts, and live smoke evidence.
+2. Deploy the reviewed commit and repeat the Binance/Deribit endpoint checks on Vercel.
+3. Define a typed Jev response contract and historical IV store before enabling Jev opinions or IV Rank.
+4. Define a full-chain split call/put OI contract before enabling the inspector's OI wall display.
 
 ## Required Handoff Evidence Per Milestone
 
@@ -171,3 +175,13 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Expanded the Options inspector with Put/Call, ATM IV, honest IV Rank unavailability, Call/Put OI, chart toggles, GEX/OI display control, legend, and persistent deterministic Decision summary.
 - Added explicit Binance demo, Deribit live/demo/offline, and Jev shadow-off states without manufacturing live or AI output.
 - Retained `NO LIVE EXECUTION`; Long and Short chart tools are measurements only.
+
+### 2026-10-22 — UX11 live market integration
+
+- Added a validated public Binance Spot route for 240-bar backfill, 24-hour ticker data, and order-book snapshots.
+- Added browser WebSocket updates for the active kline interval and top-20 partial depth with reconnect and stale states.
+- Connected live candles, volume, bar-level CVD, Delta, Book, Liquidity, Fixed Range VP, and AVWAP to the chart workspace.
+- Made `0-2D`, `7D`, `14D`, `30D`, and `ALL` cumulative Deribit horizons recalculate the options contract.
+- Preserved strict live/demo separation: failed live requests render stale/offline states and never silently substitute fixtures.
+- Verified 240 Binance candles, 100×100 REST depth, 932 Deribit contracts, all five DTE filters, all four lower tabs, and the 1664×936 live render.
+- Final gates: 12 Vitest files / 66 tests; production build passed; Playwright 5 passed / 1 intentional mobile density skip; no serious or critical axe findings.

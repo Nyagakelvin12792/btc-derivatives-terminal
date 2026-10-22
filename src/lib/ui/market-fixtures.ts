@@ -2,6 +2,8 @@ import type { CandlestickData, LineData, UTCTimestamp } from 'lightweight-charts
 
 export interface DemoMarketBar extends CandlestickData<UTCTimestamp> {
     volume: number;
+    takerBuyVolume?: number;
+    delta?: number;
 }
 
 export interface VolumeProfileRow {
@@ -136,7 +138,7 @@ export function createDemoVolumeProfile(
         const price = (bar.high + bar.low + bar.close) / 3;
         const rowIndex = Math.min(rowCount - 1, Math.max(0, Math.floor((price - low) / step)));
         rows[rowIndex].volume += bar.volume;
-        if (bar.close >= bar.open) rows[rowIndex].buyVolume += bar.volume;
+        rows[rowIndex].buyVolume += bar.takerBuyVolume ?? (bar.close >= bar.open ? bar.volume : 0);
     });
 
     return rows.map((row) => ({

@@ -1,7 +1,7 @@
 # Bitcoin Derivatives Terminal UI/UX Overhaul Plan
 
-Version: 1.0  
-Status: UI IMPLEMENTATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
+Version: 1.1
+Status: UI + AUTHORIZED LIVE MARKET INTEGRATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
 Last updated: 2026-10-22
 Scope owner: Antigravity / Gemini (Builder & Visual Engine)  
 Review owners: Architect (product and derivatives semantics), Codex (type safety, security, and boundary review)
@@ -16,11 +16,15 @@ Approved visual direction:
 
 The image is a design target, not evidence that the feature is implemented.
 
-Implementation evidence is now available in `/.artifacts/ui-overhaul/` for the 1920×1080 desktop and 390×844 mobile layouts. Production price/CVD rendering remains explicitly unavailable in `LIVE` until an authorized frontend time-series contract exists; the complete interactive presentation is labelled `DEMO`.
+Implementation evidence is available in `/.artifacts/ui-overhaul/` for desktop, mobile, and a live 1664×936 workspace. Binance Spot now supplies the live price/order-flow contract and Deribit remains the live options authority. Demo fixtures remain isolated and explicitly labelled.
+
+### 1.1 Authorized live-data addendum
+
+After the UI-only milestone, the user explicitly requested live, accurate data. That authorization added a narrow UX11 scope: a validated public Binance Spot boundary for candles, ticker, depth, bar-level aggressor delta/CVD, and cumulative Deribit DTE query filtering. It did not authorize changes to derivatives formulas, terrain mathematics, decision engines, Jev semantics, broker connectivity, or execution.
 
 ## 2. Hard Scope Boundary
 
-This milestone is UI/UX only.
+UX0–UX10 are UI/UX only. UX11 is limited to the public market-data boundaries described above.
 
 ### Allowed
 
@@ -34,11 +38,10 @@ This milestone is UI/UX only.
 
 ### Forbidden
 
-- No edits to `src/app/api/deribit/`.
-- No edits to `src/lib/deribit/`.
+- No changes to Deribit normalization or derivatives definitions; UX11 may validate and filter the existing normalized chain by an explicit DTE query.
 - No edits to `src/lib/quant/`.
 - No edits to `src/lib/terrain/` or its formulas/contracts.
-- No new market-data collector, feed, calculation, signal, or decision engine.
+- No persistent collector, signal, decision engine, or execution engine. UX11 may expose transient public Binance market snapshots and WebSocket updates.
 - No changes to GEX, gamma flip, wall, max-pain, Vanna, Charm, IV, OI, CVD, VWAP, or Volume Profile mathematics.
 - No broker integration, order entry, one-click trading, or live execution.
 - No synthetic value may be presented as live.

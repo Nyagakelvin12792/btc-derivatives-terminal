@@ -1,6 +1,6 @@
 # UI/UX Technical Stack
 
-Version: 1.0  
+Version: 1.1
 Status: IMPLEMENTED AND VERIFIED
 Last updated: 2026-10-22
 
@@ -129,6 +129,16 @@ Use for:
 - Resize, collapse, save/restore, and chart-object interaction tests.
 
 Official reference: [Playwright visual comparisons](https://playwright.dev/docs/test-snapshots)
+
+### 3.5 Live market boundaries
+
+| Source | Transport | Authorized responsibility |
+| --- | --- | --- |
+| Binance Spot public market data | Server REST via `/api/binance/market` | Kline backfill, 24-hour ticker, validated order-book snapshot |
+| Binance Spot public streams | Browser combined WebSocket | Active-interval kline updates and top-20 partial depth with reconnect/stale state |
+| Deribit public options feed | Existing server client via `/api/deribit` | Options structure, Greeks-derived exposures, walls, Gamma Flip, Max Pain, and cumulative DTE horizons |
+
+TanStack Query owns REST freshness and retries. WebSocket state is held only in the live client hook and is merged over the validated REST backfill. Zustand persists preferences such as workspace, mode, layers, and DTE filter; it never persists market responses.
 
 ## 4. Rendering Ownership Matrix
 

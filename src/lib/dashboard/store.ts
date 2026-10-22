@@ -91,7 +91,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     activeWorkspace: 'MARKET STRUCTURE',
     setActiveWorkspace: (tab) => set({ activeWorkspace: tab }),
 
-    dataMode: 'DEMO',
+    dataMode: 'LIVE',
     setDataMode: (mode) => set({ dataMode: mode }),
 
     selectedStrike: 72000,
@@ -165,6 +165,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     version: 1,
     partialize: (state) => ({
         activeWorkspace: state.activeWorkspace,
+        dataMode: state.dataMode,
         inspectorOpen: state.inspectorOpen,
         inspectorTab: state.inspectorTab,
         studyPaneOpen: state.studyPaneOpen,
