@@ -3,52 +3,37 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: 6f19bae
->>> TESTS: PASS — Vitest 8 files/52 tests; targeted ESLint 0 errors/0 warnings; Next production build; Playwright 5 passed/1 mobile-only skip; desktop/mobile axe 0 serious or critical violations
+>>> COMMIT: 7aadd3d
+>>> TESTS: PASS — Vitest 12 files/66 tests; targeted ESLint clean; Next.js 16.4.2 production build; Playwright 5 passed/1 intentional mobile density skip; desktop/mobile axe 0 serious or critical violations; bounded live Binance and Deribit smoke checks passed
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review approved-reference parity, confirm UI-only scope, and approve Preview deployment or return specific visual corrections
->>> TARGET: src/components/terminal/, src/lib/ui/, src/lib/dashboard/store.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/PROGRESS.md, .artifacts/ui-overhaul/
+>>> ACTION REQUIRED: Review live source semantics, approved-reference UI parity, and preserved no-live-execution boundary; approve merge/deployment or return specific corrections
+>>> TARGET: src/app/api/binance/, src/app/api/deribit/, src/lib/binance/, src/lib/deribit/dte-filter.ts, src/components/terminal/, src/lib/dashboard/, tests/ui/market-terminal.pw.ts, docs/ui-ux/, .artifacts/ui-overhaul/
 
-## Approved Right-Inspector Refinement
+## Delivered
 
-- Matched the user-supplied compact right-terminal reference without changing data calculations or backend contracts.
-- Tightened the tabs, gamma/GEX/flip summary, DTE selector, paired metric rows, chart toggles, display legend, and Decision card.
-- Reduced the desktop inspector default width from 24% to 20% while retaining resizing and a 300px readability floor.
-- Preserved every existing option metric, control, mobile sheet behavior, and honest data-state label.
-- Refreshed the tracked desktop and mobile screenshots.
+- Connected BTCUSDT candles, 24-hour ticker, and order-book snapshots to Binance Spot REST with typed validation and explicit failure states.
+- Added Binance kline and partial-depth WebSocket updates with stale detection and reconnect behavior.
+- Rendered real bar-derived CVD and Delta from Binance taker-buy volume, plus live Book and Liquidity panes from the Binance order book.
+- Added a movable Fixed Range Volume Profile, draggable AVWAP anchor, gamma regime shading, wall/flip/max-pain overlays, drawing tools, lower panels, live status chips, and approved 78/22 terminal geometry.
+- Added cumulative Deribit DTE filters for 0-2D, 7D, 14D, 30D, and All without changing existing GEX calculations or authority.
+- Preserved deterministic decision controls, shadow/paper semantics, and the global no-live-execution boundary.
+- Updated UI/UX plan, progress, technical stack, feature provenance, and desktop/mobile/live screenshots.
 
-## Ownership Decision
+## Verification Evidence
 
-- The user explicitly transferred UI ownership to Codex for this task.
-- Work was isolated on `codex/ui-approved-parity` from the existing chart-first implementation.
-- No files under `src/app/api/deribit/`, `src/lib/deribit/`, `src/lib/quant/`, or `src/lib/terrain/` changed.
+- `npx.cmd vitest run`: PASS — 12 files, 66 tests.
+- Targeted ESLint across changed TypeScript and TSX files: PASS — no output.
+- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation and TypeScript validation.
+- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 5 passed, 1 intentional mobile control-density skip.
+- Automated accessibility: PASS — no serious or critical desktop/mobile violations.
+- Local live smoke: Binance endpoint returned LIVE candles/ticker/depth; Deribit endpoint returned LIVE option contracts and expirations; all five DTE selections returned bounded subsets.
+- Visual evidence: `.artifacts/ui-overhaul/market-structure-live-1664x936.png`.
 
-## Implemented Approved-Style Parity
+## Explicit Data Boundaries
 
-- Added the compact market header with timeframes, expiry context, explicit Binance/Deribit/Jev state chips, and UTC/status footer.
-- Added chart toolbar and left tool rail for cursor, trend line, horizontal/vertical lines, rectangles, notes, and Long/Short measurement objects.
-- Added Replay presentation, active-study chips, layer controls, and retained Ctrl+K workspace navigation.
-- Kept primary and secondary walls visible in the price scale with labelled wall zones and DTE context.
-- Rendered positive and negative gamma zones simultaneously around the Gamma Flip.
-- Completed Fixed Range VP demo behavior with draggable range, POC, VAH, VAL, value area, row-density setting, lock, hide, and remove controls.
-- Completed AVWAP demo behavior with a candle-positioned draggable anchor, Swing Low label, and configurable deviation bands.
-- Added price volume, OHLC readout, Max Pain, shared price/CVD time range, session reset marker, coverage, and shadow provenance.
-- Expanded Options with Put/Call, ATM IV, honest IV Rank unavailability, Call/Put OI, chart toggles, GEX/OI display, legend, and persistent Decision card.
-- Jev remains explicitly `UNAVAILABLE` because no frontend response contract exists; no AI output is fabricated.
-- Long/Short chart tools remain measurements only; `NO LIVE EXECUTION` is preserved globally.
-
-## Verification
-
-- `npx.cmd vitest run`: PASS — 8 files, 52 tests.
-- `npx.cmd eslint` on all changed TypeScript/TSX files: PASS — 0 errors, 0 warnings.
-- `npm.cmd run build`: PASS — Next.js 16.4.2 production build and TypeScript.
-- `npx.cmd playwright test`: PASS — 5 passed, 1 intentionally skipped on mobile.
-- Desktop 1920×1080 and mobile 390×844 screenshots refreshed.
-- Automated accessibility: PASS — no serious or critical violations on desktop or mobile.
-
-## Known Contract Boundaries
-
-- Price candles, CVD, VP, and AVWAP remain clearly labelled demo/shadow fixtures until an authorized frontend series contract exists.
-- Delta, Book, and Liquidity panes remain `UNAVAILABLE` rather than displaying synthetic live values.
-- IV Rank remains `N/A`; the current contract has no historical IV series from which to calculate it correctly.
-- Jev remains shadow-off/unavailable pending a typed frontend contract and evidence-backed activation review.
+- CVD and Delta are bar-level estimates derived from Binance taker-buy base volume, not tick-reconstructed exchange-wide order flow.
+- Fixed Range VP is derived from the loaded Binance candle series, not tick-level volume-at-price.
+- The current Deribit summary exposes key-contract OI, not a full-chain split-OI wall contract; the OI display switch is therefore disabled rather than fabricated.
+- IV Rank remains `N/A` until a historical IV-series contract exists.
+- Jev remains visibly `SHADOW OFF` until its typed frontend response contract is reviewed and activated.
+- Long/Short tools are measurements only and cannot submit orders.
