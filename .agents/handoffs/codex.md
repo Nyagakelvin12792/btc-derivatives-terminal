@@ -30,6 +30,10 @@
 - Automated accessibility: PASS — no serious or critical violations.
 - Local live smoke: `/api/binance/volume-profile` returned `LIVE`, `BINANCE_SPOT`, and 1,440 five-minute intrabars for a 120-hour range.
 - Visual evidence: `.artifacts/ui-overhaul/market-structure-live-1664x936.png`.
+- Vercel Preview `dpl_EpWQ8tEjyYb7wruC2gani52NRWKF` reached `READY` at `https://btc-terminal-codex-a3l38nu7d-kelvin12792.vercel.app`.
+- Deployed smoke: the terminal returned HTTP 200 and the live profile endpoint returned `LIVE`, `BINANCE_SPOT`, and 1,440 five-minute intrabars.
+- Deployed browser regression: panning changed the visible logical start from `0.0000` to `-28.0297`; changing the VP to 72 rows preserved `-28.0297`, while chart generation remained `1`.
+- Deployed visual evidence: `.artifacts/ui-overhaul/market-structure-preview-ux12-1664x936.png` (local verification artifact, intentionally not committed).
 
 ## Explicit Data Boundaries
 
