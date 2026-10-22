@@ -1,60 +1,46 @@
-﻿>>> COMPLETED BY: Codex
+# CODEX HANDOFF REPORT
+
+>>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
->>> ROUND: RENDERER-R1A.3
->>> BRANCH: agent/codex
->>> COMMIT: 10a219108911e5c5a605a7ea4db0c054109ecf25
->>> TESTS: PASS - npx.cmd vitest run (7 files, 47 tests); PASS - targeted ESLint on renderer/terrain changed files; PASS - npm.cmd run build
->>> CONTRACT VERSION: 2
+>>> BRANCH: codex/ui-approved-parity
+>>> COMMIT: 77bdeae
+>>> TESTS: PASS — Vitest 8 files/52 tests; targeted ESLint 0 errors/0 warnings; Next production build; Playwright 5 passed/1 mobile-only skip; desktop/mobile axe 0 serious or critical violations
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Audit TerrainViewportModel dynamic axis contract for Gemini fixed HUD/SVG overlay integration
->>> TARGET: src/components/three/terrain/viewport.ts, src/components/three/IntegratedDealerTerrain.tsx, src/components/three/terrain/axes.ts, src/components/three/terrain/scales.test.ts, src/lib/terrain/engine.ts, src/lib/terrain/engine.test.ts
+>>> ACTION REQUIRED: Review approved-reference parity, confirm UI-only scope, and approve Preview deployment or return specific visual corrections
+>>> TARGET: src/components/terminal/, src/lib/ui/, src/lib/dashboard/store.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/PROGRESS.md, .artifacts/ui-overhaul/
 
-## Implementation Summary
-- Added `TerrainViewportModel` in `src/components/three/terrain/viewport.ts` for fixed screen-space HUD/SVG axis rendering by Gemini.
-- The viewport model exposes visible Strike, DTE, and Exposure domains, normalized tick positions, formatted tick labels, semantic `zoomLevel`, and structural anchor positions.
-- Added semantic zoom and pan helpers: `zoomTerrainViewport()` and `panTerrainViewport()`.
-- Wired `IntegratedDealerTerrain` to compute the viewport model and expose it through optional `onViewportChange` without breaking existing Gemini props.
-- Kept current renderer modes intact: GEX, Vanna, Charm, Combined disabled.
+## Ownership Decision
 
-## Root Cause / Data Diagnosis
-- R1A.2 diagnosis found CASE B for the flat terrain: the DEMO Contract V2 option fixture was symmetric by strike/DTE/type, so call and put exposures canceled every displayed cell.
-- Previous DEMO diagnostics: 42 cells, 42 observed, 0 unobserved; GEX/Vanna/Charm min and max all 0; robustAbsMax all 1; Spot, Gamma Flip, Call Wall, Put Wall, and Max Pain all collapsed at 69000.
-- The DEMO fixture is now asymmetric while remaining explicitly `dataMode: DEMO`; LIVE quantitative calculations were not changed.
+- The user explicitly transferred UI ownership to Codex for this task.
+- Work was isolated on `codex/ui-approved-parity` from the existing chart-first implementation.
+- No files under `src/app/api/deribit/`, `src/lib/deribit/`, `src/lib/quant/`, or `src/lib/terrain/` changed.
 
-## Viewport / Axis Contract
-- `TerrainViewportModel.metric`: `gex | vanna | charm | combined`.
-- `strikeDomain`, `dteDomain`, and `exposureDomain` describe the currently visible quantitative chart domain.
-- `strikeTicks`, `dteTicks`, and `exposureTicks` expose `{ value, normalizedPosition, label }` for fixed HUD axes where `0 -> 1` maps to screen axis position.
-- Zoom narrows domains around a focus value; pan shifts the domain center and clamps to full data bounds.
-- Structural anchors expose label, strike, priority, `normalizedPosition`, and `inDomain` for Spot, Gamma Flip, Call Wall, Put Wall, and Max Pain.
+## Implemented Approved-Style Parity
 
-## Renderer Changes
-- Added optional `onViewportChange?: (viewport: TerrainViewportModel) => void` to the existing terrain component interface.
-- Existing dashboard integration remains compatible: `data`, `selectedStrike`, `selectedDte`, `onSelectStrike`, and `onSelectPoint` are unchanged.
-- Current internal geometry/tick mapping reads from the same viewport model so terrain domain and axis domain share one source of truth.
-- No Combined mode, Vanna contour overlay, Charm glyph overlay, confluence floor, Web Worker, or new dashboard module was implemented.
+- Added the compact market header with timeframes, expiry context, explicit Binance/Deribit/Jev state chips, and UTC/status footer.
+- Added chart toolbar and left tool rail for cursor, trend line, horizontal/vertical lines, rectangles, notes, and Long/Short measurement objects.
+- Added Replay presentation, active-study chips, layer controls, and retained Ctrl+K workspace navigation.
+- Kept primary and secondary walls visible in the price scale with labelled wall zones and DTE context.
+- Rendered positive and negative gamma zones simultaneously around the Gamma Flip.
+- Completed Fixed Range VP demo behavior with draggable range, POC, VAH, VAL, value area, row-density setting, lock, hide, and remove controls.
+- Completed AVWAP demo behavior with a candle-positioned draggable anchor, Swing Low label, and configurable deviation bands.
+- Added price volume, OHLC readout, Max Pain, shared price/CVD time range, session reset marker, coverage, and shadow provenance.
+- Expanded Options with Put/Call, ATM IV, honest IV Rank unavailability, Call/Put OI, chart toggles, GEX/OI display, legend, and persistent Decision card.
+- Jev remains explicitly `UNAVAILABLE` because no frontend response contract exists; no AI output is fabricated.
+- Long/Short chart tools remain measurements only; `NO LIVE EXECUTION` is preserved globally.
 
-## DEMO Fixture Changes
-- DEMO option generation now uses multiple DTEs and strikes with asymmetric call/put OI and IV distributions.
-- The fixture now produces positive and negative GEX, positive and negative Vanna, positive and negative Charm, distinct structural levels, and nonzero robust scales.
-- DEMO remains explicit through `dataMode: DEMO` and `assumptionModel: OI_SIGN_PROXY_V1`.
+## Verification
 
-## Tests Added
-- Added viewport contract tests for normalized HUD ticks, semantic zoom, pan behavior, and structural anchor labels/positions.
-- Added DEMO-data regression test requiring positive/negative GEX, Vanna, Charm, nonzero robust scales, all observed DEMO cells, and non-collapsed structural strikes.
+- `npx.cmd vitest run`: PASS — 8 files, 52 tests.
+- `npx.cmd eslint` on all changed TypeScript/TSX files: PASS — 0 errors, 0 warnings.
+- `npm.cmd run build`: PASS — Next.js 16.4.2 production build and TypeScript.
+- `npx.cmd playwright test`: PASS — 5 passed, 1 intentionally skipped on mobile.
+- Desktop 1920×1080 and mobile 390×844 screenshots refreshed.
+- Automated accessibility: PASS — no serious or critical violations on desktop or mobile.
 
-## Tests Executed
-- `npx.cmd vitest run src/components/three/terrain/scales.test.ts src/lib/terrain/engine.test.ts`: PASS, 2 files, 25 tests.
-- `npx.cmd vitest run`: PASS, 7 files, 47 tests.
-- `npm.cmd run lint -- src/components/three/IntegratedDealerTerrain.tsx src/components/three/terrain/axes.ts src/components/three/terrain/scales.test.ts src/components/three/terrain/viewport.ts src/lib/terrain/engine.ts src/lib/terrain/engine.test.ts`: PASS.
-- `npm.cmd run build`: PASS.
+## Known Contract Boundaries
 
-## Known Limitations
-- Fixed screen-space HUD/SVG axis rendering itself is intentionally left to Gemini; Codex only provides the dynamic mathematical viewport contract.
-- Existing Three.js world-space labels remain as interim renderer labels, but the new contract is the primary integration path for final fixed axes.
-- R1A.3 did not implement additional visual redesign or R1B overlays.
-
-## Gemini Integration Requirements
-- Gemini should consume `TerrainViewportModel` for fixed HUD/SVG axes instead of deriving primary labels from Three.js text sprites.
-- HUD axes should keep a stable screen frame while updating tick values from `strikeTicks`, `dteTicks`, and `exposureTicks`.
-- Gemini should keep terrain viewport domains and HUD domains synchronized through `onViewportChange` or an equivalent shared-state bridge.
+- Price candles, CVD, VP, and AVWAP remain clearly labelled demo/shadow fixtures until an authorized frontend series contract exists.
+- Delta, Book, and Liquidity panes remain `UNAVAILABLE` rather than displaying synthetic live values.
+- IV Rank remains `N/A`; the current contract has no historical IV series from which to calculate it correctly.
+- Jev remains shadow-off/unavailable pending a typed frontend contract and evidence-backed activation review.
