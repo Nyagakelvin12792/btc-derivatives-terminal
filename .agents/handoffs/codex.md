@@ -3,39 +3,39 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: 7aadd3d
->>> TESTS: PASS — Vitest 12 files/66 tests; targeted ESLint clean; Next.js 16.4.2 production build; Playwright 5 passed/1 intentional mobile density skip; desktop/mobile axe 0 serious or critical violations; bounded live Binance and Deribit smoke checks passed
+>>> COMMIT: 1a28139
+>>> TESTS: PASS — Vitest 14 files/77 tests; targeted ESLint clean; Next.js 16.4.2 production build; Playwright 6 passed/2 intentional mobile skips; axe clean; live 1,440-intrabar profile smoke passed
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review live source semantics, approved-reference UI parity, and preserved no-live-execution boundary; approve merge/deployment or return specific corrections
->>> TARGET: src/app/api/binance/, src/app/api/deribit/, src/lib/binance/, src/lib/deribit/dte-filter.ts, src/components/terminal/, src/lib/dashboard/, tests/ui/market-terminal.pw.ts, docs/ui-ux/, .artifacts/ui-overhaul/
+>>> ACTION REQUIRED: Review UX12 viewport persistence, Fixed Range Volume Profile methodology, and preserved no-live-execution boundary; approve preview/merge or return specific defects
+>>> TARGET: src/components/terminal/MarketStructureChart.tsx, src/lib/ui/market-fixtures.ts, src/app/api/binance/volume-profile/, src/lib/binance/volume-profile.ts, src/lib/binance/use-volume-profile.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/
 
 ## Delivered
 
-- Connected BTCUSDT candles, 24-hour ticker, and order-book snapshots to Binance Spot REST with typed validation and explicit failure states.
-- Added Binance kline and partial-depth WebSocket updates with stale detection and reconnect behavior.
-- Rendered real bar-derived CVD and Delta from Binance taker-buy volume, plus live Book and Liquidity panes from the Binance order book.
-- Added a movable Fixed Range Volume Profile, draggable AVWAP anchor, gamma regime shading, wall/flip/max-pain overlays, drawing tools, lower panels, live status chips, and approved 78/22 terminal geometry.
-- Added cumulative Deribit DTE filters for 0-2D, 7D, 14D, 30D, and All without changing existing GEX calculations or authority.
-- Preserved deterministic decision controls, shadow/paper semantics, and the global no-live-execution boundary.
-- Updated UI/UX plan, progress, technical stack, feature provenance, and desktop/mobile/live screenshots.
+- Stopped the main chart from being destroyed and recreated when candles, walls, AVWAP, or volume-profile inputs update.
+- Preserved the user-selected viewport while panning or zooming and retained right-edge following only while the user is already at the live edge.
+- Kept `fitContent()` for intentional context changes and the explicit reset action rather than background data updates.
+- Rebuilt Fixed Range Volume Profile selection around actual chart time coordinates with draggable start/end handles and a movable profile label.
+- Added profile controls for 24/48/72/100 rows, Total/Up-Down/Delta display, left/right placement, width, value-area percentage, visible/all-loaded range, and extend-right behavior.
+- Distributed intrabar volume across every overlapped price row and calculated POC/VAH/VAL using TradingView-documented value-area expansion and tie behavior.
+- Added a bounded Binance intrabar endpoint that selects the finest supported interval within a hard 5,000-bar ceiling, with explicit live-source failures and no demo substitution.
+- Added panning regression coverage proving profile-setting changes do not recreate the chart or reset its visible logical range.
+- Updated the UX12 plan, progress, technical-stack, feature-provenance documents, and desktop/mobile/live screenshots.
 
 ## Verification Evidence
 
-- `npx.cmd vitest run`: PASS — 12 files, 66 tests.
+- `npx.cmd vitest run`: PASS — 14 files, 77 tests.
 - Targeted ESLint across changed TypeScript and TSX files: PASS — no output.
-- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation and TypeScript validation.
-- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 5 passed, 1 intentional mobile control-density skip.
-- Automated accessibility: PASS — no serious or critical desktop/mobile violations.
-- Local live smoke: Binance endpoint returned LIVE candles/ticker/depth; Deribit endpoint returned LIVE option contracts and expirations; all five DTE selections returned bounded subsets.
+- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation and TypeScript validation; route `/api/binance/volume-profile` included.
+- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 6 passed, 2 intentional mobile-only skips.
+- Automated accessibility: PASS — no serious or critical violations.
+- Local live smoke: `/api/binance/volume-profile` returned `LIVE`, `BINANCE_SPOT`, and 1,440 five-minute intrabars for a 120-hour range.
 - Visual evidence: `.artifacts/ui-overhaul/market-structure-live-1664x936.png`.
-- Vercel Preview request `dpl_A9TCa5eGA7E5eDAMTjfcR2r1D82o` was received but blocked before build because the commit author is not recognized as having deployment permission for the linked Vercel team project; repository code and tests were not the cause.
-- The exact committed tree was then deployed from a Git-free archive to Preview `dpl_7CwAAvQYPYkuUcJoe6j6aXyBcDPk`; it reached `READY` at `https://btc-terminal-codex-bmidgtj7d-kelvin12792.vercel.app` and passed deployed page/Binance/Deribit smoke checks plus a 1664x936 browser capture.
 
 ## Explicit Data Boundaries
 
-- CVD and Delta are bar-level estimates derived from Binance taker-buy base volume, not tick-reconstructed exchange-wide order flow.
-- Fixed Range VP is derived from the loaded Binance candle series, not tick-level volume-at-price.
-- The current Deribit summary exposes key-contract OI, not a full-chain split-OI wall contract; the OI display switch is therefore disabled rather than fabricated.
-- IV Rank remains `N/A` until a historical IV-series contract exists.
-- Jev remains visibly `SHADOW OFF` until its typed frontend response contract is reviewed and activated.
-- Long/Short tools are measurements only and cannot submit orders.
+- The profile is an intrabar approximation of volume-at-price, not tick-level or exchange-proprietary reconstruction.
+- Up/down allocation follows candle direction, consistent with the documented profile approximation; it is not bid/ask aggressor classification.
+- Intrabar retrieval is capped at 5,000 bars and selects a coarser interval when required to stay within that ceiling.
+- The change does not alter options calculations, wall authority, decision logic, or any backend execution behavior.
+- No live-order execution was introduced; trading tools remain visual measurements and the existing shadow/paper safety boundary remains intact.
+- Architect review is required before merge to `main`.
