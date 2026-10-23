@@ -3,13 +3,17 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: 4b5c8cb
->>> TESTS: PASS — Vitest 15 files/81 tests; targeted ESLint and TypeScript clean; Next.js 16.4.2 production build; Playwright 8 passed/4 intentional mobile-only skips; live 10-page/10,000-bar smoke passed
+>>> COMMIT: 080659c
+>>> TESTS: PASS — Markdown diff check and source-link audit; no application source changed. Previous UX14 gates remain Vitest 15 files/81 tests, TypeScript/lint/build clean, Playwright 8 passed/4 intentional mobile skips
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review UX14 persistent lower dock, paginated Binance history, CVD reset semantics, clean-room comparison boundary, and production verification; approve merge or return specific defects
->>> TARGET: src/components/terminal/MarketStructureChart.tsx, src/lib/binance/, src/app/api/binance/history/, tests/ui/market-terminal.pw.ts, docs/ui-ux/
+>>> ACTION REQUIRED: Review the UX15 staged plan and authorize UX15.0 defect repair before any new market-data or Jev implementation
+>>> TARGET: docs/ui-ux/UX15_IMPLEMENTATION_PLAN.md and related UI/UX planning documents
 
 ## Delivered
+
+- Added the complete UX15 staged implementation plan covering the Liquidity defect, collapsible lower pane, contextual drawing lifecycle, single drawing rail, Fibonacci, Long/Short/Risk, VP/AVWAP, heatmap, footprint imbalances, and deterministic Jev shadow guidance.
+- Recorded clean-room and open-source reference boundaries, data limitations, safety requirements, acceptance criteria, and quality gates before implementation.
+- Installed and validated REA 6.7.0 machine-wide outside the repository, aligned its 207-tool skill, and registered it with Codex and Antigravity. Client restart is required before newly registered MCP tools appear.
 
 - Kept the CVD, Delta, Book, and Liquidity tablist visible at the bottom of the workspace even when the lower study pane is collapsed.
 - Made every lower tab restore the pane and select its corresponding study.
