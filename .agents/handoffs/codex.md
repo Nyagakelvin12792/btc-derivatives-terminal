@@ -3,7 +3,7 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: e440af5
+>>> COMMIT: f4b06f2
 >>> TESTS: PASS — Vitest 14 files/77 tests; targeted ESLint and TypeScript clean; Next.js 16.4.2 production build; Playwright 8 passed/4 intentional mobile-only skips; desktop/mobile axe clean
 >>> NEXT AGENT: Architect
 >>> ACTION REQUIRED: Review UX13 volume removal, linked-pane/crosshair behavior, drawing lifecycle, research provenance, and preserved no-live-execution boundary; approve preview/merge or return specific defects
@@ -32,8 +32,8 @@
 - Browser regression proves the order-flow tablist is below its pane, the price-volume series is absent, and price/lower-pane crosshair timestamps match.
 - Browser regression creates and moves a time/price-anchored trend line, deletes it through the toolbar, restores it, deletes it with the keyboard, and restores it with Ctrl+Z.
 - Visual evidence: `.artifacts/ui-overhaul/market-structure-desktop-16x9.png` and `.artifacts/ui-overhaul/market-structure-mobile.png`.
-- Vercel Preview `dpl_4P4kDkqUkCH5KfrnN55L4Zf9SRPC` reached `READY` at `https://btc-terminal-codex-2sa98b2az-kelvin12792.vercel.app`.
-- Deployed interaction smoke confirmed: volume panel `hidden`; lower tabs below pane; price/CVD crosshair timestamp matched at `1792461600`; drawing create/delete/restore produced `1 → 0 → 1`.
+- Vercel Preview `dpl_H3XPqPKRjvKcXegz6p557WLoqfxq` reached `READY` at `https://btc-terminal-codex-nhbn4czfw-kelvin12792.vercel.app`.
+- Deployed interaction smoke confirmed: volume panel `hidden`; time-axis owner `lower-pane`; lower tabs below pane; price/CVD crosshair timestamps matched; drawing delete/restore produced `0 → 1`.
 - Deployed live-data smoke: terminal HTTP 200; Binance returned `LIVE`, `BINANCE_SPOT`, and 240 hourly candles.
 - Deployed visual evidence: `.artifacts/ui-overhaul/market-structure-preview-ux13-1664x936.png` (local verification artifact, intentionally not committed).
 
