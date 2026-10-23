@@ -1,13 +1,13 @@
 # UI/UX Overhaul Progress
 
-Version: 3.2
+Version: 3.3
 Last updated: 2026-10-23
-Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE + DRAWING REPAIR IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8 and UX10–UX13 COMPLETE; UX9 awaits Architect acceptance
+Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE + HISTORY/FLOW REPAIR IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
+Current checkpoint: UX0–UX8 and UX10–UX14 COMPLETE; UX9 awaits Architect acceptance
 
 ## Scope Statement
 
-UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 connected public Binance Spot data and made the existing Deribit DTE controls functional. UX12 repaired viewport persistence and brought Fixed Range VP interaction/calculation closer to TradingView using bounded Binance intrabars. UX13 removed the price-volume histogram, linked the price and time-based order-flow panes, moved study tabs below the pane, and replaced percentage drawings with time/price-anchored editable objects. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
+UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 connected public Binance Spot data and made the existing Deribit DTE controls functional. UX12 repaired viewport persistence and brought Fixed Range VP interaction/calculation closer to TradingView using bounded Binance intrabars. UX13 removed the price-volume histogram, linked the price and time-based order-flow panes, moved study tabs below the pane, and replaced percentage drawings with time/price-anchored editable objects. UX14 makes that lower dock persistent, backfills up to 10,000 Binance candles, opens on a recent trading window, and adds explicit CVD reset anchors. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
 
 ## Current Baseline
 
@@ -52,6 +52,7 @@ Observed UI limitations:
 | UX11 — Live market integration | COMPLETE | Validated Binance REST/WebSocket contract, live lower panes, functional Deribit DTE horizons, explicit stale/offline handling, no demo substitution in LIVE |
 | UX12 — Chart navigation and VP repair | COMPLETE | Persistent chart instance, viewport-preserving live updates, pannable overlay, 120-bar default, bounded 1s–1d intrabars, denser row allocation, and TradingView POC/VA rules |
 | UX13 — Linked pane and drawing repair | COMPLETE | Price-volume histogram removed; order-flow tabs moved below; price/CVD/Delta ranges and crosshairs synchronized; data-anchored drawings selectable, draggable, lockable, deletable, and restorable |
+| UX14 — Persistent flow dock and deep history | COMPLETE | Lower tabs remain visible while collapsed; clicking a tab reopens its pane; 10,000-bar paginated history; useful recent viewport; UTC day/week/month CVD anchors |
 
 ## UX0 Evidence
 
@@ -207,3 +208,12 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Replaced screen-percentage drawings with `{ time, price }` anchors that remain attached during pan, zoom, resize, and streaming updates.
 - Added live two-point preview, OHLC-proximity snapping, selectable hit regions, visible anchors, whole-object movement, endpoint movement, per-object locking, Delete/Backspace removal, Escape cancellation, and reversible Undo.
 - Added browser regressions for pane/tab geometry, crosshair synchronization, volume removal, drawing creation, movement, deletion, and restoration.
+
+### 2026-10-23 — UX14 persistent flow dock and deep-history repair
+
+- Kept the CVD, Delta, Book, and Liquidity tablist mounted at the workspace bottom when the lower pane is collapsed; selecting any tab reopens the pane.
+- Added a validated paginated Binance history route and client cache that merges up to ten 1,000-bar pages with the current REST/WebSocket series for a 10,000-bar target.
+- Preserved an immediately useful recent viewport rather than compressing all 10,000 bars into one screen, while retaining the full loaded history for navigation.
+- Added `AUTO`, UTC day, UTC week, UTC month, and visible-range CVD anchors with reset markers generated from the actual cumulative series.
+- Recorded a clean-room public TradingView accessibility capture using Reverse Engineer Anything. No scripts, request bodies, headers, cookies, local storage, private endpoints, or proprietary assets were collected.
+- Verified the live history route returned 10 pages and 10,000 unique hourly candles; the browser opened on roughly 196 recent bars and retained the persistent lower dock.

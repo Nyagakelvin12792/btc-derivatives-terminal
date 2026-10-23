@@ -316,3 +316,13 @@ No package should be added to `package.json` until this spike is approved.
 - SVG supplies visible shapes and enlarged transparent hit targets; accessible DOM controls supply lock, delete, and undo actions.
 - Deletion is reversible through the visible Undo action and `Ctrl/Cmd+Z`; `Delete` and `Backspace` remove the selected object and `Escape` cancels/deselects.
 - No third-party drawing package was added. The implementation adapts interaction principles from primary open-source references while retaining the existing rendering stack and license boundary.
+
+## 14. UX14 History and CVD Architecture
+
+- `/api/binance/history` is a validated public read boundary for one Binance kline page. It accepts only the supported terminal intervals, caps each request at 1,000 bars, validates the optional backward cursor, and returns explicit live/offline provenance.
+- TanStack Query performs sequential backward pagination to a 10,000-bar target and caches the historical result for 30 minutes. History, the current REST snapshot, and WebSocket bars are merged by timestamp and capped at the newest 10,000 bars.
+- The chart retains all loaded data but initially displays approximately 180 recent candles. Price bounds use a recent trailing window so old extremes do not flatten the active market view.
+- The bottom order-flow tablist is outside the pane's conditional render. It remains keyboard accessible and visible at the workspace bottom; activating a tab restores the pane.
+- CVD anchor choices are visible range, UTC day, UTC week, UTC month, and automatic. Automatic maps intraday charts to UTC day, 4-hour charts to UTC week, and daily charts to UTC month.
+- CVD is derived from Binance kline taker-buy volume and therefore has bar precision, not tick-by-tick trade-classification precision. The interface names that provenance and does not claim exact TradingView server-side data parity.
+- Reverse Engineer Anything was used only as a controlled browser for public accessibility-tree observation. Capture excluded scripts, network bodies/headers, browser storage, and secrets; the resulting interaction inventory is design evidence, not copied implementation.

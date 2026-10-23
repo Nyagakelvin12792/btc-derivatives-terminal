@@ -104,7 +104,7 @@ test('uses a continuous synchronized order-flow pane with bottom tabs and no pri
     await expect(chart).toHaveAttribute('data-volume-panel', 'hidden');
     await expect(chart).toHaveAttribute('data-time-axis', 'lower-pane');
     await expect(pane).toHaveAttribute('data-crosshair-sync', 'native');
-    await expect(tabs).toHaveAttribute('data-position', 'bottom');
+    await expect(tabs).toHaveAttribute('data-position', 'workspace-bottom');
 
     const paneBox = await pane.boundingBox();
     const tabsBox = await tabs.boundingBox();
@@ -112,12 +112,22 @@ test('uses a continuous synchronized order-flow pane with bottom tabs and no pri
     expect(tabsBox).not.toBeNull();
     expect(tabsBox!.y).toBeGreaterThanOrEqual(paneBox!.y + paneBox!.height - 1);
 
+    await page.getByRole('button', { name: 'Hide lower study pane' }).click();
+    await expect(pane).toHaveCount(0);
+    await expect(tabs).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'CVD', exact: true })).toHaveAttribute('aria-selected', 'false');
+    await page.getByRole('tab', { name: 'Delta', exact: true }).click();
+    await expect(page.getByTestId('order-flow-pane')).toBeVisible();
+    await expect(page.getByRole('tab', { name: 'Delta', exact: true })).toHaveAttribute('aria-selected', 'true');
+
     const chartBox = await chart.boundingBox();
     expect(chartBox).not.toBeNull();
+    await page.getByRole('tab', { name: 'CVD', exact: true }).click();
+    const reopenedPane = page.getByTestId('order-flow-pane');
     await page.mouse.move(chartBox!.x + chartBox!.width * 0.55, chartBox!.y + chartBox!.height * 0.45);
     await expect.poll(() => chart.getAttribute('data-crosshair-time')).not.toBe('');
     const chartTime = await chart.getAttribute('data-crosshair-time');
-    await expect(pane).toHaveAttribute('data-crosshair-time', chartTime!);
+    await expect(reopenedPane).toHaveAttribute('data-crosshair-time', chartTime!);
 
     await page.getByRole('button', { name: 'Layers', exact: true }).click();
     await expect(page.getByText('Volume', { exact: true })).toHaveCount(0);

@@ -20,10 +20,10 @@ describe('/api/binance/market route', () => {
 
     it('returns the normalized live snapshot with short cache headers', async () => {
         mockedFetch.mockResolvedValue({ dataMode: 'LIVE', source: 'BINANCE_SPOT', candles: [] } as never);
-        const response = await GET(new NextRequest('http://localhost/api/binance/market?interval=15m&limit=240'));
+        const response = await GET(new NextRequest('http://localhost/api/binance/market?interval=15m&limit=1000'));
         expect(response.status).toBe(200);
         expect(response.headers.get('cache-control')).toBe('public, max-age=1, s-maxage=2, stale-while-revalidate=4');
-        expect(mockedFetch).toHaveBeenCalledWith('15m', 240);
+        expect(mockedFetch).toHaveBeenCalledWith('15m', 1000);
     });
 
     it('returns an explicit offline error without demo data when no snapshot is available', async () => {

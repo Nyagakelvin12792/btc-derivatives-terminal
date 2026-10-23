@@ -17,7 +17,7 @@ import {
 } from 'lightweight-charts';
 import { Eye, GripVertical, Lock, Move, RotateCcw, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
 import type { TerrainDataContractV2 } from '@/lib/terrain/types';
-import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels } from '@/lib/binance/analytics';
+import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '@/lib/binance/analytics';
 import type { BinanceMarketFeed } from '@/lib/binance/use-market-feed';
 import { useBinanceVolumeProfile } from '@/lib/binance/use-volume-profile';
 import { useTerminalStore } from '@/lib/dashboard/store';
@@ -43,6 +43,16 @@ type LineSeriesApi = ISeriesApi<'Line'>;
 type HistogramSeriesApi = ISeriesApi<'Histogram'>;
 type ProfileVolumeMode = 'TOTAL' | 'UP_DOWN' | 'DELTA';
 type ProfilePlacement = 'LEFT' | 'RIGHT';
+type CvdAnchorOption = 'AUTO' | CvdAnchor;
+
+interface FlowCvdBar {
+    time: DemoMarketBar['time'];
+    open: number;
+    high: number;
+    low: number;
+    close: number;
+    reset?: boolean;
+}
 
 interface ProfileRange {
     startTime: number;
@@ -108,6 +118,14 @@ const chartOptions = {
     handleScroll: true,
     handleScale: true,
 };
+const INITIAL_VISIBLE_BAR_COUNT = 180;
+
+function showRecentBars(chart: IChartApi, barCount: number) {
+    chart.timeScale().setVisibleLogicalRange({
+        from: Math.max(0, barCount - INITIAL_VISIBLE_BAR_COUNT),
+        to: Math.max(1, barCount - 1) + 5,
+    });
+}
 
 function nearestBarIndex(bars: DemoMarketBar[], time: number): number {
     if (!bars.length) return 0;
@@ -185,7 +203,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const priceLinesRef = useRef<IPriceLine[]>([]);
     const profileRef = useRef<ReturnType<typeof createDemoVolumeProfile>>([]);
     const barsRef = useRef<DemoMarketBar[]>([]);
-    const cvdBarsRef = useRef<Array<{ time: DemoMarketBar['time']; close: number }>>([]);
+    const cvdBarsRef = useRef<FlowCvdBar[]>([]);
     const deltaBarsRef = useRef<Array<{ time: DemoMarketBar['time']; value: number }>>([]);
     const updateOverlayRef = useRef<() => void>(() => undefined);
     const overlayFrameRef = useRef<number | null>(null);
@@ -195,6 +213,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const chartGenerationRef = useRef(0);
     const rangeSyncRef = useRef(false);
     const crosshairSyncRef = useRef(false);
+    const updateCvdResetMarkersRef = useRef<() => void>(() => undefined);
     const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({
         width: 800, height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorX: null, anchorY: null,
         profileLeftX: null, profileRightX: null,
@@ -208,6 +227,8 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const [profileVolumeMode, setProfileVolumeMode] = useState<ProfileVolumeMode>('UP_DOWN');
     const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
     const [extendProfileRight, setExtendProfileRight] = useState(false);
+    const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
+    const [cvdResetMarkers, setCvdResetMarkers] = useState<Array<{ time: number; x: number }>>([]);
     const [profileQueryRange, setProfileQueryRange] = useState<{ startTimeSeconds: number; endTimeSeconds: number; displayBarSeconds: number } | null>(null);
     const [showAvwapBands, setShowAvwapBands] = useState(true);
     const [selectedObject, setSelectedObject] = useState<'VP' | 'AVWAP' | null>('VP');
@@ -224,7 +245,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const [drawingStatus, setDrawingStatus] = useState('');
     const dragOriginRef = useRef<{ logical: number; start: number; end: number } | null>(null);
 
-    const { dataMode, chartLayers, activeOrderFlowStudy, studyPaneOpen, dteFilter, toggleChartLayer, setActiveOrderFlowStudy } = useTerminalStore();
+    const { dataMode, chartLayers, activeOrderFlowStudy, studyPaneOpen, dteFilter, toggleChartLayer, setActiveOrderFlowStudy, setStudyPaneOpen } = useTerminalStore();
     const summary = data.summary as unknown as Record<string, unknown>;
     const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
     const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
@@ -232,7 +253,15 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const liveBars = useMemo<DemoMarketBar[]>(() => marketFeed.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [marketFeed.candles]);
     const allBars = dataMode === 'DEMO' ? demoBars : liveBars;
     const bars = useMemo(() => replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, replayActive]);
-    const cvdBars = useMemo(() => dataMode === 'DEMO' ? createDemoCvd(bars) : buildCvdBars(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, dataMode]);
+    const resolvedCvdAnchor = useMemo<CvdAnchor>(() => {
+        if (cvdAnchor !== 'AUTO') return cvdAnchor;
+        if (timeframe === '1D') return 'UTC_MONTH';
+        if (timeframe === '4H') return 'UTC_WEEK';
+        return 'UTC_DAY';
+    }, [cvdAnchor, timeframe]);
+    const cvdBars = useMemo<FlowCvdBar[]>(() => dataMode === 'DEMO'
+        ? createDemoCvd(bars).map((bar, index) => ({ ...bar, reset: index === 0 }))
+        : buildCvdBars(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) })), resolvedCvdAnchor), [bars, dataMode, resolvedCvdAnchor]);
     const deltaBars = useMemo(() => dataMode === 'DEMO' ? cvdBars.map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' })) : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
     const liquidityLevels = useMemo(() => selectLiquidityLevels(marketFeed.book), [marketFeed.book]);
     const rangeStartIndex = range ? nearestBarIndex(bars, range.startTime) : 0;
@@ -412,7 +441,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         candles.setData(bars);
         if (contextChanged || previousRange === null) {
             chartContextRef.current = chartContextKey;
-            chart.timeScale().fitContent();
+            showRecentBars(chart, bars.length);
         } else if (wasAtRealtimeEdge && bars.length > previousCount) {
             chart.timeScale().setVisibleLogicalRange({
                 from: previousRange.from + (bars.length - previousCount),
@@ -428,10 +457,11 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     useEffect(() => {
         const bounds = boundsSeriesRef.current;
         if (!bounds || bars.length < 2) return;
+        const recentBars = bars.slice(-Math.min(INITIAL_VISIBLE_BAR_COUNT + 60, bars.length));
         const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)];
-        const lowBound = Math.min(...bars.map((bar) => bar.low), ...visibleLevels) * 0.998;
-        const highBound = Math.max(...bars.map((bar) => bar.high), ...visibleLevels) * 1.002;
-        bounds.setData([{ time: bars[0].time, value: lowBound }, { time: bars[bars.length - 1].time, value: highBound }]);
+        const lowBound = Math.min(...recentBars.map((bar) => bar.low), ...visibleLevels) * 0.998;
+        const highBound = Math.max(...recentBars.map((bar) => bar.high), ...visibleLevels) * 1.002;
+        bounds.setData([{ time: recentBars[0].time, value: lowBound }, { time: recentBars[recentBars.length - 1].time, value: highBound }]);
     }, [bars, callWall, gammaFlip, maxPain, putWall, secondaryLevels]);
 
     useEffect(() => {
@@ -565,16 +595,37 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
             series.createPriceLine({ price: 0, color: '#657287', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: false, title: 'ZERO' });
             cvdChartRef.current = chart;
             cvdSeriesRef.current = series;
+            const updateResetMarkers = () => {
+                const width = cvdHostRef.current?.clientWidth ?? 0;
+                const markers = cvdBarsRef.current.slice(1).flatMap((bar) => {
+                    if (!bar.reset) return [];
+                    const coordinate = chart.timeScale().timeToCoordinate(bar.time);
+                    if (coordinate === null || coordinate < 0 || coordinate > width) return [];
+                    return [{ time: Number(bar.time), x: Number(coordinate) }];
+                });
+                setCvdResetMarkers(markers);
+            };
+            updateCvdResetMarkersRef.current = updateResetMarkers;
             const mainRange = priceChartRef.current?.timeScale().getVisibleLogicalRange();
             if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
-            chart.timeScale().subscribeVisibleLogicalRangeChange(syncMainRange);
+            const handleCvdRange = (rangeValue: LogicalRange | null) => {
+                syncMainRange(rangeValue);
+                requestAnimationFrame(updateResetMarkers);
+            };
+            const resizeObserver = new ResizeObserver(updateResetMarkers);
+            resizeObserver.observe(cvdHostRef.current);
+            chart.timeScale().subscribeVisibleLogicalRangeChange(handleCvdRange);
             chart.subscribeCrosshairMove(syncMainCrosshair);
+            requestAnimationFrame(updateResetMarkers);
             return () => {
-                chart.timeScale().unsubscribeVisibleLogicalRangeChange(syncMainRange);
+                resizeObserver.disconnect();
+                chart.timeScale().unsubscribeVisibleLogicalRangeChange(handleCvdRange);
                 chart.unsubscribeCrosshairMove(syncMainCrosshair);
                 chart.remove();
                 cvdChartRef.current = null;
                 cvdSeriesRef.current = null;
+                updateCvdResetMarkersRef.current = () => undefined;
+                setCvdResetMarkers([]);
             };
         }
         if (activeOrderFlowStudy === 'DELTA' && deltaHostRef.current) {
@@ -604,6 +655,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
 
     useEffect(() => {
         cvdSeriesRef.current?.setData(cvdBars);
+        requestAnimationFrame(() => updateCvdResetMarkersRef.current());
     }, [cvdBars]);
 
     useEffect(() => {
@@ -685,7 +737,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         setDrawingDraft(null);
         setSelectedDrawingId(null);
         setLastDeletedDrawing(null);
-        priceChartRef.current?.timeScale().fitContent();
+        if (priceChartRef.current) showRecentBars(priceChartRef.current, bars.length);
         requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
     }
 
@@ -1000,23 +1052,24 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
 
             {studyPaneOpen && <>
                 <div ref={orderFlowPaneRef} className="relative h-[22%] min-h-[145px] shrink-0 border-t border-[#263346] bg-[#070b11]" data-testid="order-flow-pane" data-crosshair-sync="native">
-                    {activeOrderFlowStudy === 'CVD' && <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`} /><div className="pointer-events-none absolute inset-y-0 left-[62%] z-20 border-l border-dashed border-zinc-400/65"><span className="absolute left-1 top-1 text-[8px] text-zinc-400">Session reset</span></div></>}
+                    {activeOrderFlowStudy === 'CVD' && <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`} />{cvdResetMarkers.map((marker) => <div key={marker.time} className="pointer-events-none absolute inset-y-0 z-20 border-l border-dashed border-zinc-400/55" style={{ left: marker.x }}><span className="absolute left-1 top-8 whitespace-nowrap text-[8px] text-zinc-500">Reset</span></div>)}</>}
                     {activeOrderFlowStudy === 'DELTA' && <div ref={deltaHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} aggressor volume delta histogram`} />}
                     {activeOrderFlowStudy === 'BOOK' && <div className="absolute inset-0 pt-8"><BookPanel marketFeed={marketFeed} /></div>}
                     {activeOrderFlowStudy === 'LIQUIDITY' && <div className="absolute inset-0 pt-8"><LiquidityPanel marketFeed={marketFeed} levels={liquidityLevels} /></div>}
-                    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-8 items-center justify-between px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="rounded bg-[#090f18]/90 px-1.5 py-1 font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy === 'DELTA' ? 'Aggressor Volume Delta' : activeOrderFlowStudy === 'BOOK' ? 'BTCUSDT Order Book' : 'Observed Liquidity'}</span>{activeOrderFlowStudy === 'CVD' && <span className={cn('rounded bg-[#090f18]/90 px-1.5 py-1 font-mono text-sm font-semibold tabular-nums', lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastCvd)}</span>}{activeOrderFlowStudy === 'DELTA' && <span className={cn('rounded bg-[#090f18]/90 px-1.5 py-1 font-mono text-sm font-semibold tabular-nums', lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastDelta)}</span>}<span className="hidden rounded bg-[#090f18]/90 px-1.5 py-1 text-zinc-500 sm:inline">Anchor: visible range</span><span className="hidden rounded bg-[#090f18]/90 px-1.5 py-1 text-zinc-500 lg:inline">Source: {dataMode === 'LIVE' ? 'Binance Spot' : 'demo fixture'}</span></div><div className="pointer-events-auto flex items-center gap-2 rounded bg-[#090f18]/90 px-1"><span className={cn('rounded border px-1.5 py-0.5', dataMode === 'LIVE' && marketFeed.state === 'LIVE' ? 'border-emerald-400/35 text-emerald-300' : 'border-sky-400/35 text-sky-300')}>{dataMode === 'LIVE' ? marketFeed.state : 'SHADOW DATA'}</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">Coverage {dataMode === 'LIVE' ? marketFeed.coveragePercent : 96}%</span><button type="button" aria-label="Reset chart view and objects" onClick={resetChartViewAndObjects} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div>
-                </div>
-                <div className="flex h-8 shrink-0 items-stretch border-t border-[#263346] bg-[#080d14] px-1" role="tablist" aria-label="Order-flow studies" data-position="bottom">
-                    {(['CVD', 'DELTA', 'BOOK', 'LIQUIDITY'] as const).map((study) => <button
-                        key={study}
-                        type="button"
-                        role="tab"
-                        aria-selected={activeOrderFlowStudy === study}
-                        onClick={() => setActiveOrderFlowStudy(study)}
-                        className={cn('min-w-20 border-t-2 border-transparent px-3 text-[10px] font-semibold capitalize text-zinc-500 hover:text-zinc-200', activeOrderFlowStudy === study && 'border-sky-400 bg-sky-400/[0.06] text-sky-200')}
-                    >{study === 'CVD' ? 'CVD' : study.charAt(0) + study.slice(1).toLowerCase()}</button>)}
+                    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-8 items-center justify-between px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="rounded bg-[#090f18]/90 px-1.5 py-1 font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy === 'DELTA' ? 'Aggressor Volume Delta' : activeOrderFlowStudy === 'BOOK' ? 'BTCUSDT Order Book' : 'Observed Liquidity'}</span>{activeOrderFlowStudy === 'CVD' && <span className={cn('rounded bg-[#090f18]/90 px-1.5 py-1 font-mono text-sm font-semibold tabular-nums', lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastCvd)}</span>}{activeOrderFlowStudy === 'DELTA' && <span className={cn('rounded bg-[#090f18]/90 px-1.5 py-1 font-mono text-sm font-semibold tabular-nums', lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastDelta)}</span>}{activeOrderFlowStudy === 'CVD' && <label className="pointer-events-auto hidden items-center gap-1 rounded bg-[#090f18]/90 px-1.5 py-1 text-zinc-500 sm:flex"><span>Anchor</span><select aria-label="CVD anchor period" value={cvdAnchor} onChange={(event) => setCvdAnchor(event.target.value as CvdAnchorOption)} className="bg-transparent font-semibold text-zinc-300 outline-none"><option value="AUTO">Auto ({resolvedCvdAnchor.replace('UTC_', '')})</option><option value="UTC_DAY">UTC day</option><option value="UTC_WEEK">UTC week</option><option value="UTC_MONTH">UTC month</option><option value="VISIBLE">Loaded history</option></select></label>}<span className="hidden rounded bg-[#090f18]/90 px-1.5 py-1 text-zinc-500 lg:inline">Source: {dataMode === 'LIVE' ? 'Binance aggressor volume · bar precision' : 'demo fixture'}</span></div><div className="pointer-events-auto flex items-center gap-2 rounded bg-[#090f18]/90 px-1"><span className={cn('rounded border px-1.5 py-0.5', dataMode === 'LIVE' && marketFeed.state === 'LIVE' ? 'border-emerald-400/35 text-emerald-300' : 'border-sky-400/35 text-sky-300')}>{dataMode === 'LIVE' ? marketFeed.state : 'SHADOW DATA'}</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">{dataMode === 'LIVE' ? `${marketFeed.historyBarCount.toLocaleString()} / ${marketFeed.historyTarget.toLocaleString()} bars` : 'Coverage 96%'}</span><button type="button" aria-label="Reset chart view and objects" onClick={resetChartViewAndObjects} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div>
                 </div>
             </>}
+            <div className="flex h-9 shrink-0 items-stretch border-t border-[#263346] bg-[#080d14] px-1 pb-[env(safe-area-inset-bottom)]" role="tablist" aria-label="Order-flow studies" data-position="workspace-bottom" data-testid="order-flow-tabs">
+                {(['CVD', 'DELTA', 'BOOK', 'LIQUIDITY'] as const).map((study) => <button
+                    key={study}
+                    type="button"
+                    role="tab"
+                    aria-selected={studyPaneOpen && activeOrderFlowStudy === study}
+                    onClick={() => { setActiveOrderFlowStudy(study); setStudyPaneOpen(true); }}
+                    className={cn('min-w-20 border-t-2 border-transparent px-3 text-[10px] font-semibold capitalize text-zinc-500 hover:text-zinc-200', studyPaneOpen && activeOrderFlowStudy === study && 'border-sky-400 bg-sky-400/[0.06] text-sky-200')}
+                >{study === 'CVD' ? 'CVD' : study.charAt(0) + study.slice(1).toLowerCase()}</button>)}
+                <span className="ml-auto self-center px-2 font-mono text-[9px] tabular-nums text-zinc-600">{dataMode === 'LIVE' ? `${marketFeed.historyBarCount.toLocaleString()} bars${marketFeed.historyLoading ? ' · loading history' : ''}` : 'demo series'}</span>
+            </div>
         </div>
     );
 }

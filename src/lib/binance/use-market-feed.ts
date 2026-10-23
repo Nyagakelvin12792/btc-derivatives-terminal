@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { normalizeBinanceOrderBook } from './normalization';
 import type {
     BinanceInterval,
+    BinanceHistorySnapshot,
     BinanceMarketBar,
     BinanceMarketSnapshot,
     BinanceOrderBook,
@@ -15,6 +16,9 @@ import type {
 const REST_REFRESH_MS = 30_000;
 const STALE_AFTER_MS = 10_000;
 const MAX_RECONNECT_MS = 15_000;
+const HISTORY_PAGE_SIZE = 1_000;
+const HISTORY_BAR_TARGET = 10_000;
+const HISTORY_STALE_MS = 30 * 60_000;
 
 function finite(value: unknown): number | null {
     const parsed = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : Number.NaN;
@@ -58,13 +62,35 @@ function parseCombinedMessage(raw: string): { stream: string; data: unknown; eve
 }
 
 async function fetchMarketSnapshot(interval: BinanceInterval): Promise<BinanceMarketSnapshot> {
-    const response = await fetch(`/api/binance/market?interval=${interval}&limit=240`, { cache: 'no-store' });
+    const response = await fetch(`/api/binance/market?interval=${interval}&limit=${HISTORY_PAGE_SIZE}`, { cache: 'no-store' });
     if (!response.ok) throw new Error(`Binance market feed failed with ${response.status}`);
     const payload = await response.json() as BinanceMarketSnapshot;
     if (payload.dataMode !== 'LIVE' || payload.source !== 'BINANCE_SPOT' || !Array.isArray(payload.candles)) {
         throw new Error('Binance market feed returned an invalid contract');
     }
     return payload;
+}
+
+async function fetchHistoricalCandles(interval: BinanceInterval, signal?: AbortSignal): Promise<BinanceMarketBar[]> {
+    const barsByTime = new Map<number, BinanceMarketBar>();
+    let endTime: number | null = null;
+
+    while (barsByTime.size < HISTORY_BAR_TARGET) {
+        const query = new URLSearchParams({ interval, limit: String(Math.min(HISTORY_PAGE_SIZE, HISTORY_BAR_TARGET - barsByTime.size)) });
+        if (endTime !== null) query.set('endTime', String(endTime));
+        const response = await fetch(`/api/binance/history?${query}`, { cache: 'no-store', signal });
+        if (!response.ok) throw new Error(`Binance history feed failed with ${response.status}`);
+        const payload = await response.json() as BinanceHistorySnapshot;
+        if (payload.dataMode !== 'LIVE' || payload.source !== 'BINANCE_SPOT' || !Array.isArray(payload.candles)) {
+            throw new Error('Binance history feed returned an invalid contract');
+        }
+        payload.candles.forEach((bar) => barsByTime.set(bar.time, bar));
+        if (!payload.candles.length || payload.nextEndTime === null || payload.nextEndTime === endTime) break;
+        endTime = payload.nextEndTime;
+        if (payload.candles.length < Number(query.get('limit'))) break;
+    }
+
+    return [...barsByTime.values()].sort((left, right) => left.time - right.time).slice(-HISTORY_BAR_TARGET);
 }
 
 export interface BinanceMarketFeed {
@@ -75,6 +101,9 @@ export interface BinanceMarketFeed {
     latencyMs: number | null;
     lastEventAt: number | null;
     coveragePercent: number;
+    historyBarCount: number;
+    historyTarget: number;
+    historyLoading: boolean;
     isError: boolean;
 }
 
@@ -86,6 +115,15 @@ export function useBinanceMarketFeed(interval: BinanceInterval, enabled: boolean
         refetchInterval: enabled ? REST_REFRESH_MS : false,
         staleTime: 2_000,
         retry: 2,
+    });
+    const historyQuery = useQuery({
+        queryKey: ['binance-history', interval, HISTORY_BAR_TARGET],
+        queryFn: ({ signal }) => fetchHistoricalCandles(interval, signal),
+        enabled,
+        staleTime: HISTORY_STALE_MS,
+        gcTime: HISTORY_STALE_MS * 2,
+        refetchOnWindowFocus: false,
+        retry: 1,
     });
     const [streamBars, setStreamBars] = useState<{ interval: BinanceInterval; bars: BinanceMarketBar[] }>({ interval, bars: [] });
     const [streamBook, setStreamBook] = useState<{ interval: BinanceInterval; book: BinanceOrderBook } | null>(null);
@@ -162,12 +200,13 @@ export function useBinanceMarketFeed(interval: BinanceInterval, enabled: boolean
     }, [enabled, interval]);
 
     const candles = useMemo(() => {
-        const barsByTime = new Map((query.data?.candles ?? []).map((bar) => [bar.time, bar]));
+        const barsByTime = new Map((historyQuery.data ?? []).map((bar) => [bar.time, bar]));
+        for (const bar of query.data?.candles ?? []) barsByTime.set(bar.time, bar);
         if (streamBars.interval === interval) {
             for (const bar of streamBars.bars) barsByTime.set(bar.time, bar);
         }
-        return [...barsByTime.values()].sort((left, right) => left.time - right.time).slice(-240);
-    }, [interval, query.data?.candles, streamBars]);
+        return [...barsByTime.values()].sort((left, right) => left.time - right.time).slice(-HISTORY_BAR_TARGET);
+    }, [historyQuery.data, interval, query.data?.candles, streamBars]);
     const book = streamBook?.interval === interval ? streamBook.book : query.data?.book ?? null;
     const ticker = query.data?.ticker ?? null;
     const effectiveLastEventAt = lastEventAt ?? (query.data ? Date.parse(query.data.timestamp) : null);
@@ -189,7 +228,10 @@ export function useBinanceMarketFeed(interval: BinanceInterval, enabled: boolean
         ticker,
         latencyMs: effectiveLatencyMs,
         lastEventAt: effectiveLastEventAt,
-        coveragePercent: Math.min(100, Math.round((candles.length / 240) * 100)),
+        coveragePercent: Math.min(100, Math.round((candles.length / HISTORY_BAR_TARGET) * 100)),
+        historyBarCount: candles.length,
+        historyTarget: HISTORY_BAR_TARGET,
+        historyLoading: historyQuery.isFetching,
         isError: query.isError && candles.length === 0,
     };
 }

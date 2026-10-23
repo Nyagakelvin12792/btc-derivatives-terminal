@@ -1,7 +1,7 @@
 # Bitcoin Derivatives Terminal UI/UX Overhaul Plan
 
-Version: 1.3
-Status: UI + AUTHORIZED LIVE MARKET INTEGRATION + DRAWING REPAIR COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
+Version: 1.4
+Status: UI + AUTHORIZED LIVE MARKET INTEGRATION + HISTORY/FLOW REPAIR COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
 Last updated: 2026-10-23
 Scope owner: Antigravity / Gemini (Builder & Visual Engine)  
 Review owners: Architect (product and derivatives semantics), Codex (type safety, security, and boundary review)
@@ -30,9 +30,13 @@ The user subsequently authorized a focused UX12 repair after reporting that live
 
 The user authorized UX13 to remove the price-volume histogram, place the CVD/Delta/Book/Liquidity tabs below their pane, synchronize price and time-based order-flow crosshairs, and replace viewport-percentage drawings with real time/price-anchored objects. UX13 includes selection, visible anchors, body and anchor movement, locking, keyboard removal, and reversible deletion. It does not add indicators, alter market calculations, or introduce execution behavior.
 
+### 1.4 Persistent flow dock and deep-history correction addendum
+
+The user authorized UX14 after the deployed preview did not keep the lower CVD/Delta/Book/Liquidity controls visible and loaded too little candle history. UX14 keeps the lower control dock mounted even when its pane is collapsed, paginates the validated public Binance candle boundary to a 10,000-bar target, opens on a useful recent window, and gives bar-level CVD explicit UTC day/week/month reset anchors. Public TradingView behavior was observed through a clean-room accessibility capture; no proprietary source, private endpoint, asset, or stored browser data was collected.
+
 ## 2. Hard Scope Boundary
 
-UX0–UX10 and UX13 are UI/UX only. UX11 and UX12 are limited to the public market-data boundaries and chart/VP repairs described above.
+UX0–UX10 and UX13 are UI/UX only. UX11, UX12, and UX14 are limited to the public market-data boundaries and chart/flow repairs described above.
 
 ### Allowed
 
@@ -49,7 +53,7 @@ UX0–UX10 and UX13 are UI/UX only. UX11 and UX12 are limited to the public mark
 - No changes to Deribit normalization or derivatives definitions; UX11 may validate and filter the existing normalized chain by an explicit DTE query.
 - No edits to `src/lib/quant/`.
 - No edits to `src/lib/terrain/` or its formulas/contracts.
-- No persistent collector, signal, decision engine, or execution engine. UX11 may expose transient public Binance market snapshots and WebSocket updates.
+- No persistent collector, signal, decision engine, or execution engine. UX11/UX14 may expose transient public Binance market snapshots, paginated candle history, and WebSocket updates.
 - No changes to GEX, gamma flip, wall, max-pain, Vanna, Charm, IV, OI, CVD, or VWAP mathematics. UX12 may refine the presentation-layer Volume Profile using bounded Binance intrabars and TradingView's documented POC/value-area rules; it must not alter options-wall calculations.
 - No broker integration, order entry, one-click trading, or live execution.
 - No synthetic value may be presented as live.
@@ -258,6 +262,8 @@ Changing a filter may only select or hide existing data. It must not recalculate
 | UX7 | Saved layouts, command palette, favorites, link groups, 3D/analytics workspace integration | Save/restore/migrate/link tests |
 | UX8 | Responsive, accessibility, performance, and visual polish | Playwright matrix, axe checks, performance evidence |
 | UX9 | Independent review and release handoff | Architect acceptance; Gemini handoff; zero backend diff |
+| UX10–UX13 | Approved-style parity, live public data, VP/navigation, and drawing repair | Typed route/unit gates, browser interaction evidence, screenshots, and release handoff |
+| UX14 | Persistent lower dock, 10,000-bar history, anchored CVD resets | Dock collapse/reopen regression; 10-page live history smoke; useful initial viewport; clean-room comparison record |
 
 ## 8. Milestone Detail
 

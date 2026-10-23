@@ -3,7 +3,9 @@ import type { BinanceMarketBar, BinanceOrderBook } from './types';
 
 export interface CvdBar extends CandlestickData<UTCTimestamp> {
     delta: number;
+    reset: boolean;
 }
+export type CvdAnchor = 'VISIBLE' | 'UTC_DAY' | 'UTC_WEEK' | 'UTC_MONTH';
 export interface LiquidityLevel {
     side: 'BID' | 'ASK';
     price: number;
@@ -12,12 +14,27 @@ export interface LiquidityLevel {
     share: number;
 }
 
-export function buildCvdBars(bars: readonly BinanceMarketBar[]): CvdBar[] {
+function anchorKey(timeSeconds: number, anchor: CvdAnchor): string {
+    if (anchor === 'VISIBLE') return 'visible';
+    const date = new Date(timeSeconds * 1_000);
+    if (anchor === 'UTC_DAY') return date.toISOString().slice(0, 10);
+    if (anchor === 'UTC_MONTH') return date.toISOString().slice(0, 7);
+    const day = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() - day + 1);
+    return date.toISOString().slice(0, 10);
+}
+
+export function buildCvdBars(bars: readonly BinanceMarketBar[], anchor: CvdAnchor = 'VISIBLE'): CvdBar[] {
     let cumulative = 0;
+    let previousAnchor: string | null = null;
     return bars.map((bar) => {
+        const currentAnchor = anchorKey(bar.time, anchor);
+        const reset = previousAnchor !== currentAnchor;
+        if (reset) cumulative = 0;
         const open = cumulative;
         const close = open + bar.delta;
         cumulative = close;
+        previousAnchor = currentAnchor;
         return {
             time: bar.time as UTCTimestamp,
             open,
@@ -25,6 +42,7 @@ export function buildCvdBars(bars: readonly BinanceMarketBar[]): CvdBar[] {
             low: Math.min(open, close),
             close,
             delta: bar.delta,
+            reset,
         };
     });
 }

@@ -1,5 +1,5 @@
 import { buildBinanceMarketSnapshot, normalizeBinanceKlines } from './normalization';
-import { BINANCE_MARKET_SCHEMA_VERSION, type BinanceInterval, type BinanceMarketSnapshot, type BinanceProfileInterval, type BinanceVolumeProfileSnapshot } from './types';
+import { BINANCE_MARKET_SCHEMA_VERSION, type BinanceHistorySnapshot, type BinanceInterval, type BinanceMarketSnapshot, type BinanceProfileInterval, type BinanceVolumeProfileSnapshot } from './types';
 
 const BINANCE_MARKET_BASE_URL = 'https://data-api.binance.vision/api/v3';
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -53,6 +53,32 @@ export async function fetchBinanceMarketSnapshot(interval: BinanceInterval, limi
     ]);
 
     return buildBinanceMarketSnapshot({ interval, now, startedAtMs, klinePayload, bookPayload, tickerPayload });
+}
+
+export async function fetchBinanceHistoryPage(
+    interval: BinanceInterval,
+    limit: number,
+    endTime?: number,
+    now = new Date(),
+): Promise<BinanceHistorySnapshot> {
+    const query = new URLSearchParams({
+        symbol: 'BTCUSDT',
+        interval,
+        limit: String(limit),
+    });
+    if (endTime !== undefined) query.set('endTime', String(endTime));
+    const candles = normalizeBinanceKlines(await fetchJson(`${BINANCE_MARKET_BASE_URL}/klines?${query}`));
+    const earliest = candles[0];
+    return {
+        schemaVersion: BINANCE_MARKET_SCHEMA_VERSION,
+        dataMode: 'LIVE',
+        source: 'BINANCE_SPOT',
+        symbol: 'BTCUSDT',
+        interval,
+        timestamp: now.toISOString(),
+        candles,
+        nextEndTime: earliest ? earliest.time * 1_000 - 1 : null,
+    };
 }
 
 export async function fetchBinanceVolumeProfileBars(

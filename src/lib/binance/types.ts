@@ -64,6 +64,17 @@ export interface BinanceMarketSnapshot {
     ticker: BinanceTicker24h;
 }
 
+export interface BinanceHistorySnapshot {
+    schemaVersion: typeof BINANCE_MARKET_SCHEMA_VERSION;
+    dataMode: 'LIVE';
+    source: 'BINANCE_SPOT';
+    symbol: 'BTCUSDT';
+    interval: BinanceInterval;
+    timestamp: string;
+    candles: BinanceMarketBar[];
+    nextEndTime: number | null;
+}
+
 export interface BinanceVolumeProfileSnapshot {
     schemaVersion: typeof BINANCE_MARKET_SCHEMA_VERSION;
     dataMode: 'LIVE';

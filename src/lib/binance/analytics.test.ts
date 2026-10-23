@@ -15,6 +15,17 @@ describe('Binance order-flow analytics', () => {
         ]);
     });
 
+    it('resets cumulative delta at real UTC anchor boundaries', () => {
+        const anchored = buildCvdBars([
+            { time: Date.UTC(2026, 0, 1, 23, 59) / 1_000, delta: 2 },
+            { time: Date.UTC(2026, 0, 2, 0, 0) / 1_000, delta: -5 },
+        ] as BinanceMarketBar[], 'UTC_DAY');
+        expect(anchored).toEqual([
+            expect.objectContaining({ open: 0, close: 2, reset: true }),
+            expect.objectContaining({ open: 0, close: -5, reset: true }),
+        ]);
+    });
+
     it('builds signed delta histogram values', () => {
         expect(buildDeltaHistogram(bars).map((bar) => bar.value)).toEqual([2, -5]);
     });
