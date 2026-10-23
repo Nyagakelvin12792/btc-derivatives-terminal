@@ -29,6 +29,7 @@ import {
     PanelRightOpen,
     Pause,
     Pencil,
+    Pin,
     Play,
     RotateCcw,
     Search,
@@ -43,12 +44,12 @@ import {
     Waves,
     X,
 } from 'lucide-react';
-import type { TerrainDataContractV2 } from '@/lib/terrain/types';
-import type { WorkspaceTab } from '@/lib/dashboard/types';
-import { useTerminalStore } from '@/lib/dashboard/store';
-import { cn } from '@/lib/ui/cn';
-import { useBinanceMarketFeed, type BinanceMarketFeed } from '@/lib/binance/use-market-feed';
-import type { BinanceInterval } from '@/lib/binance/types';
+import type { TerrainDataContractV2 } from '../../lib/terrain/types';
+import type { WorkspaceTab } from '../../lib/dashboard/types';
+import { useTerminalStore } from '../../lib/dashboard/store';
+import { cn } from '../../lib/ui/cn';
+import { useBinanceMarketFeed, type BinanceMarketFeed } from '../../lib/binance/use-market-feed';
+import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
 
@@ -88,12 +89,15 @@ const DTE_FILTERS = ['0-2D', '7D', '14D', '30D', 'ALL'] as const;
 const ORDER_FLOW_TABS = ['CVD', 'DELTA', 'BOOK', 'LIQUIDITY'] as const;
 const TIMEFRAMES: ChartTimeframe[] = ['1m', '5m', '15m', '1H', '4H', '1D'];
 const BINANCE_INTERVALS: Record<ChartTimeframe, BinanceInterval> = { '1m': '1m', '5m': '5m', '15m': '15m', '1H': '1h', '4H': '4h', '1D': '1d' };
-const DRAWING_TOOLS: Array<{ id: ChartTool; label: string; icon: React.ElementType }> = [
+
+export const DRAWING_TOOLS: Array<{ id: ChartTool; label: string; icon: React.ElementType; tone?: 'long' | 'short' }> = [
     { id: 'cursor', label: 'Cursor', icon: MousePointer2 },
-    { id: 'trendline', label: 'Trend line', icon: TrendingUp },
+    { id: 'trendline', label: 'Trend line', icon: Pencil },
     { id: 'horizontal', label: 'Horizontal line', icon: Minus },
     { id: 'vertical', label: 'Vertical line', icon: MoveVertical },
     { id: 'rectangle', label: 'Rectangle', icon: Square },
+    { id: 'long-position', label: 'Long position', icon: TrendingUp, tone: 'long' },
+    { id: 'short-position', label: 'Short position', icon: TrendingDown, tone: 'short' },
     { id: 'text', label: 'Text note', icon: Type },
 ];
 
@@ -141,10 +145,6 @@ function InspectorMetric({ label, value, tone = 'neutral' }: { label: string; va
     return <div className="flex min-w-0 items-center justify-between gap-2 rounded border border-[#253347] bg-[#0a1018] px-2 py-2"><span className="truncate text-[10px] text-zinc-500">{label}</span><span className={cn('shrink-0 font-mono text-[11px] font-semibold tabular-nums', color)}>{value}</span></div>;
 }
 
-function ToolButton({ active, label, icon: Icon, onClick, tone }: { active?: boolean; label: string; icon: React.ElementType; onClick: () => void; tone?: 'long' | 'short' }) {
-    return <button type="button" aria-pressed={active} aria-label={label} onClick={onClick} className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded border border-transparent px-2 text-[10px] font-medium text-zinc-400 hover:bg-white/5 hover:text-zinc-100', active && 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200', tone === 'long' && 'text-emerald-300', tone === 'short' && 'text-rose-300')}><Icon className="size-3.5" /><span className="hidden xl:inline">{label}</span></button>;
-}
-
 function SourceChip({ label, state, tone }: { label: string; state: string; tone: 'live' | 'shadow' | 'demo' | 'off' }) {
     const dot = tone === 'live' ? 'bg-emerald-300' : tone === 'shadow' ? 'bg-sky-300' : tone === 'demo' ? 'bg-amber-300' : 'bg-zinc-500';
     const textTone = tone === 'live' ? 'text-emerald-300' : tone === 'shadow' ? 'text-sky-300' : tone === 'demo' ? 'text-amber-300' : 'text-zinc-500';
@@ -184,11 +184,12 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
     const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const [activeTool, setActiveTool] = useState<ChartTool>('cursor');
+    const [keepDrawing, setKeepDrawing] = useState(false);
     const [timeframe, setTimeframe] = useState<ChartTimeframe>('1H');
     const [replayActive, setReplayActive] = useState(false);
     const [utcNow, setUtcNow] = useState('--:--:--');
     const isDesktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, () => false);
-    const { setActiveWorkspace, dataMode, setDataMode, inspectorOpen, setInspectorOpen, studyPaneOpen, setStudyPaneOpen, activeOrderFlowStudy, setActiveOrderFlowStudy, dteFilter, setDteFilter, chartLayers, toggleChartLayer, resetWorkspaceUi } = useTerminalStore();
+    const { setActiveWorkspace, dataMode, setDataMode, inspectorOpen, setInspectorOpen, setStudyPaneOpen, activeOrderFlowStudy, setActiveOrderFlowStudy, dteFilter, setDteFilter, chartLayers, toggleChartLayer, resetWorkspaceUi } = useTerminalStore();
     const marketFeed = useBinanceMarketFeed(BINANCE_INTERVALS[timeframe], dataMode === 'LIVE');
 
     useEffect(() => {
@@ -247,11 +248,16 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
             <div className="font-mono text-base font-semibold tabular-nums md:text-lg">{displayedSpot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div><div className={cn('hidden font-mono text-sm font-semibold tabular-nums sm:block', changePct === undefined ? 'text-zinc-500' : changePct >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{changePct === undefined ? '—' : `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`}</div>
             <div className="ml-auto hidden items-center rounded border border-[#263346] md:flex">{TIMEFRAMES.map((item) => <button key={item} type="button" onClick={() => setTimeframe(item)} className={cn('h-8 min-w-10 px-2 text-[10px] text-zinc-400', timeframe === item && 'bg-sky-500/20 text-sky-200')}>{item}</button>)}</div><button type="button" className="hidden h-8 items-center gap-2 rounded border border-[#263346] px-3 text-[10px] text-zinc-300 xl:flex">{expiryLabel}<ChevronDown className="size-3" /></button>
             <SourceChip label="Binance" state={binanceState} tone={binanceState === 'LIVE' ? 'live' : binanceState === 'DEMO' ? 'demo' : binanceState === 'STALE' || binanceState === 'CONNECTING' ? 'shadow' : 'off'} /><SourceChip label="Deribit" state={deribitState} tone={deribitState === 'LIVE' ? 'live' : deribitState === 'DEMO' ? 'demo' : 'off'} /><SourceChip label="Jev" state="SHADOW OFF" tone="off" />
+            <button type="button" onClick={() => setPaletteOpen(true)} aria-label="Open command palette CTRL K" className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-[#263346] bg-[#0a111a] px-2 text-[9px] text-zinc-400 hover:bg-white/5 hover:text-zinc-200"><Search className="size-3" /><span className="hidden sm:inline">CTRL K</span></button>
             <button type="button" aria-label="Terminal settings" onClick={() => setActiveWorkspace('SETTINGS')} className="rounded p-2 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Settings className="size-4" /></button>
         </header>
 
-        <div className="flex h-14 shrink-0 items-center gap-1 overflow-x-auto border-b border-[#263346] bg-[#080d14] px-2">
-            <ToolButton active={activeTool === 'cursor'} label="Cursor" icon={MousePointer2} onClick={() => setActiveTool('cursor')} /><ToolButton active={activeTool === 'trendline'} label="Draw" icon={Pencil} onClick={() => setActiveTool('trendline')} /><ToolButton active={activeTool === 'horizontal'} label="Horizontal" icon={Minus} onClick={() => setActiveTool('horizontal')} /><ToolButton active={activeTool === 'vertical'} label="Vertical" icon={MoveVertical} onClick={() => setActiveTool('vertical')} /><ToolButton active={activeTool === 'long-position'} label="Long" icon={TrendingUp} tone="long" onClick={() => setActiveTool('long-position')} /><ToolButton active={activeTool === 'short-position'} label="Short" icon={TrendingDown} tone="short" onClick={() => setActiveTool('short-position')} />
+        <div
+            className="flex h-12 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#263346] bg-[#080d14] px-2"
+            role="toolbar"
+            aria-label="Chart navigation and workspace actions"
+            data-testid="chart-upper-toolbar"
+        >
             <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Activity className="size-3.5" />Indicators</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-56 rounded-md border border-[#33445a] bg-[#0b121c] p-2 shadow-lg"><div className="px-2 py-1 text-[9px] font-bold text-zinc-500">ORDER FLOW</div>{ORDER_FLOW_TABS.map((study) => { const state = dataMode === 'DEMO' ? (study === 'CVD' ? 'DEMO' : 'UNAVAILABLE') : marketFeed.state; return <button key={study} type="button" onClick={() => { setStudyPaneOpen(true); setActiveOrderFlowStudy(study); }} className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-[10px] text-zinc-300 hover:bg-white/5"><span>{study}</span><span className={state === 'LIVE' ? 'text-emerald-300' : state === 'DEMO' || state === 'CONNECTING' ? 'text-amber-300' : 'text-zinc-500'}>{state}</span></button>; })}</Popover.Content></Popover.Portal></Popover.Root>
             <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Layers3 className="size-3.5" />Layers</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-64 rounded-md border border-[#33445a] bg-[#0b121c] p-3 shadow-lg"><div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-bold text-zinc-400">CHART LAYERS</span><button type="button" aria-label="Reset layers" onClick={resetWorkspaceUi}><RotateCcw className="size-3.5 text-zinc-500" /></button></div><LayerToggle label="Primary walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle label="Secondary walls" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /><LayerToggle label="Gamma regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} /><LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} /></Popover.Content></Popover.Portal></Popover.Root>
             <button type="button" aria-pressed={replayActive} onClick={() => setReplayActive((active) => !active)} className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5', replayActive && 'bg-amber-400/10 text-amber-300')}>{replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Replay</button>
@@ -264,10 +270,119 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
             <Group orientation="horizontal" id="market-layout" defaultLayout={{ chart: 78, inspector: 22 }} onLayoutChanged={(layout) => localStorage.setItem('btc-terminal-panels-v2', JSON.stringify(layout))}>
                 <Panel id="chart" minSize="58%" defaultSize="78%">
                     <div className="flex h-full min-h-0 flex-col">
-                        <div className="flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#263346] bg-[#070c13] px-2"><StudyChip label="Fixed Range VP" visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Movable selected-range profile with POC, VAH, VAL, and configurable row density." /><StudyChip label="AVWAP · Swing Low" visible={chartLayers.avwap} onToggle={() => toggleChartLayer('avwap')} description="Anchored VWAP with draggable candle anchor and one-standard-deviation bands." /><StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." /><StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." /><button type="button" onClick={() => setStudyPaneOpen(!studyPaneOpen)} aria-label={studyPaneOpen ? 'Hide lower study pane' : 'Show lower study pane'} className="ml-auto rounded p-2 text-zinc-500 hover:text-zinc-200"><SlidersHorizontal className="size-3.5" /></button></div>
+                        <div className="flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#263346] bg-[#070c13] px-2">
+                            <StudyChip label="Fixed Range VP" visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Movable selected-range profile with POC, VAH, VAL, and configurable row density." />
+                            <StudyChip label="AVWAP · Swing Low" visible={chartLayers.avwap} onToggle={() => toggleChartLayer('avwap')} description="Anchored VWAP with draggable candle anchor and one-standard-deviation bands." />
+                            <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
+                            <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />
+                        </div>
                         <div className="flex min-h-0 flex-1">
-                            <nav className="hidden w-13 shrink-0 flex-col items-center gap-1 border-r border-[#263346] bg-[#070b11] py-2 md:flex" aria-label="Chart drawing tools">{DRAWING_TOOLS.map(({ id, label, icon: Icon }) => <Tooltip.Root key={id}><Tooltip.Trigger asChild><button type="button" aria-label={label} aria-pressed={activeTool === id} onClick={() => setActiveTool(id)} className={cn('flex size-9 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-100', activeTool === id && 'bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/30')}><Icon className="size-4" /></button></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-900">{label}</Tooltip.Content></Tooltip.Portal></Tooltip.Root>)}<div className="my-1 h-px w-6 bg-[#263346]" /><Tooltip.Root><Tooltip.Trigger asChild><button type="button" aria-label="Lock chart objects" className="flex size-9 items-center justify-center rounded text-zinc-500 hover:bg-white/5"><Lock className="size-4" /></button></Tooltip.Trigger><Tooltip.Portal><Tooltip.Content side="right" className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-900">Object locking is available on selected studies</Tooltip.Content></Tooltip.Portal></Tooltip.Root><div className="mt-auto"><DropdownMenu.Root><DropdownMenu.Trigger asChild><button type="button" aria-label="Switch workspace" className="flex size-9 items-center justify-center rounded text-zinc-500 hover:bg-white/5"><LayoutDashboard className="size-4" /></button></DropdownMenu.Trigger><DropdownMenu.Portal><DropdownMenu.Content side="right" sideOffset={7} className="z-50 w-48 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg">{WORKSPACES.map(({ id, label, icon: Icon }) => <DropdownMenu.Item key={id} onSelect={() => setActiveWorkspace(id)} className="flex cursor-default items-center gap-2 rounded px-2 py-2 text-[10px] text-zinc-300 outline-none data-[highlighted]:bg-cyan-400/10"><Icon className="size-3.5" />{label}</DropdownMenu.Item>)}</DropdownMenu.Content></DropdownMenu.Portal></DropdownMenu.Root></div></nav>
-                            <div className="min-w-0 flex-1"><MarketStructureChart data={data} marketFeed={marketFeed} activeTool={activeTool} timeframe={timeframe} replayActive={replayActive} onActiveToolChange={setActiveTool} /></div>
+                            <nav
+                                className="flex w-10 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-[#263346] bg-[#070b11] py-2 md:w-13"
+                                aria-label="Chart drawing tools"
+                                data-testid="drawing-tools-rail"
+                            >
+                                {DRAWING_TOOLS.map(({ id, label, icon: Icon, tone }) => (
+                                    <Tooltip.Root key={id}>
+                                        <Tooltip.Trigger asChild>
+                                            <button
+                                                type="button"
+                                                aria-label={label}
+                                                aria-pressed={activeTool === id}
+                                                title={label}
+                                                onClick={() => setActiveTool(id)}
+                                                className={cn(
+                                                    'flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-100 md:size-9',
+                                                    tone === 'long' && 'text-emerald-300/80 hover:text-emerald-200',
+                                                    tone === 'short' && 'text-rose-300/80 hover:text-rose-200',
+                                                    activeTool === id && 'bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/30',
+                                                )}
+                                            >
+                                                <Icon className="size-4" />
+                                            </button>
+                                        </Tooltip.Trigger>
+                                        <Tooltip.Portal>
+                                            <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] font-medium text-zinc-900">
+                                                {label}
+                                            </Tooltip.Content>
+                                        </Tooltip.Portal>
+                                    </Tooltip.Root>
+                                ))}
+                                <div className="my-1 h-px w-6 shrink-0 bg-[#263346]" />
+                                <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
+                                        <button
+                                            type="button"
+                                            aria-label="Keep drawing mode"
+                                            aria-pressed={keepDrawing}
+                                            title="Keep drawing mode"
+                                            onClick={() => setKeepDrawing((current) => !current)}
+                                            className={cn(
+                                                'flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-100 md:size-9',
+                                                keepDrawing && 'bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/30',
+                                            )}
+                                        >
+                                            <Pin className="size-3.5" />
+                                        </button>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Portal>
+                                        <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] font-medium text-zinc-900">
+                                            Keep drawing mode
+                                        </Tooltip.Content>
+                                    </Tooltip.Portal>
+                                </Tooltip.Root>
+                                <Tooltip.Root>
+                                    <Tooltip.Trigger asChild>
+                                        <button
+                                            type="button"
+                                            aria-label="Lock chart objects"
+                                            title="Lock chart objects"
+                                            className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 md:size-9"
+                                        >
+                                            <Lock className="size-4" />
+                                        </button>
+                                    </Tooltip.Trigger>
+                                    <Tooltip.Portal>
+                                        <Tooltip.Content side="right" className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-900">
+                                            Object locking is available on selected studies
+                                        </Tooltip.Content>
+                                    </Tooltip.Portal>
+                                </Tooltip.Root>
+                                <div className="mt-auto">
+                                    <DropdownMenu.Root>
+                                        <DropdownMenu.Trigger asChild>
+                                            <button
+                                                type="button"
+                                                aria-label="Switch workspace"
+                                                title="Switch workspace"
+                                                className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 md:size-9"
+                                            >
+                                                <LayoutDashboard className="size-4" />
+                                            </button>
+                                        </DropdownMenu.Trigger>
+                                        <DropdownMenu.Portal>
+                                            <DropdownMenu.Content side="right" sideOffset={7} className="z-50 w-48 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg">
+                                                {WORKSPACES.map(({ id, label, icon: Icon }) => (
+                                                    <DropdownMenu.Item key={id} onSelect={() => setActiveWorkspace(id)} className="flex cursor-default items-center gap-2 rounded px-2 py-2 text-[10px] text-zinc-300 outline-none data-[highlighted]:bg-cyan-400/10">
+                                                        <Icon className="size-3.5" />{label}
+                                                    </DropdownMenu.Item>
+                                                ))}
+                                            </DropdownMenu.Content>
+                                        </DropdownMenu.Portal>
+                                    </DropdownMenu.Root>
+                                </div>
+                            </nav>
+                            <div className="min-w-0 flex-1">
+                                <MarketStructureChart
+                                    data={data}
+                                    marketFeed={marketFeed}
+                                    activeTool={activeTool}
+                                    keepDrawing={keepDrawing}
+                                    timeframe={timeframe}
+                                    replayActive={replayActive}
+                                    onActiveToolChange={setActiveTool}
+                                />
+                            </div>
                         </div>
                     </div>
                 </Panel>
@@ -280,7 +395,5 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
         <Dialog.Root open={paletteOpen} onOpenChange={setPaletteOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-[18%] z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-xl border border-[#33445a] bg-[#0b111a] shadow-2xl"><Dialog.Title className="sr-only">Terminal command palette</Dialog.Title><Command className="bg-transparent text-zinc-100"><div className="flex items-center border-b border-[#263346] px-3"><CommandIcon className="size-4 text-zinc-500" /><Command.Input autoFocus placeholder="Search workspaces and actions…" className="h-12 w-full bg-transparent px-3 text-sm outline-none placeholder:text-zinc-600" /></div><Command.List className="max-h-[360px] overflow-y-auto p-2"><Command.Empty className="p-6 text-center text-xs text-zinc-500">No command found.</Command.Empty><Command.Group heading="Workspaces" className="text-[9px] text-zinc-600">{WORKSPACES.map(({ id, label, icon: Icon }) => <Command.Item key={id} value={label} onSelect={() => { setActiveWorkspace(id); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10 data-[selected=true]:text-cyan-200"><Icon className="size-4" />{label}</Command.Item>)}</Command.Group><Command.Group heading="Actions" className="mt-2 text-[9px] text-zinc-600"><Command.Item onSelect={() => { setInspectorOpen(true); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><PanelRightOpen className="size-4" />Open Options Metrics</Command.Item><Command.Item onSelect={() => { resetWorkspaceUi(); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><RotateCcw className="size-4" />Reset Market Structure layout</Command.Item></Command.Group></Command.List></Command></Dialog.Content></Dialog.Portal></Dialog.Root>
 
         <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" /><Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#33445a] bg-[#080d14] pb-[env(safe-area-inset-bottom)] md:hidden"><Dialog.Title className="sr-only">Options Metrics</Dialog.Title><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setMobileInspectorOpen(false)} /></Dialog.Content></Dialog.Portal></Dialog.Root>
-
-        <button type="button" onClick={() => setPaletteOpen(true)} aria-label="Open command palette CTRL K" className="fixed bottom-9 right-3 z-30 flex h-8 items-center gap-1.5 rounded border border-[#263346] bg-[#0a111a] px-2 text-[9px] text-zinc-400"><Search className="size-3" />CTRL K</button>
     </div></Tooltip.Provider>;
 }

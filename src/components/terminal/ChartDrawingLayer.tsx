@@ -49,7 +49,19 @@ function lineDrawing(
     const color = vertical ? '#a8b6c9' : '#79d5ff';
     const dash = horizontal ? '6 4' : vertical ? '4 4' : undefined;
 
-    return <g key={view.drawing.id} data-drawing-id={view.drawing.id} data-start-time={view.drawing.points[0].time} data-start-price={view.drawing.points[0].price} data-locked={view.drawing.locked}>
+    return <g
+        key={view.drawing.id}
+        data-drawing-id={view.drawing.id}
+        data-drawing-type={view.drawing.type}
+        data-start-time={view.drawing.points[0].time}
+        data-start-price={view.drawing.points[0].price}
+        data-locked={view.drawing.locked}
+        onClick={(event) => {
+            if (view.preview) return;
+            event.stopPropagation();
+            onSelect(view.drawing.id);
+        }}
+    >
         <line x1={x1} y1={y1} x2={x2} y2={y2} stroke={color} strokeWidth={selected ? 2.5 : 1.5} strokeDasharray={dash} opacity={view.preview ? 0.7 : 1} {...visibleLine} />
         {!view.preview && <line
             x1={x1} y1={y1} x2={x2} y2={y2}
@@ -73,7 +85,19 @@ function boxDrawing(
     const isPosition = view.drawing.type === 'long-position' || view.drawing.type === 'short-position';
     const color = view.drawing.type === 'long-position' ? '#31c5a0' : view.drawing.type === 'short-position' ? '#ef6277' : '#49c1ff';
 
-    return <g key={view.drawing.id} data-drawing-id={view.drawing.id} data-start-time={view.drawing.points[0].time} data-start-price={view.drawing.points[0].price} data-locked={view.drawing.locked}>
+    return <g
+        key={view.drawing.id}
+        data-drawing-id={view.drawing.id}
+        data-drawing-type={view.drawing.type}
+        data-start-time={view.drawing.points[0].time}
+        data-start-price={view.drawing.points[0].price}
+        data-locked={view.drawing.locked}
+        onClick={(event) => {
+            if (view.preview) return;
+            event.stopPropagation();
+            onSelect(view.drawing.id);
+        }}
+    >
         <rect
             x={left} y={top} width={Math.max(1, width)} height={Math.max(1, height)}
             fill={isPosition ? `${color}22` : 'rgba(73, 193, 255, 0.08)'}
@@ -102,7 +126,19 @@ export default function ChartDrawingLayer({ views, selectedId, onSelect, onStart
                 shape = boxDrawing(view, selected, onSelect, onStartDrag);
             } else {
                 const point = view.points[0];
-                shape = <g key={view.drawing.id} data-drawing-id={view.drawing.id} data-start-time={view.drawing.points[0].time} data-start-price={view.drawing.points[0].price} data-locked={view.drawing.locked}>
+                shape = <g
+                    key={view.drawing.id}
+                    data-drawing-id={view.drawing.id}
+                    data-drawing-type={view.drawing.type}
+                    data-start-time={view.drawing.points[0].time}
+                    data-start-price={view.drawing.points[0].price}
+                    data-locked={view.drawing.locked}
+                    onClick={(event) => {
+                        if (view.preview) return;
+                        event.stopPropagation();
+                        onSelect(view.drawing.id);
+                    }}
+                >
                     <text x={point.x} y={point.y} fill="#dce6f2" fontSize="11" fontWeight="600">NOTE</text>
                     {!view.preview && <rect x={point.x - 5} y={point.y - 16} width={42} height={22} fill="transparent" style={{ pointerEvents: 'all', cursor: 'move' }} onPointerDown={(event) => { onSelect(view.drawing.id); onStartDrag(event, view.drawing.id, { kind: 'body' }); }} />}
                 </g>;

@@ -15,13 +15,13 @@ import {
     type ISeriesApi,
     type LogicalRange,
 } from 'lightweight-charts';
-import { Eye, GripVertical, Lock, Move, RotateCcw, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
-import type { TerrainDataContractV2 } from '@/lib/terrain/types';
-import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '@/lib/binance/analytics';
-import type { BinanceMarketFeed } from '@/lib/binance/use-market-feed';
-import { useBinanceVolumeProfile } from '@/lib/binance/use-volume-profile';
-import { useTerminalStore } from '@/lib/dashboard/store';
-import { cn } from '@/lib/ui/cn';
+import { Eye, GripVertical, Lock, Move, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
+import type { TerrainDataContractV2 } from '../../lib/terrain/types';
+import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
+import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
+import { useBinanceVolumeProfile } from '../../lib/binance/use-volume-profile';
+import { useTerminalStore } from '../../lib/dashboard/store';
+import { cn } from '../../lib/ui/cn';
 import {
     calculateVolumeProfileLevels,
     createDemoAvwapBands,
@@ -29,7 +29,7 @@ import {
     createDemoMarketBars,
     createDemoVolumeProfile,
     type DemoMarketBar,
-} from '@/lib/ui/market-fixtures';
+} from '../../lib/ui/market-fixtures';
 import { TIMEFRAME_SECONDS, type ChartTimeframe, type ChartTool } from './types';
 import ChartDrawingLayer, {
     type ChartDrawingObject,
@@ -37,13 +37,21 @@ import ChartDrawingLayer, {
     type ChartDrawingView,
     type DrawingDragTarget,
 } from './ChartDrawingLayer';
+import LowerStudyDock from './LowerStudyDock';
+import LowerStudyPane, {
+    clampStudyPaneHeight,
+    readPersistedStudyPaneHeight,
+    STUDY_PANE_DEFAULT_HEIGHT,
+    STUDY_PANE_MAX_HEIGHT,
+    writePersistedStudyPaneHeight,
+    type CvdAnchorOption,
+} from './LowerStudyPane';
 
 type PriceSeries = ISeriesApi<'Candlestick'>;
 type LineSeriesApi = ISeriesApi<'Line'>;
 type HistogramSeriesApi = ISeriesApi<'Histogram'>;
 type ProfileVolumeMode = 'TOTAL' | 'UP_DOWN' | 'DELTA';
 type ProfilePlacement = 'LEFT' | 'RIGHT';
-type CvdAnchorOption = 'AUTO' | CvdAnchor;
 
 interface FlowCvdBar {
     time: DemoMarketBar['time'];
@@ -63,6 +71,7 @@ interface MarketStructureChartProps {
     data: TerrainDataContractV2;
     marketFeed: BinanceMarketFeed;
     activeTool: ChartTool;
+    keepDrawing?: boolean;
     timeframe: ChartTimeframe;
     replayActive: boolean;
     onActiveToolChange: (tool: ChartTool) => void;
@@ -97,6 +106,20 @@ interface DrawingDragState {
     startPoint: ChartDrawingPoint;
     startIndex: number;
     original: ChartDrawingObject;
+}
+
+export function constrainToolbarPosition(
+    anchor: { x: number; y: number },
+    bounds: { width: number; height: number },
+): { left: number; top: number } {
+    const minLeft = 96;
+    const maxLeft = Math.max(minLeft, bounds.width - 96);
+    const minTop = 44;
+    const maxTop = Math.max(minTop, bounds.height - 44);
+    return {
+        left: Math.round(Math.max(minLeft, Math.min(maxLeft, anchor.x))),
+        top: Math.round(Math.max(minTop, Math.min(maxTop, anchor.y - 40))),
+    };
 }
 
 const chartOptions = {
@@ -147,14 +170,6 @@ function money(value: number) {
     return `$${Math.round(value).toLocaleString()}`;
 }
 
-function compact(value: number) {
-    const absolute = Math.abs(value);
-    const sign = value < 0 ? '−' : '';
-    if (absolute >= 1_000_000) return `${sign}${(absolute / 1_000_000).toFixed(2)}M`;
-    if (absolute >= 1_000) return `${sign}${(absolute / 1_000).toFixed(1)}K`;
-    return `${sign}${absolute.toFixed(0)}`;
-}
-
 function numeric(value: unknown, fallback?: number): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
@@ -165,26 +180,16 @@ function levelStrike(value: unknown): number | undefined {
     return undefined;
 }
 
-function BookPanel({ marketFeed }: { marketFeed: BinanceMarketFeed }) {
-    const book = marketFeed.book;
-    if (!book) return <div className="flex h-full items-center justify-center text-[10px] text-zinc-500">Waiting for validated Binance order-book depth…</div>;
-    const rows = Math.min(10, book.bids.length, book.asks.length);
-    return <div className="grid h-full grid-cols-2 divide-x divide-[#263346] font-mono text-[9px] tabular-nums">
-        <div className="overflow-hidden p-2"><div className="mb-1 grid grid-cols-2 text-zinc-500"><span>Bid price</span><span className="text-right">BTC / USD</span></div>{book.bids.slice(0, rows).map((level, index) => <div key={`bid-${level.price}`} className="relative grid grid-cols-2 py-0.5"><span className="absolute inset-y-0 right-0 bg-emerald-400/10" style={{ width: `${Math.min(100, (level.notionalUsd / Math.max(book.bidDepthUsd, 1)) * 500)}%` }} /><span className="relative text-emerald-300">{level.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span><span className="relative text-right text-zinc-300">{level.quantity.toFixed(index < 3 ? 5 : 4)} / ${compact(level.notionalUsd)}</span></div>)}</div>
-        <div className="overflow-hidden p-2"><div className="mb-1 grid grid-cols-2 text-zinc-500"><span>Ask price</span><span className="text-right">BTC / USD</span></div>{book.asks.slice(0, rows).map((level, index) => <div key={`ask-${level.price}`} className="relative grid grid-cols-2 py-0.5"><span className="absolute inset-y-0 left-0 bg-rose-400/10" style={{ width: `${Math.min(100, (level.notionalUsd / Math.max(book.askDepthUsd, 1)) * 500)}%` }} /><span className="relative text-rose-300">{level.price.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span><span className="relative text-right text-zinc-300">{level.quantity.toFixed(index < 3 ? 5 : 4)} / ${compact(level.notionalUsd)}</span></div>)}</div>
-    </div>;
-}
-
-function LiquidityPanel({ marketFeed, levels }: { marketFeed: BinanceMarketFeed; levels: ReturnType<typeof selectLiquidityLevels> }) {
-    const book = marketFeed.book;
-    if (!book) return <div className="flex h-full items-center justify-center text-[10px] text-zinc-500">Waiting for validated Binance liquidity depth…</div>;
-    return <div className="grid h-full grid-cols-[0.7fr_1.3fr] divide-x divide-[#263346] p-2 text-[9px]">
-        <div className="grid grid-cols-2 content-start gap-2 pr-2"><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Spread</div><div className="mt-1 font-mono text-sm tabular-nums text-zinc-100">{book.spread.toFixed(2)}</div><div className="text-[8px] text-zinc-500">{book.spreadBps.toFixed(2)} bps</div></div><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Imbalance</div><div className={cn('mt-1 font-mono text-sm tabular-nums', book.imbalance >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{(book.imbalance * 100).toFixed(1)}%</div><div className="text-[8px] text-zinc-500">top 20 levels</div></div><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Bid depth</div><div className="mt-1 font-mono text-xs tabular-nums text-emerald-300">${compact(book.bidDepthUsd)}</div></div><div className="rounded border border-[#263346] p-2"><div className="text-zinc-500">Ask depth</div><div className="mt-1 font-mono text-xs tabular-nums text-rose-300">${compact(book.askDepthUsd)}</div></div></div>
-        <div className="space-y-1 pl-3"><div className="mb-1 flex justify-between text-zinc-500"><span>Largest observed depth levels</span><span>Notional</span></div>{levels.map((level) => <div key={`${level.side}-${level.price}`} className="grid grid-cols-[48px_1fr_70px] items-center gap-2"><span className={level.side === 'BID' ? 'text-emerald-300' : 'text-rose-300'}>{level.side}</span><div className="relative h-3 overflow-hidden rounded-sm bg-[#111a25]"><span className={cn('absolute inset-y-0', level.side === 'BID' ? 'left-0 bg-emerald-400/35' : 'right-0 bg-rose-400/35')} style={{ width: `${level.share * 100}%` }} /><span className="relative px-1 font-mono text-[8px] tabular-nums text-zinc-200">{level.price.toLocaleString()}</span></div><span className="text-right font-mono tabular-nums text-zinc-300">${compact(level.notionalUsd)}</span></div>)}</div>
-    </div>;
-}
-
-export default function MarketStructureChart({ data, marketFeed, activeTool, timeframe, replayActive, onActiveToolChange }: MarketStructureChartProps) {
+export default function MarketStructureChart({
+    data,
+    marketFeed,
+    activeTool,
+    keepDrawing = false,
+    timeframe,
+    replayActive,
+    onActiveToolChange,
+}: MarketStructureChartProps) {
+    const workspaceContainerRef = useRef<HTMLDivElement>(null);
     const chartHostRef = useRef<HTMLDivElement>(null);
     const chartSurfaceRef = useRef<HTMLDivElement>(null);
     const orderFlowPaneRef = useRef<HTMLDivElement>(null);
@@ -213,12 +218,14 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const chartGenerationRef = useRef(0);
     const rangeSyncRef = useRef(false);
     const crosshairSyncRef = useRef(false);
+    const lastKnownLogicalRangeRef = useRef<LogicalRange | null>(null);
     const updateCvdResetMarkersRef = useRef<() => void>(() => undefined);
     const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({
         width: 800, height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorX: null, anchorY: null,
         profileLeftX: null, profileRightX: null,
         profileRows: [], secondaryRows: [], vahY: null, pocY: null, valY: null,
     });
+    const [studyPaneHeight, setStudyPaneHeight] = useState<number>(() => readPersistedStudyPaneHeight());
     const [range, setRange] = useState<ProfileRange | null>(null);
     const [anchorIndex, setAnchorIndex] = useState(66);
     const [profileRowCount, setProfileRowCount] = useState(48);
@@ -231,7 +238,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const [cvdResetMarkers, setCvdResetMarkers] = useState<Array<{ time: number; x: number }>>([]);
     const [profileQueryRange, setProfileQueryRange] = useState<{ startTimeSeconds: number; endTimeSeconds: number; displayBarSeconds: number } | null>(null);
     const [showAvwapBands, setShowAvwapBands] = useState(true);
-    const [selectedObject, setSelectedObject] = useState<'VP' | 'AVWAP' | null>('VP');
+    const [selectedObject, setSelectedObject] = useState<'VP' | 'AVWAP' | null>(null);
     const [objectLocked, setObjectLocked] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [dragTarget, setDragTarget] = useState<'range-start' | 'range-end' | 'range-body' | 'anchor' | null>(null);
@@ -245,7 +252,25 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const [drawingStatus, setDrawingStatus] = useState('');
     const dragOriginRef = useRef<{ logical: number; start: number; end: number } | null>(null);
 
-    const { dataMode, chartLayers, activeOrderFlowStudy, studyPaneOpen, dteFilter, toggleChartLayer, setActiveOrderFlowStudy, setStudyPaneOpen } = useTerminalStore();
+    const {
+        activeWorkspace,
+        dataMode,
+        chartLayers,
+        activeOrderFlowStudy,
+        studyPaneOpen,
+        dteFilter,
+        toggleChartLayer,
+        setActiveOrderFlowStudy,
+        setStudyPaneOpen,
+    } = useTerminalStore();
+
+    const handleResizeStudyPane = useCallback((nextHeight: number) => {
+        const containerHeight = workspaceContainerRef.current?.clientHeight;
+        const clamped = clampStudyPaneHeight(nextHeight, containerHeight);
+        setStudyPaneHeight(clamped);
+        writePersistedStudyPaneHeight(clamped);
+    }, []);
+
     const summary = data.summary as unknown as Record<string, unknown>;
     const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
     const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
@@ -272,6 +297,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const avwapBands = useMemo(() => createDemoAvwapBands(bars, Math.min(anchorIndex, bars.length - 1)), [bars, anchorIndex]);
     const selectedStartTime = bars[profileStartIndex] ? Number(bars[profileStartIndex].time) : null;
     const selectedEndTime = bars[profileEndIndex] ? Number(bars[profileEndIndex].time) : null;
+
     useEffect(() => {
         if (dataMode !== 'LIVE' || selectedStartTime === null || selectedEndTime === null) return;
         const timer = setTimeout(() => setProfileQueryRange({
@@ -281,6 +307,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         }), 300);
         return () => clearTimeout(timer);
     }, [dataMode, selectedEndTime, selectedStartTime, timeframe]);
+
     const intrabarProfile = useBinanceVolumeProfile(profileQueryRange, dataMode === 'LIVE');
     const intrabarProfileBars = useMemo<DemoMarketBar[]>(() => intrabarProfile.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [intrabarProfile.candles]);
     const profileSourceBars = dataMode === 'LIVE' && intrabarProfileBars.length ? intrabarProfileBars : bars;
@@ -374,9 +401,12 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         };
         const handleVisibleRangeChange = (rangeValue: LogicalRange | null) => {
             scheduleOverlayUpdate();
-            if (rangeValue && chartSurfaceRef.current) {
-                chartSurfaceRef.current.dataset.visibleFrom = rangeValue.from.toFixed(4);
-                chartSurfaceRef.current.dataset.visibleTo = rangeValue.to.toFixed(4);
+            if (rangeValue) {
+                lastKnownLogicalRangeRef.current = rangeValue;
+                if (chartSurfaceRef.current) {
+                    chartSurfaceRef.current.dataset.visibleFrom = rangeValue.from.toFixed(4);
+                    chartSurfaceRef.current.dataset.visibleTo = rangeValue.to.toFixed(4);
+                }
             }
             const flowChart = cvdChartRef.current ?? deltaChartRef.current;
             if (rangeValue && flowChart && !rangeSyncRef.current) {
@@ -606,7 +636,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                 setCvdResetMarkers(markers);
             };
             updateCvdResetMarkersRef.current = updateResetMarkers;
-            const mainRange = priceChartRef.current?.timeScale().getVisibleLogicalRange();
+            const mainRange = lastKnownLogicalRangeRef.current ?? priceChartRef.current?.timeScale().getVisibleLogicalRange();
             if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
             const handleCvdRange = (rangeValue: LogicalRange | null) => {
                 syncMainRange(rangeValue);
@@ -639,7 +669,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
             series.setData(deltaBarsRef.current);
             deltaChartRef.current = chart;
             deltaSeriesRef.current = series;
-            const mainRange = priceChartRef.current?.timeScale().getVisibleLogicalRange();
+            const mainRange = lastKnownLogicalRangeRef.current ?? priceChartRef.current?.timeScale().getVisibleLogicalRange();
             if (mainRange) chart.timeScale().setVisibleLogicalRange(mainRange);
             chart.timeScale().subscribeVisibleLogicalRangeChange(syncMainRange);
             chart.subscribeCrosshairMove(syncMainCrosshair);
@@ -663,12 +693,32 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     }, [deltaBars]);
 
     useEffect(() => {
+        const chart = priceChartRef.current;
+        const preservedRange = lastKnownLogicalRangeRef.current ?? chart?.timeScale().getVisibleLogicalRange() ?? null;
         const lowerPaneOwnsTimeAxis = studyPaneOpen && (activeOrderFlowStudy === 'CVD' || activeOrderFlowStudy === 'DELTA');
-        priceChartRef.current?.applyOptions({
-            timeScale: { visible: !lowerPaneOwnsTimeAxis },
+        if (chart) {
+            rangeSyncRef.current = true;
+            chart.applyOptions({
+                timeScale: { visible: !lowerPaneOwnsTimeAxis },
+            });
+            if (preservedRange) {
+                chart.timeScale().setVisibleLogicalRange(preservedRange);
+            }
+            queueMicrotask(() => { rangeSyncRef.current = false; });
+        }
+        if (chartSurfaceRef.current) {
+            chartSurfaceRef.current.dataset.timeAxis = lowerPaneOwnsTimeAxis ? 'lower-pane' : 'price-chart';
+        }
+        const frame = requestAnimationFrame(() => {
+            if (priceChartRef.current && preservedRange) {
+                rangeSyncRef.current = true;
+                priceChartRef.current.timeScale().setVisibleLogicalRange(preservedRange);
+                queueMicrotask(() => { rangeSyncRef.current = false; });
+            }
+            updateOverlayRef.current();
         });
-        if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.timeAxis = lowerPaneOwnsTimeAxis ? 'lower-pane' : 'price-chart';
-    }, [activeOrderFlowStudy, hasChartData, studyPaneOpen]);
+        return () => cancelAnimationFrame(frame);
+    }, [activeOrderFlowStudy, hasChartData, studyPaneHeight, studyPaneOpen]);
 
     useEffect(() => {
         if (!dragTarget || objectLocked) return;
@@ -704,11 +754,12 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
 
     function beginProfileDrag(event: React.PointerEvent<HTMLElement>, target: 'range-start' | 'range-end' | 'range-body') {
         event.stopPropagation();
+        setSelectedObject('VP');
+        setSelectedDrawingId(null);
         if (objectLocked || !chartHostRef.current || !priceChartRef.current) return;
         const rect = chartHostRef.current.getBoundingClientRect();
         const logical = priceChartRef.current.timeScale().coordinateToLogical(event.clientX - rect.left);
         if (logical === null) return;
-        setSelectedObject('VP');
         dragOriginRef.current = { logical, start: profileStartIndex, end: profileEndIndex };
         setDragTarget(target);
     }
@@ -736,7 +787,10 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         setDrawings([]);
         setDrawingDraft(null);
         setSelectedDrawingId(null);
+        setSelectedObject(null);
         setLastDeletedDrawing(null);
+        setStudyPaneHeight(STUDY_PANE_DEFAULT_HEIGHT);
+        writePersistedStudyPaneHeight(STUDY_PANE_DEFAULT_HEIGHT);
         if (priceChartRef.current) showRecentBars(priceChartRef.current, bars.length);
         requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
     }
@@ -772,27 +826,28 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         if (oneClickTool) {
             const drawing: ChartDrawingObject = { id: crypto.randomUUID(), type: drawingType, points: [point], locked: false };
             setDrawings((current) => [...current, drawing]);
-            setSelectedDrawingId(drawing.id);
+            setSelectedDrawingId(null);
             setSelectedObject(null);
             setLastDeletedDrawing(null);
             setDrawingStatus(`${activeTool} added`);
-            onActiveToolChange('cursor');
+            if (!keepDrawing) onActiveToolChange('cursor');
             return;
         }
         if (!drawingDraft || drawingDraft.type !== drawingType) {
             setDrawingDraft({ id: 'drawing-preview', type: drawingType, points: [point, point], locked: false });
             setSelectedDrawingId(null);
+            setSelectedObject(null);
             setDrawingStatus('Select the second point');
             return;
         }
         const drawing: ChartDrawingObject = { ...drawingDraft, id: crypto.randomUUID(), points: [drawingDraft.points[0], point] };
         setDrawings((current) => [...current, drawing]);
         setDrawingDraft(null);
-        setSelectedDrawingId(drawing.id);
+        setSelectedDrawingId(null);
         setSelectedObject(null);
         setLastDeletedDrawing(null);
         setDrawingStatus(`${activeTool} added`);
-        onActiveToolChange('cursor');
+        if (!keepDrawing) onActiveToolChange('cursor');
     }
 
     function handleDrawingPointerMove(event: React.PointerEvent<HTMLDivElement>) {
@@ -807,6 +862,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
         event.stopPropagation();
         const original = drawings.find((drawing) => drawing.id === drawingId);
         setSelectedDrawingId(drawingId);
+        setSelectedObject(null);
         if (!original || original.locked || event.button !== 0) return;
         const startPoint = drawingPointFromClient(event.clientX, event.clientY);
         if (!startPoint) return;
@@ -821,7 +877,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
 
     function removeDrawing(drawingId: string) {
         const drawing = drawings.find((candidate) => candidate.id === drawingId);
-        if (!drawing) return;
+        if (!drawing || drawing.locked) return;
         setDrawings((current) => current.filter((candidate) => candidate.id !== drawingId));
         setLastDeletedDrawing(drawing);
         setSelectedDrawingId(null);
@@ -831,9 +887,15 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     function restoreLastDeletedDrawing() {
         if (!lastDeletedDrawing) return;
         setDrawings((current) => [...current.filter((drawing) => drawing.id !== lastDeletedDrawing.id), lastDeletedDrawing]);
-        setSelectedDrawingId(lastDeletedDrawing.id);
+        setSelectedDrawingId(null);
         setLastDeletedDrawing(null);
         setDrawingStatus('Drawing restored');
+    }
+
+    function handleBlankChartPointerDown() {
+        if (selectedDrawingId !== null) setSelectedDrawingId(null);
+        if (selectedObject !== null) setSelectedObject(null);
+        if (settingsOpen) setSettingsOpen(false);
     }
 
     useEffect(() => {
@@ -881,13 +943,15 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
             if (event.key === 'Escape') {
                 setDrawingDraft(null);
                 setSelectedDrawingId(null);
-                setDrawingStatus('Drawing cancelled');
+                setSelectedObject(null);
+                setSettingsOpen(false);
+                setDrawingStatus('Selection cleared');
                 return;
             }
             if ((event.key === 'Delete' || event.key === 'Backspace') && selectedDrawingId) {
-                event.preventDefault();
                 const selected = drawings.find((drawing) => drawing.id === selectedDrawingId);
-                if (!selected) return;
+                if (!selected || selected.locked) return;
+                event.preventDefault();
                 setDrawings((current) => current.filter((drawing) => drawing.id !== selectedDrawingId));
                 setLastDeletedDrawing(selected);
                 setSelectedDrawingId(null);
@@ -897,7 +961,7 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
             if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && lastDeletedDrawing) {
                 event.preventDefault();
                 setDrawings((current) => [...current.filter((drawing) => drawing.id !== lastDeletedDrawing.id), lastDeletedDrawing]);
-                setSelectedDrawingId(lastDeletedDrawing.id);
+                setSelectedDrawingId(null);
                 setLastDeletedDrawing(null);
                 setDrawingStatus('Drawing restored');
             }
@@ -907,11 +971,26 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     }, [drawings, lastDeletedDrawing, selectedDrawingId]);
 
     useEffect(() => {
-        if (activeTool !== 'cursor') return;
-        queueMicrotask(() => setDrawingDraft(null));
+        if (activeTool === 'cursor') {
+            queueMicrotask(() => setDrawingDraft(null));
+            return;
+        }
+        queueMicrotask(() => {
+            setSelectedDrawingId(null);
+            setSelectedObject(null);
+        });
     }, [activeTool]);
+
+    useEffect(() => {
+        queueMicrotask(() => {
+            setSelectedDrawingId(null);
+            setSelectedObject(null);
+            setDrawingDraft(null);
+        });
+    }, [activeWorkspace]);
+
     const selectedDrawing = drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
-    const selectedDrawingView = drawingViews.find((view) => view.drawing.id === selectedDrawingId) ?? null;
+    const selectedDrawingView = drawingViews.find((view) => view.drawing.id === selectedDrawingId && !view.preview) ?? null;
 
     if (!bars.length) {
         return (
@@ -936,21 +1015,38 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     const profileRowHeight = overlayLayout.profileRows.length > 1
         ? Math.max(1, Math.abs(overlayLayout.profileRows[1].y - overlayLayout.profileRows[0].y) - 1)
         : 6;
-    const selectedDrawingAnchor = selectedDrawingView?.points[0] ?? null;
-    const selectedDrawingToolbarLeft = selectedDrawingAnchor ? Math.max(90, Math.min(overlayLayout.width - 90, selectedDrawingAnchor.x)) : 0;
-    const selectedDrawingToolbarTop = selectedDrawingAnchor ? Math.max(48, Math.min(overlayLayout.height - 44, selectedDrawingAnchor.y - 42)) : 0;
+    const selectedDrawingAnchor = selectedDrawingView
+        ? selectedDrawingView.points.length >= 2
+            ? {
+                x: (selectedDrawingView.points[0].x + selectedDrawingView.points[1].x) / 2,
+                y: Math.min(selectedDrawingView.points[0].y, selectedDrawingView.points[1].y),
+            }
+            : selectedDrawingView.drawing.type === 'horizontal'
+                ? { x: overlayLayout.width * 0.5, y: selectedDrawingView.points[0].y }
+                : selectedDrawingView.drawing.type === 'vertical'
+                    ? { x: selectedDrawingView.points[0].x, y: overlayLayout.height * 0.35 }
+                    : selectedDrawingView.points[0]
+        : null;
+    const toolbarPosition = selectedDrawingAnchor
+        ? constrainToolbarPosition(selectedDrawingAnchor, overlayLayout)
+        : { left: 0, top: 0 };
 
     return (
-        <div className="flex h-full min-h-0 flex-col bg-[#080d14]">
+        <div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-[#080d14]">
             <div
                 ref={chartSurfaceRef}
-                className="relative min-h-[310px] flex-1 overflow-hidden"
+                className="relative min-h-[240px] flex-1 overflow-hidden"
                 role="group"
                 aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} BTC price chart with options structure overlays`}
                 data-drawing-count={drawings.length}
+                data-selected-drawing-id={selectedDrawingId ?? ''}
                 data-volume-panel="hidden"
             >
-                <div ref={chartHostRef} className="absolute inset-0" />
+                <div
+                    ref={chartHostRef}
+                    className="absolute inset-0"
+                    onPointerDown={handleBlankChartPointerDown}
+                />
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
                 </div>}
@@ -993,12 +1089,25 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                         ['VAL', profileLevels?.val, overlayLayout.valY, 'border-sky-300/50 text-sky-200'],
                     ].map(([label, price, y, classes]) => typeof y === 'number' && typeof price === 'number' ? <div key={String(label)} className={cn('pointer-events-none absolute inset-x-0 border-t', String(classes).split(' ')[0])} style={{ top: y }}><span className={cn('absolute right-1 -top-4 bg-[#08101a]/95 px-1 text-[8px] font-semibold', String(classes).split(' ')[1])}>{label} {Math.round(price).toLocaleString()}</span></div> : null)}
                     {!objectLocked && <><button type="button" aria-label="Adjust volume profile start" onPointerDown={(event) => beginProfileDrag(event, 'range-start')} className="pointer-events-auto absolute -left-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>{!extendProfileRight && <button type="button" aria-label="Adjust volume profile end" onPointerDown={(event) => beginProfileDrag(event, 'range-end')} className="pointer-events-auto absolute -right-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>}</>}
-                    <button type="button" title="Drag to move the fixed range volume profile" onPointerDown={(event) => beginProfileDrag(event, 'range-body')} className="pointer-events-auto absolute left-2 top-2 flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200"><Move className="size-3" />FIXED RANGE VP · {selectedBarCount} BARS · {profileSourceLabel}</button>
+                    <button
+                        type="button"
+                        title="Select or drag the fixed range volume profile"
+                        onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); }}
+                        onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
+                        className="pointer-events-auto absolute left-2 top-2 flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200"
+                    >
+                        <Move className="size-3" />FIXED RANGE VP · {selectedBarCount} BARS · {profileSourceLabel}
+                    </button>
                 </div>}
 
-                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
+                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
 
-                {selectedObject && ((selectedObject === 'VP' && chartLayers.volumeProfile) || (selectedObject === 'AVWAP' && chartLayers.avwap)) && <div className="absolute left-1/2 top-11 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg" role="toolbar" aria-label={`${selectedObject} controls`}>
+                {selectedObject && ((selectedObject === 'VP' && chartLayers.volumeProfile) || (selectedObject === 'AVWAP' && chartLayers.avwap)) && <div
+                    className="absolute left-1/2 top-11 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg"
+                    role="toolbar"
+                    aria-label={`${selectedObject} controls`}
+                    onPointerDown={(event) => event.stopPropagation()}
+                >
                     <button type="button" aria-label={`Move ${selectedObject}`} onPointerDown={(event) => selectedObject === 'VP' ? beginProfileDrag(event, 'range-body') : setDragTarget('anchor')} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Move className="size-3.5" /></button>
                     <button type="button" aria-label={objectLocked ? `Unlock ${selectedObject}` : `Lock ${selectedObject}`} onClick={() => setObjectLocked((locked) => !locked)} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100">{objectLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}</button>
                     <Popover.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
@@ -1030,14 +1139,31 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                 />
                 {selectedDrawing && selectedDrawingView && <div
                     className="absolute z-50 flex -translate-x-1/2 items-center gap-1 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg"
-                    style={{ left: selectedDrawingToolbarLeft, top: selectedDrawingToolbarTop }}
+                    style={{ left: toolbarPosition.left, top: toolbarPosition.top }}
                     role="toolbar"
                     aria-label="Drawing controls"
                     onPointerDown={(event) => event.stopPropagation()}
+                    onClick={(event) => event.stopPropagation()}
                 >
                     <span className="px-1.5 text-[9px] font-semibold capitalize text-zinc-300">{selectedDrawing.type.replace('-', ' ')}</span>
-                    <button type="button" aria-label={selectedDrawing.locked ? 'Unlock selected drawing' : 'Lock selected drawing'} onClick={() => setDrawings((current) => current.map((drawing) => drawing.id === selectedDrawing.id ? { ...drawing, locked: !drawing.locked } : drawing))} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100">{selectedDrawing.locked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}</button>
-                    <button type="button" aria-label="Delete selected drawing" onClick={() => removeDrawing(selectedDrawing.id)} className="rounded p-1.5 text-rose-300 hover:bg-rose-400/10"><Trash2 className="size-3.5" /></button>
+                    <button
+                        type="button"
+                        aria-label={selectedDrawing.locked ? 'Unlock selected drawing' : 'Lock selected drawing'}
+                        aria-pressed={selectedDrawing.locked}
+                        onClick={() => setDrawings((current) => current.map((drawing) => drawing.id === selectedDrawing.id ? { ...drawing, locked: !drawing.locked } : drawing))}
+                        className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+                    >
+                        {selectedDrawing.locked ? <Lock className="size-3.5 text-amber-300" /> : <Unlock className="size-3.5" />}
+                    </button>
+                    <button
+                        type="button"
+                        aria-label="Delete selected drawing"
+                        disabled={selectedDrawing.locked}
+                        onClick={() => removeDrawing(selectedDrawing.id)}
+                        className="rounded p-1.5 text-rose-300 hover:bg-rose-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                        <Trash2 className="size-3.5" />
+                    </button>
                 </div>}
                 {lastDeletedDrawing && <div className="absolute bottom-3 left-3 z-50 flex items-center gap-2 rounded border border-[#33445a] bg-[#0b121c] px-2 py-1.5 text-[9px] text-zinc-300 shadow-lg" role="status"><span>Drawing removed</span><button type="button" onClick={restoreLastDeletedDrawing} className="flex items-center gap-1 rounded px-1.5 py-1 font-semibold text-cyan-300 hover:bg-white/5"><Undo2 className="size-3" />Undo</button></div>}
                 <div
@@ -1050,26 +1176,37 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
                 {replayActive && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">REPLAY PAUSED · HISTORICAL {dataMode}</div>}
             </div>
 
-            {studyPaneOpen && <>
-                <div ref={orderFlowPaneRef} className="relative h-[22%] min-h-[145px] shrink-0 border-t border-[#263346] bg-[#070b11]" data-testid="order-flow-pane" data-crosshair-sync="native">
-                    {activeOrderFlowStudy === 'CVD' && <><div ref={cvdHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`} />{cvdResetMarkers.map((marker) => <div key={marker.time} className="pointer-events-none absolute inset-y-0 z-20 border-l border-dashed border-zinc-400/55" style={{ left: marker.x }}><span className="absolute left-1 top-8 whitespace-nowrap text-[8px] text-zinc-500">Reset</span></div>)}</>}
-                    {activeOrderFlowStudy === 'DELTA' && <div ref={deltaHostRef} className="absolute inset-0" role="img" aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} aggressor volume delta histogram`} />}
-                    {activeOrderFlowStudy === 'BOOK' && <div className="absolute inset-0 pt-8"><BookPanel marketFeed={marketFeed} /></div>}
-                    {activeOrderFlowStudy === 'LIQUIDITY' && <div className="absolute inset-0 pt-8"><LiquidityPanel marketFeed={marketFeed} levels={liquidityLevels} /></div>}
-                    <div className="pointer-events-none absolute inset-x-0 top-0 z-20 flex h-8 items-center justify-between px-3 text-[9px]"><div className="flex min-w-0 items-center gap-3"><span className="rounded bg-[#090f18]/90 px-1.5 py-1 font-bold text-zinc-100">{activeOrderFlowStudy === 'CVD' ? 'Cumulative Volume Delta' : activeOrderFlowStudy === 'DELTA' ? 'Aggressor Volume Delta' : activeOrderFlowStudy === 'BOOK' ? 'BTCUSDT Order Book' : 'Observed Liquidity'}</span>{activeOrderFlowStudy === 'CVD' && <span className={cn('rounded bg-[#090f18]/90 px-1.5 py-1 font-mono text-sm font-semibold tabular-nums', lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastCvd)}</span>}{activeOrderFlowStudy === 'DELTA' && <span className={cn('rounded bg-[#090f18]/90 px-1.5 py-1 font-mono text-sm font-semibold tabular-nums', lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{compact(lastDelta)}</span>}{activeOrderFlowStudy === 'CVD' && <label className="pointer-events-auto hidden items-center gap-1 rounded bg-[#090f18]/90 px-1.5 py-1 text-zinc-500 sm:flex"><span>Anchor</span><select aria-label="CVD anchor period" value={cvdAnchor} onChange={(event) => setCvdAnchor(event.target.value as CvdAnchorOption)} className="bg-transparent font-semibold text-zinc-300 outline-none"><option value="AUTO">Auto ({resolvedCvdAnchor.replace('UTC_', '')})</option><option value="UTC_DAY">UTC day</option><option value="UTC_WEEK">UTC week</option><option value="UTC_MONTH">UTC month</option><option value="VISIBLE">Loaded history</option></select></label>}<span className="hidden rounded bg-[#090f18]/90 px-1.5 py-1 text-zinc-500 lg:inline">Source: {dataMode === 'LIVE' ? 'Binance aggressor volume · bar precision' : 'demo fixture'}</span></div><div className="pointer-events-auto flex items-center gap-2 rounded bg-[#090f18]/90 px-1"><span className={cn('rounded border px-1.5 py-0.5', dataMode === 'LIVE' && marketFeed.state === 'LIVE' ? 'border-emerald-400/35 text-emerald-300' : 'border-sky-400/35 text-sky-300')}>{dataMode === 'LIVE' ? marketFeed.state : 'SHADOW DATA'}</span><span className="rounded border border-emerald-400/35 px-1.5 py-0.5 text-emerald-300">{dataMode === 'LIVE' ? `${marketFeed.historyBarCount.toLocaleString()} / ${marketFeed.historyTarget.toLocaleString()} bars` : 'Coverage 96%'}</span><button type="button" aria-label="Reset chart view and objects" onClick={resetChartViewAndObjects} className="rounded p-1 text-zinc-500 hover:bg-white/5 hover:text-zinc-200"><RotateCcw className="size-3.5" /></button></div></div>
-                </div>
-            </>}
-            <div className="flex h-9 shrink-0 items-stretch border-t border-[#263346] bg-[#080d14] px-1 pb-[env(safe-area-inset-bottom)]" role="tablist" aria-label="Order-flow studies" data-position="workspace-bottom" data-testid="order-flow-tabs">
-                {(['CVD', 'DELTA', 'BOOK', 'LIQUIDITY'] as const).map((study) => <button
-                    key={study}
-                    type="button"
-                    role="tab"
-                    aria-selected={studyPaneOpen && activeOrderFlowStudy === study}
-                    onClick={() => { setActiveOrderFlowStudy(study); setStudyPaneOpen(true); }}
-                    className={cn('min-w-20 border-t-2 border-transparent px-3 text-[10px] font-semibold capitalize text-zinc-500 hover:text-zinc-200', studyPaneOpen && activeOrderFlowStudy === study && 'border-sky-400 bg-sky-400/[0.06] text-sky-200')}
-                >{study === 'CVD' ? 'CVD' : study.charAt(0) + study.slice(1).toLowerCase()}</button>)}
-                <span className="ml-auto self-center px-2 font-mono text-[9px] tabular-nums text-zinc-600">{dataMode === 'LIVE' ? `${marketFeed.historyBarCount.toLocaleString()} bars${marketFeed.historyLoading ? ' · loading history' : ''}` : 'demo series'}</span>
-            </div>
+            {studyPaneOpen && (
+                <LowerStudyPane
+                    orderFlowPaneRef={orderFlowPaneRef}
+                    cvdHostRef={cvdHostRef}
+                    deltaHostRef={deltaHostRef}
+                    activeStudy={activeOrderFlowStudy}
+                    dataMode={dataMode}
+                    marketFeed={marketFeed}
+                    liquidityLevels={liquidityLevels}
+                    lastCvd={lastCvd}
+                    lastDelta={lastDelta}
+                    cvdAnchor={cvdAnchor}
+                    resolvedCvdAnchor={resolvedCvdAnchor}
+                    cvdResetMarkers={cvdResetMarkers}
+                    paneHeight={studyPaneHeight}
+                    maxPaneHeight={STUDY_PANE_MAX_HEIGHT}
+                    onCvdAnchorChange={setCvdAnchor}
+                    onResizeHeight={handleResizeStudyPane}
+                    onResetChartAndObjects={resetChartViewAndObjects}
+                />
+            )}
+
+            <LowerStudyDock
+                activeStudy={activeOrderFlowStudy}
+                studyPaneOpen={studyPaneOpen}
+                dataMode={dataMode}
+                historyBarCount={marketFeed.historyBarCount}
+                historyLoading={marketFeed.historyLoading}
+                onSelectStudy={setActiveOrderFlowStudy}
+                onToggleOpen={setStudyPaneOpen}
+            />
         </div>
     );
 }
