@@ -1,8 +1,8 @@
 # UI/UX Technical Stack
 
-Version: 1.2
+Version: 1.3
 Status: IMPLEMENTED AND VERIFIED
-Last updated: 2026-10-22
+Last updated: 2026-10-23
 
 ## 1. Stack Strategy
 
@@ -306,3 +306,13 @@ No package should be added to `package.json` until this spike is approved.
 - Do not calculate order flow in the UI.
 - Do not use WebGL for menus, text controls, or accessibility-critical interface elements.
 - Do not introduce a second global state library.
+
+## 13. UX13 Drawing and Linked-Pane Architecture
+
+- Main-price and CVD/Delta charts remain separate long-lived Lightweight Charts instances, synchronized through `setVisibleLogicalRange`, `setCrosshairPosition`, and `clearCrosshairPosition`.
+- The main time axis is hidden while a time-series order-flow pane is open; the lower pane owns the shared bottom time axis.
+- Drawing anchors are stored as `{ time, price }`, never viewport percentages, so they remain attached to candles and prices during pan, zoom, resize, and live updates.
+- Drawing interaction is a small state machine: create/preview, select, drag body, drag anchor, lock, delete, and restore.
+- SVG supplies visible shapes and enlarged transparent hit targets; accessible DOM controls supply lock, delete, and undo actions.
+- Deletion is reversible through the visible Undo action and `Ctrl/Cmd+Z`; `Delete` and `Backspace` remove the selected object and `Escape` cancels/deselects.
+- No third-party drawing package was added. The implementation adapts interaction principles from primary open-source references while retaining the existing rendering stack and license boundary.

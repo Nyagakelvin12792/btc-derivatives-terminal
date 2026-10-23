@@ -1,13 +1,13 @@
 # UI/UX Overhaul Progress
 
-Version: 3.1
-Last updated: 2026-10-22
-Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8 and UX10–UX12 COMPLETE; UX9 awaits Architect acceptance
+Version: 3.2
+Last updated: 2026-10-23
+Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE + DRAWING REPAIR IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
+Current checkpoint: UX0–UX8 and UX10–UX13 COMPLETE; UX9 awaits Architect acceptance
 
 ## Scope Statement
 
-UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 connected public Binance Spot data and made the existing Deribit DTE controls functional. UX12 repaired viewport persistence and brought Fixed Range VP interaction/calculation closer to TradingView using bounded Binance intrabars. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
+UX0–UX10 covered the presentation and interaction layer described in [PROJECT_PLAN.md](./PROJECT_PLAN.md). UX11 connected public Binance Spot data and made the existing Deribit DTE controls functional. UX12 repaired viewport persistence and brought Fixed Range VP interaction/calculation closer to TradingView using bounded Binance intrabars. UX13 removed the price-volume histogram, linked the price and time-based order-flow panes, moved study tabs below the pane, and replaced percentage drawings with time/price-anchored editable objects. Derivatives formulas, terrain mathematics, decision engines, broker integration, and execution remain outside scope.
 
 ## Current Baseline
 
@@ -51,6 +51,7 @@ Observed UI limitations:
 | UX10 — Approved-style parity | COMPLETE | Market header, drawing tools, wall hierarchy, dual gamma zones, VP levels, AVWAP bands, CVD controls, inspector metrics, provenance and status footer implemented |
 | UX11 — Live market integration | COMPLETE | Validated Binance REST/WebSocket contract, live lower panes, functional Deribit DTE horizons, explicit stale/offline handling, no demo substitution in LIVE |
 | UX12 — Chart navigation and VP repair | COMPLETE | Persistent chart instance, viewport-preserving live updates, pannable overlay, 120-bar default, bounded 1s–1d intrabars, denser row allocation, and TradingView POC/VA rules |
+| UX13 — Linked pane and drawing repair | COMPLETE | Price-volume histogram removed; order-flow tabs moved below; price/CVD/Delta ranges and crosshairs synchronized; data-anchored drawings selectable, draggable, lockable, deletable, and restorable |
 
 ## UX0 Evidence
 
@@ -197,3 +198,12 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Added bounded Binance intrabar selection from 1 second through 1 day with a hard 5,000-bar ceiling and explicit stale fallback to chart bars.
 - Updated row allocation, up/down classification, POC, and value-area expansion to follow the documented TradingView methodology as closely as the available Binance kline data permits.
 - Added a browser regression that pans the chart, changes VP range/settings, and verifies that the chart instance and viewport do not reset.
+
+### 2026-10-23 — UX13 linked lower pane and drawing-object repair
+
+- Removed the price-volume histogram and its layer toggle while preserving volume data for CVD, Delta, and Fixed Range VP calculations.
+- Moved CVD, Delta, Book, and Liquidity tabs below the lower pane and moved pane metadata into a compact overlay.
+- Synchronized the visible logical range and native crosshair between the main price chart and CVD/Delta charts using Lightweight Charts APIs.
+- Replaced screen-percentage drawings with `{ time, price }` anchors that remain attached during pan, zoom, resize, and streaming updates.
+- Added live two-point preview, OHLC-proximity snapping, selectable hit regions, visible anchors, whole-object movement, endpoint movement, per-object locking, Delete/Backspace removal, Escape cancellation, and reversible Undo.
+- Added browser regressions for pane/tab geometry, crosshair synchronization, volume removal, drawing creation, movement, deletion, and restoration.

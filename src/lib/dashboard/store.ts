@@ -70,7 +70,6 @@ export interface TerminalState {
         maxPain: boolean;
         volumeProfile: boolean;
         avwap: boolean;
-        volume: boolean;
     };
     toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
     resetWorkspaceUi: () => void;
@@ -84,7 +83,6 @@ const defaultChartLayers = {
     maxPain: true,
     volumeProfile: true,
     avwap: true,
-    volume: true,
 };
 
 export const useTerminalStore = create<TerminalState>()(persist((set) => ({

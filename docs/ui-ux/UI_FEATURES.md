@@ -1,8 +1,8 @@
 # Sourced UI Feature Matrix
 
-Version: 1.1
+Version: 1.2
 Status: RESEARCH APPLIED — UI IMPLEMENTED
-Last updated: 2026-10-22
+Last updated: 2026-10-23
 
 ## 1. Research Method
 
@@ -23,6 +23,11 @@ Research rules:
 | OpenTerminalUI | `Ctrl+K` command palette and `Ctrl+G`-style navigation | Global command palette for symbols, workspaces, layers, studies, and settings | Use one `Ctrl+K` surface to avoid shortcut overload; no AI query execution in this UI milestone | UX7 |
 | OpenTerminalUI | Grouped, collapsible navigation rail | Compact workspace rail for Chart, 3D Surface, GEX, Vanna, Charm, and OI | Default collapsed; preserve direct keyboard access | UX1 |
 | OpenTerminalUI | Provenance chips and provider status row | `LIVE`, `DEMO`, `SHADOW`, `STALE`, `UNAVAILABLE` badges and bottom health bar | Never infer provider health from route existence; render known state only | UX1/UX3 |
+| TradingView Lightweight Charts plugin examples | Series primitives, rectangle/trend-line examples, hit targets, and scale-bound coordinates | Time/price-anchored trend, horizontal, vertical, rectangle, text, and position drawings | Interaction concepts only; no example source copied and no hosted TradingView library embedded | UX13 |
+| TradingView Lightweight Charts crosshair guide | Programmatic crosshair and logical-range synchronization between charts | Price and CVD/Delta panes share the visible time range and aligned native crosshair | Guard re-entrant updates; Book/Liquidity remain non-time-series panels | UX13 |
+| KLineChart overlays | Step-based creation, selected control points, magnet sensitivity, drag lifecycle, locking, and removal by object ID | Two-point preview, OHLC proximity snap, selected anchors, body/anchor drag, lock, delete, Undo | Reimplemented for the existing Lightweight Charts/React stack; no KLineChart runtime or code imported | UX13 |
+| wickchart-draw | Data-coordinate persistence, select mode, body/anchor movement, Delete/Escape, serialization-oriented object model | Chart-coordinate drawings with pointer hit regions, keyboard deletion, Escape cancellation, and reversible removal | Used as workflow reference only; no dependency or source imported | UX13 |
+| lightweight-charts-drawing | Drawing manager concepts: stable IDs, selection, explicit removal, and exportable object data | Stable per-drawing IDs and independent object selection/control toolbar | Limited to the currently approved tool set; no 80+ tool expansion | UX13 |
 | OpenTerminalUI | Synchronized multi-panel workstation | Link groups for chart, options inspector, 3D surface, and tables | Begin with one primary chart and optional panes; do not default to a nine-panel wall | UX7 |
 | OpenTerminalUI | Saved views and launchpad workspaces | Named workspace presets | Keep presets task-based: Market Structure, Options, Order Flow, 3D Surface, Review | UX7 |
 | TanukiTrade | Options metrics shown directly on the technical chart | Chart-native walls, Gamma Flip, Max Pain, GEX/OI overlays | Deribit/BTC data only; no mapped equity/ETF proxy substitution | UX3 |

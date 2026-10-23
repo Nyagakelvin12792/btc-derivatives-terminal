@@ -1,8 +1,8 @@
 # Bitcoin Derivatives Terminal UI/UX Overhaul Plan
 
-Version: 1.2
-Status: UI + AUTHORIZED LIVE MARKET INTEGRATION COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
-Last updated: 2026-10-22
+Version: 1.3
+Status: UI + AUTHORIZED LIVE MARKET INTEGRATION + DRAWING REPAIR COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
+Last updated: 2026-10-23
 Scope owner: Antigravity / Gemini (Builder & Visual Engine)  
 Review owners: Architect (product and derivatives semantics), Codex (type safety, security, and boundary review)
 
@@ -26,9 +26,13 @@ After the UI-only milestone, the user explicitly requested live, accurate data. 
 
 The user subsequently authorized a focused UX12 repair after reporting that live updates reset the chart viewport and the Fixed Range VP was buggy and limited. UX12 may preserve the chart instance across market updates, bind VP coordinates to chart bars, refine presentation-layer VP binning/value-area behavior, and request bounded Binance intrabars for profile precision. It does not change derivatives, decision, terrain, broker, or execution engines.
 
+### 1.3 Linked lower pane and drawing-object correction addendum
+
+The user authorized UX13 to remove the price-volume histogram, place the CVD/Delta/Book/Liquidity tabs below their pane, synchronize price and time-based order-flow crosshairs, and replace viewport-percentage drawings with real time/price-anchored objects. UX13 includes selection, visible anchors, body and anchor movement, locking, keyboard removal, and reversible deletion. It does not add indicators, alter market calculations, or introduce execution behavior.
+
 ## 2. Hard Scope Boundary
 
-UX0–UX10 are UI/UX only. UX11 and UX12 are limited to the public market-data boundaries and chart/VP repairs described above.
+UX0–UX10 and UX13 are UI/UX only. UX11 and UX12 are limited to the public market-data boundaries and chart/VP repairs described above.
 
 ### Allowed
 

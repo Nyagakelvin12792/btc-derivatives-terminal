@@ -94,3 +94,66 @@ test('preserves the panned chart viewport while editing a full-range volume prof
     await expect(chart).toHaveAttribute('data-chart-generation', '1');
     await expect(chart).toHaveAttribute('data-visible-from', pannedFrom!);
 });
+
+test('uses a continuous synchronized order-flow pane with bottom tabs and no price-volume panel', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop linked-pane geometry check');
+
+    const chart = page.getByRole('group', { name: 'Demo BTC price chart with options structure overlays' });
+    const pane = page.getByTestId('order-flow-pane');
+    const tabs = page.getByRole('tablist', { name: 'Order-flow studies' });
+    await expect(chart).toHaveAttribute('data-volume-panel', 'hidden');
+    await expect(pane).toHaveAttribute('data-crosshair-sync', 'native');
+    await expect(tabs).toHaveAttribute('data-position', 'bottom');
+
+    const paneBox = await pane.boundingBox();
+    const tabsBox = await tabs.boundingBox();
+    expect(paneBox).not.toBeNull();
+    expect(tabsBox).not.toBeNull();
+    expect(tabsBox!.y).toBeGreaterThanOrEqual(paneBox!.y + paneBox!.height - 1);
+
+    const chartBox = await chart.boundingBox();
+    expect(chartBox).not.toBeNull();
+    await page.mouse.move(chartBox!.x + chartBox!.width * 0.55, chartBox!.y + chartBox!.height * 0.45);
+    await expect.poll(() => chart.getAttribute('data-crosshair-time')).not.toBe('');
+    const chartTime = await chart.getAttribute('data-crosshair-time');
+    await expect(pane).toHaveAttribute('data-crosshair-time', chartTime!);
+
+    await page.getByRole('button', { name: 'Layers', exact: true }).click();
+    await expect(page.getByText('Volume', { exact: true })).toHaveCount(0);
+    await page.keyboard.press('Escape');
+});
+
+test('creates, moves, deletes, and restores data-anchored chart drawings', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop drawing interaction check');
+
+    const chart = page.getByRole('group', { name: 'Demo BTC price chart with options structure overlays' });
+    const chartBox = await chart.boundingBox();
+    expect(chartBox).not.toBeNull();
+
+    await page.getByRole('button', { name: 'Draw', exact: true }).click();
+    await page.mouse.click(chartBox!.x + 250, chartBox!.y + 170);
+    await page.mouse.move(chartBox!.x + 430, chartBox!.y + 250);
+    await page.mouse.click(chartBox!.x + 430, chartBox!.y + 250);
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+    await expect(page.getByRole('toolbar', { name: 'Drawing controls' })).toBeVisible();
+
+    const drawing = chart.locator('[data-drawing-id]').first();
+    const initialTime = await drawing.getAttribute('data-start-time');
+    const drawingBox = await drawing.boundingBox();
+    expect(drawingBox).not.toBeNull();
+    await page.mouse.move(drawingBox!.x + drawingBox!.width / 2, drawingBox!.y + drawingBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(drawingBox!.x + drawingBox!.width / 2 + 90, drawingBox!.y + drawingBox!.height / 2, { steps: 6 });
+    await page.mouse.up();
+    await expect.poll(() => drawing.getAttribute('data-start-time')).not.toBe(initialTime);
+
+    await page.getByRole('button', { name: 'Delete selected drawing' }).click();
+    await expect(chart).toHaveAttribute('data-drawing-count', '0');
+    await page.getByRole('button', { name: 'Undo', exact: true }).click();
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+
+    await page.keyboard.press('Delete');
+    await expect(chart).toHaveAttribute('data-drawing-count', '0');
+    await page.keyboard.press('Control+z');
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+});
