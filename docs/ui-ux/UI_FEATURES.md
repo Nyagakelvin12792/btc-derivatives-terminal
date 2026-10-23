@@ -1,6 +1,6 @@
 # Sourced UI Feature Matrix
 
-Version: 1.3
+Version: 1.4
 Status: RESEARCH APPLIED — UI IMPLEMENTED
 Last updated: 2026-10-23
 
@@ -29,6 +29,15 @@ Research rules:
 | wickchart-draw | Data-coordinate persistence, select mode, body/anchor movement, Delete/Escape, serialization-oriented object model | Chart-coordinate drawings with pointer hit regions, keyboard deletion, Escape cancellation, and reversible removal | Used as workflow reference only; no dependency or source imported | UX13 |
 | lightweight-charts-drawing | Drawing manager concepts: stable IDs, selection, explicit removal, and exportable object data | Stable per-drawing IDs and independent object selection/control toolbar | Limited to the currently approved tool set; no 80+ tool expansion | UX13 |
 | TradingView public web chart, observed through Reverse Engineer Anything | Public control hierarchy: chart toolbar, left drawing rail, magnet/keep-drawing/lock/hide/remove actions, and bottom time controls | Persistent bottom flow dock, explicit drawing lifecycle, and chart-first control grouping are checked against the public interaction model | Clean-room accessibility observation only; no scripts, network payloads, storage, proprietary source, private endpoints, assets, or branding copied | UX14 |
+| TradingView Long/Short Position documentation | Three-line position geometry, account/risk inputs, quantity caps, R multiple, and compact labels | Original deterministic Long/Short objects and shared Risk terminal model | Formula behavior from public documentation; no order entry, branding, or proprietary code | UX15.2 |
+| TradingView Fibonacci documentation | Two-anchor retracement, custom levels, reverse/extend, labels, and opacity | Fibonacci tool in the single left drawing rail | Public documented behavior only; original rendering and state model | UX15.1 |
+| TradingView Auto Anchored VWAP documentation | Session/timeframe anchors plus high/low/volume-based anchor selection | Deterministic ranked AVWAP candidates with rationale and manual override | No claim that one anchor predicts reversal; no copied script | UX15.3 |
+| TradingView Volume Footprint documentation | Bid/ask cells, POC, diagonal imbalance, and stacked imbalance concepts | Optional footprint/imbalance mode backed by classified trades | Coverage boundary is explicit; no reconstruction from ordinary candles | UX15.5 |
+| Lightweight Charts | Series primitives and custom series tied to chart scales | Heatmap, footprint, drawing, and overlay rendering in the existing engine | Official open-source API only; not the proprietary Charting Library | UX15.1–UX15.5 |
+| KLineChart | Overlay control-point lifecycle and built-in Fibonacci interaction patterns | Reference for selection, handles, and edit lifecycle | Apache-2.0 concepts reviewed; no second chart runtime added | UX15.1 |
+| VisualHFT | Normalized L2/trade connectors separated from microstructure studies | Book reconstruction and study boundary | Apache-2.0 architecture reference; WPF UI is not ported | UX15.4–UX15.5 |
+| Binance Spot WebSocket documentation | Ordered diff-depth and aggregate-trade contracts | Authoritative live inputs for local book and footprint aggregation | Gap resync, freshness, and venue provenance are mandatory | UX15.4–UX15.5 |
+| Reverse Engineer Anything | Restricted public browser-scenario capture | Acceptance evidence for visible drawing and study mechanics | No source, private API, headers, storage, credentials, or circumvention | UX15 |
 | OpenTerminalUI | Synchronized multi-panel workstation | Link groups for chart, options inspector, 3D surface, and tables | Begin with one primary chart and optional panes; do not default to a nine-panel wall | UX7 |
 | OpenTerminalUI | Saved views and launchpad workspaces | Named workspace presets | Keep presets task-based: Market Structure, Options, Order Flow, 3D Surface, Review | UX7 |
 | TanukiTrade | Options metrics shown directly on the technical chart | Chart-native walls, Gamma Flip, Max Pain, GEX/OI overlays | Deribit/BTC data only; no mapped equity/ETF proxy substitution | UX3 |

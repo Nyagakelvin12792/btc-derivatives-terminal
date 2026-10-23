@@ -1,6 +1,6 @@
 # Bitcoin Derivatives Terminal UI/UX Overhaul Plan
 
-Version: 1.4
+Version: 1.5
 Status: UI + AUTHORIZED LIVE MARKET INTEGRATION + HISTORY/FLOW REPAIR COMPLETE — INDEPENDENT RELEASE REVIEW REQUIRED
 Last updated: 2026-10-23
 Scope owner: Antigravity / Gemini (Builder & Visual Engine)  
@@ -33,6 +33,10 @@ The user authorized UX13 to remove the price-volume histogram, place the CVD/Del
 ### 1.4 Persistent flow dock and deep-history correction addendum
 
 The user authorized UX14 after the deployed preview did not keep the lower CVD/Delta/Book/Liquidity controls visible and loaded too little candle history. UX14 keeps the lower control dock mounted even when its pane is collapsed, paginates the validated public Binance candle boundary to a 10,000-bar target, opens on a useful recent window, and gives bar-level CVD explicit UTC day/week/month reset anchors. Public TradingView behavior was observed through a clean-room accessibility capture; no proprietary source, private endpoint, asset, or stored browser data was collected.
+
+### 1.5 Professional chart interaction and decision-support addendum
+
+UX15 responds to the verified Liquidity-pane overflow, persistent drawing toolbar, duplicated drawing controls, and the need for a collapsible lower pane. It then stages Fibonacci, Long/Short risk objects, a deterministic Risk terminal, 1,000-source-bar VP controls, smart AVWAP suggestions, sequence-safe liquidity heatmaps, footprint imbalances, and Jev shadow confluence support. The complete implementation and acceptance plan is maintained in [UX15_IMPLEMENTATION_PLAN.md](./UX15_IMPLEMENTATION_PLAN.md).
 
 ## 2. Hard Scope Boundary
 
@@ -264,6 +268,7 @@ Changing a filter may only select or hide existing data. It must not recalculate
 | UX9 | Independent review and release handoff | Architect acceptance; Gemini handoff; zero backend diff |
 | UX10–UX13 | Approved-style parity, live public data, VP/navigation, and drawing repair | Typed route/unit gates, browser interaction evidence, screenshots, and release handoff |
 | UX14 | Persistent lower dock, 10,000-bar history, anchored CVD resets | Dock collapse/reopen regression; 10-page live history smoke; useful initial viewport; clean-room comparison record |
+| UX15 | Professional chart interaction, microstructure visualization, and Jev shadow guidance | Staged acceptance gates in `UX15_IMPLEMENTATION_PLAN.md`; no-live-execution and provenance audit |
 
 ## 8. Milestone Detail
 

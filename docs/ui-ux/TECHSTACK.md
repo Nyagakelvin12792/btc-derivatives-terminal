@@ -1,6 +1,6 @@
 # UI/UX Technical Stack
 
-Version: 1.3
+Version: 1.4
 Status: IMPLEMENTED AND VERIFIED
 Last updated: 2026-10-23
 
@@ -326,3 +326,17 @@ No package should be added to `package.json` until this spike is approved.
 - CVD anchor choices are visible range, UTC day, UTC week, UTC month, and automatic. Automatic maps intraday charts to UTC day, 4-hour charts to UTC week, and daily charts to UTC month.
 - CVD is derived from Binance kline taker-buy volume and therefore has bar precision, not tick-by-tick trade-classification precision. The interface names that provenance and does not claim exact TradingView server-side data parity.
 - Reverse Engineer Anything was used only as a controlled browser for public accessibility-tree observation. Capture excluded scripts, network bodies/headers, browser storage, and secrets; the resulting interaction inventory is design evidence, not copied implementation.
+
+## 15. UX15 Professional Chart Architecture
+
+- Retain Lightweight Charts and extend it through primitives/custom series; do not add a second full chart engine.
+- Model drawings as semantic time/price objects with a single left-rail creation surface and explicit idle/create/select/move/resize/lock/delete/restore states.
+- Keep the bottom study dock mounted independently from the collapsible and resizable study content pane.
+- Share one deterministic Long/Short risk model between chart objects and the Risk terminal.
+- Separate VP source-bar range (up to 1,000) from profile row resolution and perform heavier recomputation in a worker.
+- Rank AVWAP anchors deterministically and expose reasons plus manual override.
+- Reconstruct L2 from snapshot plus ordered diff-depth events; resynchronize on every sequence gap.
+- Aggregate classified trades into footprint cells and never infer exact historical footprint from OHLCV.
+- Keep high-frequency book/trade state in bounded worker-owned buffers rather than React render state.
+- Route Jev through a server-only, schema-validated, rate-limited shadow adapter. Jev receives a bounded feature packet and has no execution authority.
+- Detailed stages, acceptance criteria, and source boundaries are defined in [UX15_IMPLEMENTATION_PLAN.md](./UX15_IMPLEMENTATION_PLAN.md).

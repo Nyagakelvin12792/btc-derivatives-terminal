@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.3
+Version: 3.4
 Last updated: 2026-10-23
 Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE + HISTORY/FLOW REPAIR IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8 and UX10–UX14 COMPLETE; UX9 awaits Architect acceptance
+Current checkpoint: UX0–UX8 and UX10–UX14 COMPLETE; UX15 PLANNED; UX9 and completed branch work await Architect acceptance
 
 ## Scope Statement
 
@@ -53,6 +53,7 @@ Observed UI limitations:
 | UX12 — Chart navigation and VP repair | COMPLETE | Persistent chart instance, viewport-preserving live updates, pannable overlay, 120-bar default, bounded 1s–1d intrabars, denser row allocation, and TradingView POC/VA rules |
 | UX13 — Linked pane and drawing repair | COMPLETE | Price-volume histogram removed; order-flow tabs moved below; price/CVD/Delta ranges and crosshairs synchronized; data-anchored drawings selectable, draggable, lockable, deletable, and restorable |
 | UX14 — Persistent flow dock and deep history | COMPLETE | Lower tabs remain visible while collapsed; clicking a tab reopens its pane; 10,000-bar paginated history; useful recent viewport; UTC day/week/month CVD anchors |
+| UX15 — Professional chart interaction and decision support | PLANNED | Six staged releases: defects/collapse; drawing/Fib; Long/Short/Risk; VP/AVWAP; heatmap/footprint; deterministic confluence/Jev shadow |
 
 ## UX0 Evidence
 
@@ -130,10 +131,13 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 
 ## Next Authorized Work
 
-1. Architect performs UX9 acceptance using the stored screenshots, tests, route contracts, and live smoke evidence.
-2. Review and merge the production-verified UX14 commits into `main`; the user-authorized production deployment is already `READY` at `https://btc-terminal-codex.vercel.app`.
-3. Define a typed Jev response contract and historical IV store before enabling Jev opinions or IV Rank.
-4. Define a full-chain split call/put OI contract before enabling the inspector's OI wall display.
+1. Implement UX15.0 only: repair Liquidity layout, make the lower pane explicitly collapsible while retaining the bottom dock, correct drawing selection dismissal, and remove the duplicate drawing surface.
+2. Obtain browser and Architect acceptance for UX15.0 before starting the later chart-tool and market-data stages.
+3. Follow the staged plan in [UX15_IMPLEMENTATION_PLAN.md](./UX15_IMPLEMENTATION_PLAN.md); do not combine the heatmap, footprint, and Jev work into the defect-fix release.
+
+4. Architect performs UX9 acceptance and reviews the production-verified UX14 commits for merge to `main`.
+5. Define the typed Jev shadow contract described in UX15.6 before enabling any Jev opinion.
+6. Define a historical IV store and full-chain split call/put OI contract before enabling IV Rank or OI-wall claims.
 
 ## Required Handoff Evidence Per Milestone
 
