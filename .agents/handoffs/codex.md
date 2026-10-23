@@ -3,45 +3,40 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: f4b06f2
->>> TESTS: PASS — Vitest 14 files/77 tests; targeted ESLint and TypeScript clean; Next.js 16.4.2 production build; Playwright 8 passed/4 intentional mobile-only skips; desktop/mobile axe clean
+>>> COMMIT: 4b5c8cb
+>>> TESTS: PASS — Vitest 15 files/81 tests; targeted ESLint and TypeScript clean; Next.js 16.4.2 production build; Playwright 8 passed/4 intentional mobile-only skips; live 10-page/10,000-bar smoke passed
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review UX13 volume removal, linked-pane/crosshair behavior, drawing lifecycle, research provenance, and preserved no-live-execution boundary; approve preview/merge or return specific defects
->>> TARGET: src/components/terminal/ChartDrawingLayer.tsx, src/components/terminal/MarketStructureChart.tsx, src/components/terminal/MarketTerminal.tsx, src/lib/dashboard/store.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/, .artifacts/ui-overhaul/
+>>> ACTION REQUIRED: Review UX14 persistent lower dock, paginated Binance history, CVD reset semantics, clean-room comparison boundary, and production verification; approve merge or return specific defects
+>>> TARGET: src/components/terminal/MarketStructureChart.tsx, src/lib/binance/, src/app/api/binance/history/, tests/ui/market-terminal.pw.ts, docs/ui-ux/
 
 ## Delivered
 
-- Removed the price-chart volume histogram and removed its Layers toggle while preserving the underlying volume data consumed by CVD, Delta, and Fixed Range VP.
-- Moved the CVD, Delta, Book, and Liquidity tabs below the order-flow pane.
-- Placed order-flow metadata inside the lower pane so there is no separate toolbar row between price and CVD/Delta.
-- Synchronized price and CVD/Delta visible logical ranges in both directions.
-- Synchronized native Lightweight Charts crosshairs between price and CVD/Delta in both directions and moved the shared time axis to the lower time-series pane.
-- Replaced screen-percentage drawings with stable `{ time, price }` anchors that remain attached through pan, zoom, resize, and streaming updates.
-- Added two-point live preview, eight-pixel OHLC proximity snapping, enlarged hit regions, selection handles, body movement, individual-anchor movement, and per-object locking.
-- Added reliable deletion from the selected-object toolbar and with Delete/Backspace, Escape cancellation/deselection, and reversible Undo through the visible action or Ctrl/Cmd+Z.
-- Documented the applied patterns from TradingView Lightweight Charts, KLineChart, wickchart-draw, and lightweight-charts-drawing without importing third-party code or adding a dependency.
+- Kept the CVD, Delta, Book, and Liquidity tablist visible at the bottom of the workspace even when the lower study pane is collapsed.
+- Made every lower tab restore the pane and select its corresponding study.
+- Increased the current Binance snapshot to the provider's 1,000-bar page limit.
+- Added a validated backward-pagination route and a TanStack Query history cache targeting 10,000 candles.
+- Merged historical pages, the current snapshot, and streaming bars by timestamp without introducing synthetic market data.
+- Kept the full history navigable while opening on roughly 180 recent bars to avoid compressing the active market view.
+- Added visible-range, UTC day, UTC week, UTC month, and automatic CVD anchor/reset modes with real reset dividers.
+- Recorded the public TradingView control hierarchy through a restricted Reverse Engineer Anything accessibility capture. No source scripts, private APIs, request bodies, headers, browser storage, credentials, assets, or branding were collected.
 
 ## Verification Evidence
 
-- `npx.cmd vitest run`: PASS — 14 files, 77 tests.
+- `npx.cmd vitest run`: PASS — 15 files, 81 tests.
 - Targeted ESLint: PASS — no errors or warnings.
 - `npx.cmd tsc --noEmit`: PASS.
-- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation and TypeScript validation.
-- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 8 passed, 4 intentional mobile skips for desktop-only pointer-density checks.
-- Automated accessibility: PASS — no serious or critical desktop/mobile violations.
-- Browser regression proves the order-flow tablist is below its pane, the price-volume series is absent, and price/lower-pane crosshair timestamps match.
-- Browser regression creates and moves a time/price-anchored trend line, deletes it through the toolbar, restores it, deletes it with the keyboard, and restores it with Ctrl+Z.
-- Visual evidence: `.artifacts/ui-overhaul/market-structure-desktop-16x9.png` and `.artifacts/ui-overhaul/market-structure-mobile.png`.
-- Vercel Preview `dpl_H3XPqPKRjvKcXegz6p557WLoqfxq` reached `READY` at `https://btc-terminal-codex-nhbn4czfw-kelvin12792.vercel.app`.
-- Deployed interaction smoke confirmed: volume panel `hidden`; time-axis owner `lower-pane`; lower tabs below pane; price/CVD crosshair timestamps matched; drawing delete/restore produced `0 → 1`.
-- Deployed live-data smoke: terminal HTTP 200; Binance returned `LIVE`, `BINANCE_SPOT`, and 240 hourly candles.
-- Deployed visual evidence: `.artifacts/ui-overhaul/market-structure-preview-ux13-1664x936.png` (local verification artifact, intentionally not committed).
+- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation, TypeScript validation, and `/api/binance/history` route collection.
+- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 8 passed, 4 intentional mobile skips.
+- Browser regression collapses the study pane, proves the bottom tablist remains visible, and proves selecting Delta restores the pane.
+- Live history smoke: PASS — 10 pages, 10,000 unique hourly candles, valid backward cursor.
+- Live browser smoke: PASS — `10,000 / 10,000 bars`; initial logical view contains approximately 196 recent bars; lower dock is visible.
+- Clean-room observation evidence: `ev_91c81f4e2da34668aad77fce2c17c7d0b8d625c98e2e2b17376ebbe0b6ce07bc`.
+- Local visual evidence: `.artifacts/ui-overhaul/market-structure-live-10000-1664x936.png` (intentionally uncommitted).
 
 ## Explicit Boundaries
 
-- The change is confined to UI state, presentation, browser tests, screenshots, and UI documentation; no API, Deribit, quant, terrain, decision, or execution engine was changed.
-- Drawings currently support the approved trend, horizontal, vertical, rectangle, text, long-position, and short-position set; Fibonacci, rays, channels, object tree, persistence, and style editing remain separate future scope.
-- Book and Liquidity are non-time-series panels and therefore do not receive a time crosshair; CVD and Delta do.
-- Removal is reversible in the current session but drawings are not yet serialized into saved layouts.
+- The only new server boundary is a read-only, validated proxy for public Binance kline history. Deribit normalization, quant, terrain, options-wall, decision, Jev, broker, and execution engines were not changed.
+- CVD uses Binance kline taker-buy volume and is bar-precision, not an exact tick-by-tick replica of TradingView's server-side feed.
+- The separate Lightweight Charts price and CVD/Delta instances are synchronized, but are not the proprietary TradingView Charting Library.
 - No live-order execution was introduced; Long and Short remain chart measurements only.
-- Architect review is required before merge to `main`.
+- Production promotion is user-authorized, while merge to `main` remains subject to Architect review under `AGENTS.md`.
