@@ -3,43 +3,41 @@
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ui-approved-parity
->>> COMMIT: 1a28139
->>> TESTS: PASS — Vitest 14 files/77 tests; targeted ESLint clean; Next.js 16.4.2 production build; Playwright 6 passed/2 intentional mobile skips; axe clean; live 1,440-intrabar profile smoke passed
+>>> COMMIT: e440af5
+>>> TESTS: PASS — Vitest 14 files/77 tests; targeted ESLint and TypeScript clean; Next.js 16.4.2 production build; Playwright 8 passed/4 intentional mobile-only skips; desktop/mobile axe clean
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review UX12 viewport persistence, Fixed Range Volume Profile methodology, and preserved no-live-execution boundary; approve preview/merge or return specific defects
->>> TARGET: src/components/terminal/MarketStructureChart.tsx, src/lib/ui/market-fixtures.ts, src/app/api/binance/volume-profile/, src/lib/binance/volume-profile.ts, src/lib/binance/use-volume-profile.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/
+>>> ACTION REQUIRED: Review UX13 volume removal, linked-pane/crosshair behavior, drawing lifecycle, research provenance, and preserved no-live-execution boundary; approve preview/merge or return specific defects
+>>> TARGET: src/components/terminal/ChartDrawingLayer.tsx, src/components/terminal/MarketStructureChart.tsx, src/components/terminal/MarketTerminal.tsx, src/lib/dashboard/store.ts, tests/ui/market-terminal.pw.ts, docs/ui-ux/, .artifacts/ui-overhaul/
 
 ## Delivered
 
-- Stopped the main chart from being destroyed and recreated when candles, walls, AVWAP, or volume-profile inputs update.
-- Preserved the user-selected viewport while panning or zooming and retained right-edge following only while the user is already at the live edge.
-- Kept `fitContent()` for intentional context changes and the explicit reset action rather than background data updates.
-- Rebuilt Fixed Range Volume Profile selection around actual chart time coordinates with draggable start/end handles and a movable profile label.
-- Added profile controls for 24/48/72/100 rows, Total/Up-Down/Delta display, left/right placement, width, value-area percentage, visible/all-loaded range, and extend-right behavior.
-- Distributed intrabar volume across every overlapped price row and calculated POC/VAH/VAL using TradingView-documented value-area expansion and tie behavior.
-- Added a bounded Binance intrabar endpoint that selects the finest supported interval within a hard 5,000-bar ceiling, with explicit live-source failures and no demo substitution.
-- Added panning regression coverage proving profile-setting changes do not recreate the chart or reset its visible logical range.
-- Updated the UX12 plan, progress, technical-stack, feature-provenance documents, and desktop/mobile/live screenshots.
+- Removed the price-chart volume histogram and removed its Layers toggle while preserving the underlying volume data consumed by CVD, Delta, and Fixed Range VP.
+- Moved the CVD, Delta, Book, and Liquidity tabs below the order-flow pane.
+- Placed order-flow metadata inside the lower pane so there is no separate toolbar row between price and CVD/Delta.
+- Synchronized price and CVD/Delta visible logical ranges in both directions.
+- Synchronized native Lightweight Charts crosshairs between price and CVD/Delta in both directions and moved the shared time axis to the lower time-series pane.
+- Replaced screen-percentage drawings with stable `{ time, price }` anchors that remain attached through pan, zoom, resize, and streaming updates.
+- Added two-point live preview, eight-pixel OHLC proximity snapping, enlarged hit regions, selection handles, body movement, individual-anchor movement, and per-object locking.
+- Added reliable deletion from the selected-object toolbar and with Delete/Backspace, Escape cancellation/deselection, and reversible Undo through the visible action or Ctrl/Cmd+Z.
+- Documented the applied patterns from TradingView Lightweight Charts, KLineChart, wickchart-draw, and lightweight-charts-drawing without importing third-party code or adding a dependency.
 
 ## Verification Evidence
 
 - `npx.cmd vitest run`: PASS — 14 files, 77 tests.
-- Targeted ESLint across changed TypeScript and TSX files: PASS — no output.
-- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation and TypeScript validation; route `/api/binance/volume-profile` included.
-- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 6 passed, 2 intentional mobile-only skips.
-- Automated accessibility: PASS — no serious or critical violations.
-- Local live smoke: `/api/binance/volume-profile` returned `LIVE`, `BINANCE_SPOT`, and 1,440 five-minute intrabars for a 120-hour range.
-- Visual evidence: `.artifacts/ui-overhaul/market-structure-live-1664x936.png`.
-- Vercel Preview `dpl_EpWQ8tEjyYb7wruC2gani52NRWKF` reached `READY` at `https://btc-terminal-codex-a3l38nu7d-kelvin12792.vercel.app`.
-- Deployed smoke: the terminal returned HTTP 200 and the live profile endpoint returned `LIVE`, `BINANCE_SPOT`, and 1,440 five-minute intrabars.
-- Deployed browser regression: panning changed the visible logical start from `0.0000` to `-28.0297`; changing the VP to 72 rows preserved `-28.0297`, while chart generation remained `1`.
-- Deployed visual evidence: `.artifacts/ui-overhaul/market-structure-preview-ux12-1664x936.png` (local verification artifact, intentionally not committed).
+- Targeted ESLint: PASS — no errors or warnings.
+- `npx.cmd tsc --noEmit`: PASS.
+- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation and TypeScript validation.
+- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 8 passed, 4 intentional mobile skips for desktop-only pointer-density checks.
+- Automated accessibility: PASS — no serious or critical desktop/mobile violations.
+- Browser regression proves the order-flow tablist is below its pane, the price-volume series is absent, and price/lower-pane crosshair timestamps match.
+- Browser regression creates and moves a time/price-anchored trend line, deletes it through the toolbar, restores it, deletes it with the keyboard, and restores it with Ctrl+Z.
+- Visual evidence: `.artifacts/ui-overhaul/market-structure-desktop-16x9.png` and `.artifacts/ui-overhaul/market-structure-mobile.png`.
 
-## Explicit Data Boundaries
+## Explicit Boundaries
 
-- The profile is an intrabar approximation of volume-at-price, not tick-level or exchange-proprietary reconstruction.
-- Up/down allocation follows candle direction, consistent with the documented profile approximation; it is not bid/ask aggressor classification.
-- Intrabar retrieval is capped at 5,000 bars and selects a coarser interval when required to stay within that ceiling.
-- The change does not alter options calculations, wall authority, decision logic, or any backend execution behavior.
-- No live-order execution was introduced; trading tools remain visual measurements and the existing shadow/paper safety boundary remains intact.
+- The change is confined to UI state, presentation, browser tests, screenshots, and UI documentation; no API, Deribit, quant, terrain, decision, or execution engine was changed.
+- Drawings currently support the approved trend, horizontal, vertical, rectangle, text, long-position, and short-position set; Fibonacci, rays, channels, object tree, persistence, and style editing remain separate future scope.
+- Book and Liquidity are non-time-series panels and therefore do not receive a time crosshair; CVD and Delta do.
+- Removal is reversible in the current session but drawings are not yet serialized into saved layouts.
+- No live-order execution was introduced; Long and Short remain chart measurements only.
 - Architect review is required before merge to `main`.
