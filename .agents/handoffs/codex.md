@@ -32,6 +32,10 @@
 - Browser regression proves the order-flow tablist is below its pane, the price-volume series is absent, and price/lower-pane crosshair timestamps match.
 - Browser regression creates and moves a time/price-anchored trend line, deletes it through the toolbar, restores it, deletes it with the keyboard, and restores it with Ctrl+Z.
 - Visual evidence: `.artifacts/ui-overhaul/market-structure-desktop-16x9.png` and `.artifacts/ui-overhaul/market-structure-mobile.png`.
+- Vercel Preview `dpl_4P4kDkqUkCH5KfrnN55L4Zf9SRPC` reached `READY` at `https://btc-terminal-codex-2sa98b2az-kelvin12792.vercel.app`.
+- Deployed interaction smoke confirmed: volume panel `hidden`; lower tabs below pane; price/CVD crosshair timestamp matched at `1792461600`; drawing create/delete/restore produced `1 → 0 → 1`.
+- Deployed live-data smoke: terminal HTTP 200; Binance returned `LIVE`, `BINANCE_SPOT`, and 240 hourly candles.
+- Deployed visual evidence: `.artifacts/ui-overhaul/market-structure-preview-ux13-1664x936.png` (local verification artifact, intentionally not committed).
 
 ## Explicit Boundaries
 
