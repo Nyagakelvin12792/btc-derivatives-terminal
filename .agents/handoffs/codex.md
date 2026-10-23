@@ -1,60 +1,49 @@
-﻿>>> COMPLETED BY: Codex
+# CODEX HANDOFF REPORT
+
+>>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
->>> ROUND: RENDERER-R1A.3
->>> BRANCH: agent/codex
->>> COMMIT: 10a219108911e5c5a605a7ea4db0c054109ecf25
->>> TESTS: PASS - npx.cmd vitest run (7 files, 47 tests); PASS - targeted ESLint on renderer/terrain changed files; PASS - npm.cmd run build
->>> CONTRACT VERSION: 2
+>>> BRANCH: codex/ui-approved-parity
+>>> COMMIT: 080659c
+>>> TESTS: PASS — Markdown diff check and source-link audit; no application source changed. Previous UX14 gates remain Vitest 15 files/81 tests, TypeScript/lint/build clean, Playwright 8 passed/4 intentional mobile skips
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Audit TerrainViewportModel dynamic axis contract for Gemini fixed HUD/SVG overlay integration
->>> TARGET: src/components/three/terrain/viewport.ts, src/components/three/IntegratedDealerTerrain.tsx, src/components/three/terrain/axes.ts, src/components/three/terrain/scales.test.ts, src/lib/terrain/engine.ts, src/lib/terrain/engine.test.ts
+>>> ACTION REQUIRED: Review the UX15 staged plan and authorize UX15.0 defect repair before any new market-data or Jev implementation
+>>> TARGET: docs/ui-ux/UX15_IMPLEMENTATION_PLAN.md and related UI/UX planning documents
 
-## Implementation Summary
-- Added `TerrainViewportModel` in `src/components/three/terrain/viewport.ts` for fixed screen-space HUD/SVG axis rendering by Gemini.
-- The viewport model exposes visible Strike, DTE, and Exposure domains, normalized tick positions, formatted tick labels, semantic `zoomLevel`, and structural anchor positions.
-- Added semantic zoom and pan helpers: `zoomTerrainViewport()` and `panTerrainViewport()`.
-- Wired `IntegratedDealerTerrain` to compute the viewport model and expose it through optional `onViewportChange` without breaking existing Gemini props.
-- Kept current renderer modes intact: GEX, Vanna, Charm, Combined disabled.
+## Delivered
 
-## Root Cause / Data Diagnosis
-- R1A.2 diagnosis found CASE B for the flat terrain: the DEMO Contract V2 option fixture was symmetric by strike/DTE/type, so call and put exposures canceled every displayed cell.
-- Previous DEMO diagnostics: 42 cells, 42 observed, 0 unobserved; GEX/Vanna/Charm min and max all 0; robustAbsMax all 1; Spot, Gamma Flip, Call Wall, Put Wall, and Max Pain all collapsed at 69000.
-- The DEMO fixture is now asymmetric while remaining explicitly `dataMode: DEMO`; LIVE quantitative calculations were not changed.
+- Added the complete UX15 staged implementation plan covering the Liquidity defect, collapsible lower pane, contextual drawing lifecycle, single drawing rail, Fibonacci, Long/Short/Risk, VP/AVWAP, heatmap, footprint imbalances, and deterministic Jev shadow guidance.
+- Recorded clean-room and open-source reference boundaries, data limitations, safety requirements, acceptance criteria, and quality gates before implementation.
+- Installed and validated REA 6.7.0 machine-wide outside the repository, aligned its 207-tool skill, and registered it with Codex and Antigravity. Client restart is required before newly registered MCP tools appear.
 
-## Viewport / Axis Contract
-- `TerrainViewportModel.metric`: `gex | vanna | charm | combined`.
-- `strikeDomain`, `dteDomain`, and `exposureDomain` describe the currently visible quantitative chart domain.
-- `strikeTicks`, `dteTicks`, and `exposureTicks` expose `{ value, normalizedPosition, label }` for fixed HUD axes where `0 -> 1` maps to screen axis position.
-- Zoom narrows domains around a focus value; pan shifts the domain center and clamps to full data bounds.
-- Structural anchors expose label, strike, priority, `normalizedPosition`, and `inDomain` for Spot, Gamma Flip, Call Wall, Put Wall, and Max Pain.
+- Kept the CVD, Delta, Book, and Liquidity tablist visible at the bottom of the workspace even when the lower study pane is collapsed.
+- Made every lower tab restore the pane and select its corresponding study.
+- Increased the current Binance snapshot to the provider's 1,000-bar page limit.
+- Added a validated backward-pagination route and a TanStack Query history cache targeting 10,000 candles.
+- Merged historical pages, the current snapshot, and streaming bars by timestamp without introducing synthetic market data.
+- Kept the full history navigable while opening on roughly 180 recent bars to avoid compressing the active market view.
+- Added visible-range, UTC day, UTC week, UTC month, and automatic CVD anchor/reset modes with real reset dividers.
+- Recorded the public TradingView control hierarchy through a restricted Reverse Engineer Anything accessibility capture. No source scripts, private APIs, request bodies, headers, browser storage, credentials, assets, or branding were collected.
 
-## Renderer Changes
-- Added optional `onViewportChange?: (viewport: TerrainViewportModel) => void` to the existing terrain component interface.
-- Existing dashboard integration remains compatible: `data`, `selectedStrike`, `selectedDte`, `onSelectStrike`, and `onSelectPoint` are unchanged.
-- Current internal geometry/tick mapping reads from the same viewport model so terrain domain and axis domain share one source of truth.
-- No Combined mode, Vanna contour overlay, Charm glyph overlay, confluence floor, Web Worker, or new dashboard module was implemented.
+## Verification Evidence
 
-## DEMO Fixture Changes
-- DEMO option generation now uses multiple DTEs and strikes with asymmetric call/put OI and IV distributions.
-- The fixture now produces positive and negative GEX, positive and negative Vanna, positive and negative Charm, distinct structural levels, and nonzero robust scales.
-- DEMO remains explicit through `dataMode: DEMO` and `assumptionModel: OI_SIGN_PROXY_V1`.
+- `npx.cmd vitest run`: PASS — 15 files, 81 tests.
+- Targeted ESLint: PASS — no errors or warnings.
+- `npx.cmd tsc --noEmit`: PASS.
+- `npm.cmd run build`: PASS — Next.js 16.4.2 production compilation, TypeScript validation, and `/api/binance/history` route collection.
+- `npx.cmd playwright test tests/ui/market-terminal.pw.ts`: PASS — 8 passed, 4 intentional mobile skips.
+- Browser regression collapses the study pane, proves the bottom tablist remains visible, and proves selecting Delta restores the pane.
+- Live history smoke: PASS — 10 pages, 10,000 unique hourly candles, valid backward cursor.
+- Live browser smoke: PASS — `10,000 / 10,000 bars`; initial logical view contains approximately 196 recent bars; lower dock is visible.
+- Vercel production deployment `dpl_ixtqgAkKZMLhbjzqjG2uBuRZ7tDq`: `READY` and aliased to `https://btc-terminal-codex.vercel.app`.
+- Production API smoke: HTTP 200, `LIVE`, `BINANCE_SPOT`, 1,000 candles per history page, and a valid backward cursor.
+- Production interaction smoke: lower dock remains visible after pane collapse; selecting Delta restores the pane; production screenshot stored at `.artifacts/ui-overhaul/market-structure-production-ux14-1664x936.png` (intentionally uncommitted).
+- Clean-room observation evidence: `ev_91c81f4e2da34668aad77fce2c17c7d0b8d625c98e2e2b17376ebbe0b6ce07bc`.
+- Local visual evidence: `.artifacts/ui-overhaul/market-structure-live-10000-1664x936.png` (intentionally uncommitted).
 
-## Tests Added
-- Added viewport contract tests for normalized HUD ticks, semantic zoom, pan behavior, and structural anchor labels/positions.
-- Added DEMO-data regression test requiring positive/negative GEX, Vanna, Charm, nonzero robust scales, all observed DEMO cells, and non-collapsed structural strikes.
+## Explicit Boundaries
 
-## Tests Executed
-- `npx.cmd vitest run src/components/three/terrain/scales.test.ts src/lib/terrain/engine.test.ts`: PASS, 2 files, 25 tests.
-- `npx.cmd vitest run`: PASS, 7 files, 47 tests.
-- `npm.cmd run lint -- src/components/three/IntegratedDealerTerrain.tsx src/components/three/terrain/axes.ts src/components/three/terrain/scales.test.ts src/components/three/terrain/viewport.ts src/lib/terrain/engine.ts src/lib/terrain/engine.test.ts`: PASS.
-- `npm.cmd run build`: PASS.
-
-## Known Limitations
-- Fixed screen-space HUD/SVG axis rendering itself is intentionally left to Gemini; Codex only provides the dynamic mathematical viewport contract.
-- Existing Three.js world-space labels remain as interim renderer labels, but the new contract is the primary integration path for final fixed axes.
-- R1A.3 did not implement additional visual redesign or R1B overlays.
-
-## Gemini Integration Requirements
-- Gemini should consume `TerrainViewportModel` for fixed HUD/SVG axes instead of deriving primary labels from Three.js text sprites.
-- HUD axes should keep a stable screen frame while updating tick values from `strikeTicks`, `dteTicks`, and `exposureTicks`.
-- Gemini should keep terrain viewport domains and HUD domains synchronized through `onViewportChange` or an equivalent shared-state bridge.
+- The only new server boundary is a read-only, validated proxy for public Binance kline history. Deribit normalization, quant, terrain, options-wall, decision, Jev, broker, and execution engines were not changed.
+- CVD uses Binance kline taker-buy volume and is bar-precision, not an exact tick-by-tick replica of TradingView's server-side feed.
+- The separate Lightweight Charts price and CVD/Delta instances are synchronized, but are not the proprietary TradingView Charting Library.
+- No live-order execution was introduced; Long and Short remain chart measurements only.
+- Production promotion is user-authorized, while merge to `main` remains subject to Architect review under `AGENTS.md`.

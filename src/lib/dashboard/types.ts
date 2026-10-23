@@ -3,6 +3,7 @@ export type DataMode = 'LIVE' | 'DEMO' | 'DEGRADED';
 export type AssumptionModel = 'OI_SIGN_PROXY_V1';
 
 export type WorkspaceTab = 
+    | 'MARKET STRUCTURE'
     | 'SURFACE MAP' 
     | 'DASHBOARD' 
     | 'GEX ANALYSIS' 

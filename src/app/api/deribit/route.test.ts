@@ -1,9 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NextRequest } from 'next/server';
 import type { NormalizedDeribitChain } from '@/lib/deribit/types';
 
 vi.mock('@/lib/deribit/client.server', () => ({
     FALLBACK_SPOT_PRICE: 69000,
     fetchDeribitOptionChain: vi.fn(),
+}));
+
+vi.mock('@/lib/deribit/dte-filter', () => ({
+    isDeribitDteFilter: (value: string) => ['0-2D', '7D', '14D', '30D', 'ALL'].includes(value),
+    filterDeribitOptionsByDte: (options: NormalizedDeribitChain['options'], filter: string) => {
+        const limit = filter === '0-2D' ? 2 : filter === '7D' ? 7 : filter === '14D' ? 14 : filter === '30D' ? 30 : Number.POSITIVE_INFINITY;
+        return options.filter((option) => option.dte <= limit);
+    },
 }));
 
 vi.mock('@/lib/terrain/engine', () => ({
@@ -69,6 +78,31 @@ describe('/api/deribit route', () => {
             assumptionModel: 'OI_SIGN_PROXY_V1',
             surfaceGrid: [],
         });
+    });
+
+    it('filters the live chain by the requested cumulative DTE horizon', async () => {
+        const near = { dte: 1 } as unknown as NormalizedDeribitChain['options'][number];
+        const far = { dte: 21 } as unknown as NormalizedDeribitChain['options'][number];
+        mockedFetchDeribitOptionChain.mockResolvedValue({ spotPrice: 68000, options: [near, far] } as unknown as NormalizedDeribitChain);
+
+        const response = await GET(new NextRequest('http://localhost/api/deribit?dte=7D'));
+
+        expect(response.status).toBe(200);
+        expect(mockedBuildTerrainDataContract).toHaveBeenCalledWith(expect.objectContaining({ options: [near] }));
+    });
+
+    it('serves explicit demo mode without contacting Deribit', async () => {
+        const response = await GET(new NextRequest('http://localhost/api/deribit?mode=demo&dte=ALL'));
+
+        expect(response.status).toBe(200);
+        expect(mockedFetchDeribitOptionChain).not.toHaveBeenCalled();
+        expect(mockedBuildDemoTerrainDataContract).toHaveBeenCalledWith(69000, responseTime);
+    });
+
+    it('rejects unsupported DTE filters', async () => {
+        const response = await GET(new NextRequest('http://localhost/api/deribit?dte=90D'));
+        expect(response.status).toBe(400);
+        expect(mockedFetchDeribitOptionChain).not.toHaveBeenCalled();
     });
 
     it('returns explicit DEMO fallback with no-store headers when upstream fails', async () => {

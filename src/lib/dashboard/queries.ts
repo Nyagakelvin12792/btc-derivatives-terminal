@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { z } from 'zod';
 import { TerrainDataContractV2 } from '@/lib/terrain/types';
-import { createCanonicalDashboardData } from './adapters';
+import type { DeribitDteFilter } from '@/lib/deribit/dte-filter';
 
 // Zod Schema for API Boundary Runtime Validation
 export const TerrainDataSchema = z.object({
@@ -44,8 +44,10 @@ export const TerrainDataSchema = z.object({
     keyContracts: z.array(z.any()),
 });
 
-export async function fetchTerrainData(mode: 'LIVE' | 'DEMO' | 'DEGRADED'): Promise<TerrainDataContractV2> {
-    const url = mode === 'DEMO' ? '/api/deribit?mode=demo' : '/api/deribit';
+export async function fetchTerrainData(mode: 'LIVE' | 'DEMO' | 'DEGRADED', dteFilter: DeribitDteFilter = 'ALL'): Promise<TerrainDataContractV2> {
+    const params = new URLSearchParams({ dte: dteFilter });
+    if (mode === 'DEMO') params.set('mode', 'demo');
+    const url = `/api/deribit?${params}`;
     const res = await fetch(url);
 
     if (!res.ok) {
@@ -63,10 +65,10 @@ export async function fetchTerrainData(mode: 'LIVE' | 'DEMO' | 'DEGRADED'): Prom
     return parsed.data as TerrainDataContractV2;
 }
 
-export function useTerrainQuery(dataMode: 'LIVE' | 'DEMO' | 'DEGRADED') {
+export function useTerrainQuery(dataMode: 'LIVE' | 'DEMO' | 'DEGRADED', dteFilter: DeribitDteFilter = 'ALL') {
     return useQuery({
-        queryKey: ['terrainData', dataMode],
-        queryFn: () => fetchTerrainData(dataMode),
+        queryKey: ['terrainData', dataMode, dteFilter],
+        queryFn: () => fetchTerrainData(dataMode, dteFilter),
         refetchInterval: dataMode === 'LIVE' ? 3000 : false,
         staleTime: dataMode === 'LIVE' ? 2500 : Infinity,
         retry: 2,
