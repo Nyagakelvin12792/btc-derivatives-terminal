@@ -102,6 +102,7 @@ test('uses a continuous synchronized order-flow pane with bottom tabs and no pri
     const pane = page.getByTestId('order-flow-pane');
     const tabs = page.getByRole('tablist', { name: 'Order-flow studies' });
     await expect(chart).toHaveAttribute('data-volume-panel', 'hidden');
+    await expect(chart).toHaveAttribute('data-time-axis', 'lower-pane');
     await expect(pane).toHaveAttribute('data-crosshair-sync', 'native');
     await expect(tabs).toHaveAttribute('data-position', 'bottom');
 

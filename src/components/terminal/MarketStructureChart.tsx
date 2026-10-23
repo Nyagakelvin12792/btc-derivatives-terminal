@@ -611,10 +611,12 @@ export default function MarketStructureChart({ data, marketFeed, activeTool, tim
     }, [deltaBars]);
 
     useEffect(() => {
+        const lowerPaneOwnsTimeAxis = studyPaneOpen && (activeOrderFlowStudy === 'CVD' || activeOrderFlowStudy === 'DELTA');
         priceChartRef.current?.applyOptions({
-            timeScale: { visible: !(studyPaneOpen && (activeOrderFlowStudy === 'CVD' || activeOrderFlowStudy === 'DELTA')) },
+            timeScale: { visible: !lowerPaneOwnsTimeAxis },
         });
-    }, [activeOrderFlowStudy, studyPaneOpen]);
+        if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.timeAxis = lowerPaneOwnsTimeAxis ? 'lower-pane' : 'price-chart';
+    }, [activeOrderFlowStudy, hasChartData, studyPaneOpen]);
 
     useEffect(() => {
         if (!dragTarget || objectLocked) return;
