@@ -131,7 +131,7 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 ## Next Authorized Work
 
 1. Architect performs UX9 acceptance using the stored screenshots, tests, route contracts, and live smoke evidence.
-2. Deploy the reviewed commit and repeat the Binance/Deribit endpoint checks on Vercel.
+2. Review and merge the production-verified UX14 commits into `main`; the user-authorized production deployment is already `READY` at `https://btc-terminal-codex.vercel.app`.
 3. Define a typed Jev response contract and historical IV store before enabling Jev opinions or IV Rank.
 4. Define a full-chain split call/put OI contract before enabling the inspector's OI wall display.
 
@@ -217,3 +217,4 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Added `AUTO`, UTC day, UTC week, UTC month, and visible-range CVD anchors with reset markers generated from the actual cumulative series.
 - Recorded a clean-room public TradingView accessibility capture using Reverse Engineer Anything. No scripts, request bodies, headers, cookies, local storage, private endpoints, or proprietary assets were collected.
 - Verified the live history route returned 10 pages and 10,000 unique hourly candles; the browser opened on roughly 196 recent bars and retained the persistent lower dock.
+- Promoted deployment `dpl_ixtqgAkKZMLhbjzqjG2uBuRZ7tDq` to the production alias and repeated the live API and collapse/reopen browser checks successfully.

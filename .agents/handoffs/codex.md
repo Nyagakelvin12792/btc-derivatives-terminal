@@ -30,6 +30,9 @@
 - Browser regression collapses the study pane, proves the bottom tablist remains visible, and proves selecting Delta restores the pane.
 - Live history smoke: PASS — 10 pages, 10,000 unique hourly candles, valid backward cursor.
 - Live browser smoke: PASS — `10,000 / 10,000 bars`; initial logical view contains approximately 196 recent bars; lower dock is visible.
+- Vercel production deployment `dpl_ixtqgAkKZMLhbjzqjG2uBuRZ7tDq`: `READY` and aliased to `https://btc-terminal-codex.vercel.app`.
+- Production API smoke: HTTP 200, `LIVE`, `BINANCE_SPOT`, 1,000 candles per history page, and a valid backward cursor.
+- Production interaction smoke: lower dock remains visible after pane collapse; selecting Delta restores the pane; production screenshot stored at `.artifacts/ui-overhaul/market-structure-production-ux14-1664x936.png` (intentionally uncommitted).
 - Clean-room observation evidence: `ev_91c81f4e2da34668aad77fce2c17c7d0b8d625c98e2e2b17376ebbe0b6ce07bc`.
 - Local visual evidence: `.artifacts/ui-overhaul/market-structure-live-10000-1664x936.png` (intentionally uncommitted).
 
