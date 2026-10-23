@@ -87,4 +87,3 @@
 - No package or lockfile change was made.
 - Antigravity retains exclusive ownership of UX15.0 terminal layout and drawing-interface files during the parallel cycle.
 - `STATE.md` remains unchanged pending Architect review.
-
