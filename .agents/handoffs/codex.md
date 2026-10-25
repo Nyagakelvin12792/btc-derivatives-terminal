@@ -1,89 +1,91 @@
-# CODEX HANDOFF REPORT
+# CODEX HANDOFF REPORT — UX15.4 LIQUIDITY DATA FOUNDATION
 
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: agent/codex
->>> COMMIT: 00bdaea
->>> TESTS: PASS — 17 focused position-risk tests; full Vitest 16 files/98 tests; TypeScript; targeted ESLint; Next.js 16.4.2 production build; production npm audit 0 vulnerabilities
+>>> COMMIT: 36c1104
+>>> TESTS: PASS — 26 focused liquidity/API tests; full Vitest 21 files/133 tests; TypeScript; targeted ESLint; Next.js 16.4.2 production build; production npm audit 0 vulnerabilities; bounded live Binance snapshot/diff-depth verification
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review the UX15.2 linear-instrument risk contract and calculations before Gemini connects it to Long/Short drawings or the Risk terminal
->>> TARGET: src/lib/quant/position-risk.ts, src/lib/quant/position-risk.test.ts
+>>> ACTION REQUIRED: Review the Binance sequence contract, gap/resync behavior, frame semantics, and API boundary before Gemini connects a worker/hook and chart heatmap renderer
+>>> TARGET: src/lib/binance/liquidity-depth.ts, src/lib/binance/liquidity-engine.ts, src/lib/binance/types.ts, src/lib/binance/client.server.ts, src/app/api/binance/depth/route.ts, focused tests, package.json, package-lock.json
 
 ## Delivered
 
-- Added a pure deterministic position-risk engine for linear instruments.
-- Added shared Long and Short geometry validation:
-  - Long requires `stop < entry < target`.
-  - Short requires `target < entry < stop`.
-- Added account risk requests by USD amount or equity percentage.
-- Added daily-loss and maximum-drawdown remaining-budget caps.
-- Added risk-limited, leverage-limited, and configured maximum-quantity caps.
-- Added explicit point value, lot size, quantity step, minimum quantity, maximum quantity, and quantity precision.
-- Added entry/exit fees and adverse two-sided slippage to loss and reward estimates.
-- Added stop loss, target profit, reward/risk, notional, margin, distance, and underlying-unit outputs.
-- Added explicit `ready`, `blocked`, and `invalid` states with typed error and warning codes.
-- Added finite-number and derived-arithmetic overflow protection so invalid inputs fail closed.
-- Kept the model independent from React, chart components, APIs, exchange credentials, and execution code.
+- Added strict parsing for Binance Spot `depthUpdate` events using the official `E`, `U`, `u`, `b`, and `a` fields.
+- Added a deterministic local order-book engine that:
+  - buffers diff-depth events before REST bootstrap;
+  - discards events already covered by the snapshot;
+  - requires the first retained event to bridge `lastUpdateId + 1`;
+  - applies insert, update, and zero-quantity deletion semantics;
+  - rejects malformed or unsupported payloads;
+  - invalidates the entire local book immediately when a sequence gap is detected;
+  - exposes explicit `BUFFERING`, `LIVE`, `STALE`, `GAP`, and `OFFLINE` states;
+  - bounds buffered events and retained price levels.
+- Added a bounded liquidity-frame buffer that:
+  - aggregates bids and asks into side-aware price ticks;
+  - limits visible depth by basis points around mid-price;
+  - applies minimum-notional filtering after aggregation;
+  - buckets frames in time and replaces the current bucket rather than producing duplicates;
+  - uses a fixed-capacity ring buffer;
+  - exposes honest coverage start/end, capacity, frame count, and warm-up percentage;
+  - never creates history before the first observed frame.
+- Added `BinanceLiquidityEngine` as the future worker/hook integration contract for ingest, bootstrap, capture, gap recovery, reconnect, offline, clear, coverage, and status behavior.
+- Added `GET /api/binance/depth` for fresh REST bootstrap snapshots:
+  - public market data only;
+  - `BTCUSDT` only;
+  - validated depth limit from 100 through 1,000;
+  - upstream timeout and JSON validation;
+  - `Cache-Control: no-store` so a cached snapshot cannot corrupt sequence bootstrap;
+  - explicit 503 `OFFLINE` response without demo substitution.
+- Updated Zod from 4.4.3 to 4.6.7 after the production audit reported a high-severity constrained-collection memory-exhaustion advisory. `npm audit --omit=dev` now reports zero vulnerabilities.
 
-## Formula Contract
+## Sequence Contract
 
-- Requested risk is either the supplied USD amount or `equity × riskPercent / 100`.
-- Effective risk is the minimum of requested risk, remaining daily-loss budget, and remaining drawdown budget.
-- Stop risk per displayed quantity is:
-
-  `abs(entry - stop) × pointValue × lotSize + entry costs + stop-exit costs`
-
-- Risk quantity is `effectiveRisk / stopRiskPerQuantity`.
-- Leverage quantity is `(equity × leverage) / entryNotionalPerQuantity`.
-- Final raw quantity is the minimum of risk quantity, leverage quantity, and optional maximum quantity.
-- Final quantity is always rounded down to the permitted quantity step.
-- Target reward deducts entry costs and target-exit costs before reward/risk is reported.
-
-## Focused Test Coverage
-
-1. Canonical risk-limited Long position.
-2. Equivalent valid Short position.
-3. Leverage-limited position.
-4. Fees and two-sided slippage.
-5. Remaining daily-loss cap.
-6. Realized gains do not expand the daily-loss limit.
-7. Remaining maximum-drawdown cap.
-8. Exhausted daily-loss budget.
-9. Exhausted maximum-drawdown budget.
-10. Invalid Long and Short geometry.
-11. Quantity-step rounding without exceeding risk.
-12. Minimum-quantity block.
-13. Point value and lot-size conversion.
-14. Maximum-quantity cap.
-15. Non-finite and out-of-range input rejection.
-16. Non-positive net target reward after costs.
-17. Derived-arithmetic overflow rejection.
-
-## Verification Evidence
-
-- `npx vitest run src/lib/quant/position-risk.test.ts`: PASS — 1 file, 17 tests.
-- `npx vitest run`: PASS — 16 files, 98 tests.
-- `npx tsc --noEmit`: PASS.
-- `npx eslint src/lib/quant/position-risk.ts src/lib/quant/position-risk.test.ts`: PASS.
-- `npm run build`: PASS — Next.js 16.4.2 production compilation, TypeScript, page-data collection, and static generation.
-- `npm audit --omit=dev`: PASS — 152 production dependencies, 0 known vulnerabilities.
-- `git diff --check`: PASS.
+1. Open `wss://stream.binance.com:9443/ws/btcusdt@depth@100ms`.
+2. Buffer valid `depthUpdate` events immediately.
+3. Fetch `/api/binance/depth?limit=500` after the socket is open.
+4. Discard buffered events whose `u <= snapshot.lastUpdateId`.
+5. The first retained event must satisfy `U <= snapshot.lastUpdateId + 1 <= u`.
+6. Apply all retained and subsequent events in arrival order.
+7. For each level, quantity zero deletes the price; a positive quantity replaces it.
+8. If a future event has `U > localLastUpdateId + 1`, discard the local book, clear heatmap continuity, expose `GAP`, and fetch a new snapshot.
+9. Do not append frames while stale, offline, buffering, or awaiting resynchronization.
 
 ## Integration Contract for Gemini
 
-- Import `calculatePositionRisk` from `@/lib/quant/position-risk` only after Architect approval.
-- Keep one calculation result as the source for both chart Long/Short labels and the Risk terminal.
-- Never reproduce the formulas inside React components.
-- Render `ready` only when `metrics` is non-null.
-- Render `blocked` as an account/risk-capacity state and show its typed reason.
-- Render `invalid` as a malformed-input or invalid-geometry state; do not retain a stale previous result.
-- Preserve `NO LIVE EXECUTION`. This result is an analysis/position-planning model, not an order payload.
+- Do not implement a second order-book algorithm in React.
+- Run `BinanceLiquidityEngine` outside high-frequency React render state, preferably in a dedicated Web Worker.
+- Use the new snapshot route only for initial bootstrap and explicit resynchronization, not for polling-based heatmap history.
+- Capture frames on a bounded cadence (the tested default is 500 ms), not on every 100 ms diff event.
+- Treat `coverage.startedAt` as the beginning of honest session history.
+- Freeze the last rendered frame and show `STALE` or `OFFLINE` when updates stop; never extrapolate liquidity.
+- On `GAP`, visibly break/reset coverage and request a fresh snapshot. Never render across the gap as if data were continuous.
+- Controls such as tick aggregation, visible depth, minimum notional, time window, opacity, decay, pause, and clear belong to the renderer/UI layer and must preserve these provenance states.
+- The existing `use-market-feed.ts` still uses `depth20` for the current compact Book/Liquidity list. It must not be treated as heatmap history.
 
-## Explicit Boundaries
+## Verification Evidence
 
-- This model supports linear instruments only; inverse and quanto contracts require a separately reviewed contract.
-- Fees and slippage are deterministic user/config inputs, not exchange estimates.
-- No UI component, API route, Binance/Deribit collector, Jev adapter, options engine, or execution path was changed.
-- No package or lockfile change was made.
-- Antigravity retains exclusive ownership of UX15.0 terminal layout and drawing-interface files during the parallel cycle.
+- Focused Vitest: 4 files, 26 tests passed.
+- Full Vitest: 21 files, 133 tests passed.
+- `npx tsc --noEmit`: passed.
+- Targeted ESLint for every changed TypeScript file: passed with zero errors/warnings.
+- `npm run build`: passed; `/api/binance/depth` appears as a dynamic route.
+- `npm audit --omit=dev`: zero production vulnerabilities.
+- `git diff --check`: passed.
+- Bounded live Binance validation:
+  - public REST depth snapshot returned HTTP 200;
+  - diff-depth stream returned the documented event shape;
+  - first retained event bridged `lastUpdateId + 1` successfully.
+- Local production route validation:
+  - `/api/binance/depth?limit=100` returned HTTP 200, `LIVE`, `no-store`, 100 bids, and 100 asks;
+  - `/api/binance/depth?limit=20` returned HTTP 400.
+
+## Explicit Boundaries and Remaining Work
+
+- No heatmap renderer or visible UI was added in this Codex task.
+- No Web Worker or React hook was connected yet; Architect review precedes that integration.
+- No durable historical depth storage was added. Coverage begins in the active browser session.
+- Vercel serverless functions are not used as a pretend continuously running WebSocket collector.
+- No aggregate-trade footprint, candle imbalance, smart AVWAP, Jev adapter, broker connection, or execution path was changed.
+- No exchange API key is required; all Binance endpoints used here are public market data.
 - `STATE.md` remains unchanged pending Architect review.
