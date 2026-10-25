@@ -1,65 +1,65 @@
-# CODEX HANDOFF REPORT — UX16.0 CONTRACT FOUNDATION
+# CODEX HANDOFF REPORT — UX16.0 REVIEWED INTEGRATION
 
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
->>> BRANCH: agent/codex
->>> COMMIT: 6185e1f5fe5399eec2100439b4cee35ed21317cd
->>> TESTS: PASS — focused UX16 4 files/20 tests; full Vitest 30 files/191 tests; TypeScript; scoped ESLint; Next.js 16.4.2 production build
+>>> BRANCH: codex/ux16-integration
+>>> COMMIT: f6dd380
+>>> TESTS: PASS — Vitest 31 files/209 tests; TypeScript; scoped ESLint 0 warnings/errors; default and UX16-enabled production builds; UX16 Playwright 2/2; terminal regression Playwright 13 passed/9 intentional mobile skips; legacy fallback smoke 1/1
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review and integrate the UX16.0 contract commit before Antigravity consumes the version-1 contracts and replay-labelled fixtures
->>> TARGET: src/lib/orderflow/** at commit 6185e1f5fe5399eec2100439b4cee35ed21317cd
+>>> ACTION REQUIRED: Review the assembled UX16.0 checkpoint, approve the truthful opt-in shell, and decide whether to merge to main
+>>> TARGET: codex/ux16-integration at f6dd380
 
-## Baseline
+## Integrated lineage
 
-- Started from the approved assembled UX16 plan baseline `49fad7569d7183711b8dff4c8027e6668ee63091`.
-- Fast-forwarded the dedicated `agent/codex` worktree to that baseline before editing.
-- Modified only Codex-owned `src/lib/orderflow/**` files and this handoff.
-- Did not modify `STATE.md`, terminal components, browser tests, visual assets, Deribit calculations, the existing risk engine, or Antigravity-owned files.
+- Baseline: `49fad756`.
+- Codex UX16.0 contract foundation: `6185e1f`, integrated as `d7a4afe`.
+- Antigravity shell: `7fc5363`, integrated as `2ac4ada`.
+- Antigravity handoff update: `ca50b74`, integrated as `8bae8eb`.
+- Codex combined review and corrections: `f6dd380`.
 
-## Delivered
+## Review result
 
-- Added strict, versioned Zod contracts for:
-  - capture coverage and provenance;
-  - classified aggregate trades;
-  - footprint cells and bars;
-  - depth time buckets;
-  - deterministic evidence;
-  - setup assessments;
-  - Data Integrity Strip sources and states;
-  - UX16 replay fixture bundles.
-- Added cross-field invariants for coverage ranges, price/time bounds, aggressor semantics, trade notional, footprint totals, grade-A state/gates/data quality, trigger, and invalidation.
-- Added pure Binance Spot aggregate-trade parsing and classification:
-  - `buyerIsMaker === true` maps to aggressive `SELL`;
-  - `buyerIsMaker === false` maps to aggressive `BUY`;
-  - malformed, wrong-symbol, wrong-event, unsafe-ID, reversed-ID, duplicate, and out-of-order inputs are rejected.
-- Added deterministic provenance utilities for freshness, coverage quality, explicit replay/shadow status, gap degradation, and exact-capture checks.
-- Added public and server feature-flag contracts with all UX16 flags disabled by default.
-- Kept server flag names separate from `NEXT_PUBLIC_*` public flags.
-- Added a replay-labelled UX16 contract fixture and visual fixtures for `LOADING`, `READY`, `PARTIAL`, `STALE`, `UNAVAILABLE`, `ERROR`, `REPLAY`, and `SHADOW` states.
-- All fixtures explicitly say they are UI/replay fixtures and must not be presented as live data.
-- Added one stable barrel export at `src/lib/orderflow/index.ts` for Antigravity consumption.
+Antigravity's shell was not accepted unchanged. The first combined review found hard-coded values that visually claimed observed trade-based CVD, absorption, replenishment, and a `WATCH_LONG` setup even though UX16.1–UX16.5 were not implemented. The browser-test claim in the supplied transcript also did not provide reliable completion evidence. Those blockers are corrected in `f6dd380`.
 
-## Verification
+## Delivered corrections
 
-- `npx vitest run src/lib/orderflow`: PASS — 4 files, 20 tests.
-- `npx vitest run`: PASS — 30 files, 191 tests.
+- Added `CalmMarketTerminal` and `LegacyMarketTerminal` behind `NEXT_PUBLIC_UX16_CALM_WORKSPACE`.
+- Kept every UX16 public feature flag off by default.
+- Restored legacy inspector/heatmap defaults when the calm-workspace flag is absent.
+- Kept the raw liquidity heatmap hidden by default in the calm Context workspace.
+- Replaced UI-local integrity types with the versioned `src/lib/orderflow` contracts.
+- Replaced hard-coded freshness and feed claims with source-derived or explicitly unavailable provenance.
+- Marked demo candles/options as `REPLAY`, demo depth/tape as `UNAVAILABLE`, and Jev as disabled `SHADOW`.
+- Removed fabricated CVD, absorption, replenishment, setup zone, trigger, invalidation, evidence, conflicts, and passing gates.
+- UX16.0 Flow now shows zero accepted events and explains that aggregate-trade capture begins in UX16.1.
+- UX16.0 Setup now renders `INSUFFICIENT_DATA`, grade `NONE`, and missing gates.
+- Removed the duplicated workspace-mode selector from the Decision Dock; the header is the single mode switcher.
+- Kept existing chart, drawing, fixed-range VP, AVWAP, lower-pane, risk, history, and heatmap-toggle behavior working.
+- Updated visual artifacts at 1366x768, 1664x936, and 1920x1080.
+- Updated the Deribit route handler to the non-optional Next.js 16 request signature and updated its tests.
+
+## Verification evidence
+
+- `npx vitest run`: PASS — 31 files, 209 tests.
 - `npx tsc --noEmit`: PASS.
-- `npx eslint src/lib/orderflow src/lib/binance src/app/api/binance src/lib/quant src/lib/deribit`: PASS with no warnings or errors.
-- `npm run build`: PASS — Next.js 16.4.2 production compilation, TypeScript validation, static generation, and existing API route collection.
-- `git diff --cached --check`: PASS before the source commit.
+- Scoped ESLint across all UX16 integration files, order-flow contracts, Deribit route, and browser tests: PASS — 0 warnings, 0 errors.
+- Default-off production build: PASS.
+- UX16-enabled production build: PASS.
+- Default-off legacy browser smoke: PASS — 1/1.
+- `tests/ui/ux16-calm-workspace.pw.ts`: PASS — 2/2 projects.
+- `tests/ui/market-terminal.pw.ts`: PASS — 13 applicable scenarios; 9 mobile skips are declared desktop-only interactions.
+- Accessibility scenario: PASS with no serious or critical automated violations.
+- `git diff --cached --check`: PASS before the correction commit.
 
-## Safe UX16.0 Boundaries
+## Known repository-wide lint debt
 
-- No live aggregate-trade WebSocket was connected. That remains UX16.1.
-- No trade tape, CVD, footprint, volume-profile, imbalance, absorption, acceptance, or setup calculation was implemented.
-- No Jev request, server adapter, prompt, response, or credential path was implemented or enabled.
-- No broker, exchange credential, order placement, or live execution path was introduced.
-- All UX16 feature flags default to `false`; UX15 remains the safe fallback.
-- No fixture is represented as live market data.
+`npx eslint .` still reports four pre-existing errors outside the UX16 integration files in legacy dashboard/3D/adapters code. They are not introduced by this checkpoint. The scoped UX16 lint gate is clean.
 
-## Integration Notes
+## Safe boundaries preserved
 
-- Antigravity should import contracts and fixtures from `src/lib/orderflow` rather than redefining types in a component.
-- Antigravity may use `UX16_DATA_INTEGRITY_STATUS_FIXTURES_V1` for visual-state testing and `UX16_REPLAY_CONTRACT_FIXTURE_V1` for the UX16.0 shell, but must preserve the replay/fixture labels.
-- The shell must not infer market signals from these records or enable later-milestone flags.
-- Integration order remains Codex contract commit first, Antigravity shell second, followed by full combined validation and Architect review.
+- No aggregate-trade WebSocket or live tape was added; that remains UX16.1.
+- No true CVD, footprint, or trade-volume-profile engine was added; that remains UX16.2.
+- No imbalance, absorption, acceptance, divergence, or setup-signal calculation was added.
+- No Jev request or response path was enabled.
+- No live execution path was introduced.
+- Fixtures and demo data are never labelled live.
