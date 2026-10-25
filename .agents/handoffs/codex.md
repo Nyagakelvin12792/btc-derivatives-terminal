@@ -1,42 +1,65 @@
-# CODEX HANDOFF REPORT — UX15 ASSEMBLED PREVIEW
+# CODEX HANDOFF REPORT — UX16.0 CONTRACT FOUNDATION
 
 >>> COMPLETED BY: Codex
->>> STATUS: COMPLETE
->>> BRANCH: codex/ux15-assembled
->>> COMMIT: d94b469f625df1ae494e569e83de3e7b39961f74
->>> TESTS: PASS — Vitest 26 files/171 tests; TypeScript; ESLint; Next.js 16.4.2 production build; Playwright desktop 11/11 scenarios
+>>> STATUS: REVIEW REQUIRED
+>>> BRANCH: agent/codex
+>>> COMMIT: 6185e1f5fe5399eec2100439b4cee35ed21317cd
+>>> TESTS: PASS — focused UX16 4 files/20 tests; full Vitest 30 files/191 tests; TypeScript; scoped ESLint; Next.js 16.4.2 production build
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review the Vercel preview, then approve promotion only if live liquidity status and chart interactions match acceptance expectations
->>> TARGET: codex/ux15-assembled and its Vercel branch preview
+>>> ACTION REQUIRED: Review and integrate the UX16.0 contract commit before Antigravity consumes the version-1 contracts and replay-labelled fixtures
+>>> TARGET: src/lib/orderflow/** at commit 6185e1f5fe5399eec2100439b4cee35ed21317cd
 
-## Assembled Scope
+## Baseline
 
-- Merged corrected Gemini UI commit `df6e2b2` and Codex liquidity runtime commit `74bc5cb` onto the prior combined UX15 baseline.
-- Preserved the deterministic risk engine and the Binance/Deribit authority boundaries.
-- Replaced mount-time risk snapshots with one hydration-safe `useSyncExternalStore` source shared by the chart HUD and Risk Terminal.
-- Completed actual browser pointer coverage for Entry, Stop, Target, left/right extents, whole-position movement, invalid geometry, and locked immutability.
-- Connected `useBinanceLiquidityHeatmap` at the terminal ownership boundary.
-- Added a bounded canvas heatmap chart layer sourced only from sequence-valid Binance Spot depth frames.
-- Added explicit `BUFFERING`, `LIVE`, `STALE`, `GAP`, `OFFLINE`, and `PAUSED` visibility plus retained-frame and warm-up coverage.
-- Added Layers and study-chip toggles for the liquidity heatmap.
-- Kept liquidity history explicitly session-local; no historical exchange depth is fabricated.
-- Kept `NO LIVE EXECUTION`; no broker or order-routing path was introduced.
+- Started from the approved assembled UX16 plan baseline `49fad7569d7183711b8dff4c8027e6668ee63091`.
+- Fast-forwarded the dedicated `agent/codex` worktree to that baseline before editing.
+- Modified only Codex-owned `src/lib/orderflow/**` files and this handoff.
+- Did not modify `STATE.md`, terminal components, browser tests, visual assets, Deribit calculations, the existing risk engine, or Antigravity-owned files.
+
+## Delivered
+
+- Added strict, versioned Zod contracts for:
+  - capture coverage and provenance;
+  - classified aggregate trades;
+  - footprint cells and bars;
+  - depth time buckets;
+  - deterministic evidence;
+  - setup assessments;
+  - Data Integrity Strip sources and states;
+  - UX16 replay fixture bundles.
+- Added cross-field invariants for coverage ranges, price/time bounds, aggressor semantics, trade notional, footprint totals, grade-A state/gates/data quality, trigger, and invalidation.
+- Added pure Binance Spot aggregate-trade parsing and classification:
+  - `buyerIsMaker === true` maps to aggressive `SELL`;
+  - `buyerIsMaker === false` maps to aggressive `BUY`;
+  - malformed, wrong-symbol, wrong-event, unsafe-ID, reversed-ID, duplicate, and out-of-order inputs are rejected.
+- Added deterministic provenance utilities for freshness, coverage quality, explicit replay/shadow status, gap degradation, and exact-capture checks.
+- Added public and server feature-flag contracts with all UX16 flags disabled by default.
+- Kept server flag names separate from `NEXT_PUBLIC_*` public flags.
+- Added a replay-labelled UX16 contract fixture and visual fixtures for `LOADING`, `READY`, `PARTIAL`, `STALE`, `UNAVAILABLE`, `ERROR`, `REPLAY`, and `SHADOW` states.
+- All fixtures explicitly say they are UI/replay fixtures and must not be presented as live data.
+- Added one stable barrel export at `src/lib/orderflow/index.ts` for Antigravity consumption.
 
 ## Verification
 
-- Full Vitest: 26 files, 171 tests passed.
-- TypeScript: `npx tsc --noEmit` passed.
-- ESLint: terminal, Binance, dashboard-store, Binance API, and Playwright scopes passed with zero errors.
-- Production build: Next.js 16.4.2 passed; `/api/binance/depth` is included as a dynamic route.
-- Playwright desktop 16:9: 11 scenarios passed, including responsive liquidity layout, 10,000-candle history, volume-profile viewport preservation, collapsible lower dock, drawing lifecycle, Fibonacci, Long/Short risk objects, complete position dragging, risk synchronization, locked immutability, accessibility, and the live heatmap renderer/toggle.
-- `git diff --cached --check`: passed before the source commit.
+- `npx vitest run src/lib/orderflow`: PASS — 4 files, 20 tests.
+- `npx vitest run`: PASS — 30 files, 191 tests.
+- `npx tsc --noEmit`: PASS.
+- `npx eslint src/lib/orderflow src/lib/binance src/app/api/binance src/lib/quant src/lib/deribit`: PASS with no warnings or errors.
+- `npm run build`: PASS — Next.js 16.4.2 production compilation, TypeScript validation, static generation, and existing API route collection.
+- `git diff --cached --check`: PASS before the source commit.
 
-## Deliberately Not Included
+## Safe UX16.0 Boundaries
 
-- Durable historical order-book storage.
-- Aggregate-trade footprint or candle imbalance rendering.
-- Smart AVWAP anchor selection.
-- Jev confluence reasoning changes.
-- Broker integration or live execution.
+- No live aggregate-trade WebSocket was connected. That remains UX16.1.
+- No trade tape, CVD, footprint, volume-profile, imbalance, absorption, acceptance, or setup calculation was implemented.
+- No Jev request, server adapter, prompt, response, or credential path was implemented or enabled.
+- No broker, exchange credential, order placement, or live execution path was introduced.
+- All UX16 feature flags default to `false`; UX15 remains the safe fallback.
+- No fixture is represented as live market data.
 
-These remain separate milestones and should not be represented as completed by this assembly.
+## Integration Notes
+
+- Antigravity should import contracts and fixtures from `src/lib/orderflow` rather than redefining types in a component.
+- Antigravity may use `UX16_DATA_INTEGRITY_STATUS_FIXTURES_V1` for visual-state testing and `UX16_REPLAY_CONTRACT_FIXTURE_V1` for the UX16.0 shell, but must preserve the replay/fixture labels.
+- The shell must not infer market signals from these records or enable later-milestone flags.
+- Integration order remains Codex contract commit first, Antigravity shell second, followed by full combined validation and Architect review.
