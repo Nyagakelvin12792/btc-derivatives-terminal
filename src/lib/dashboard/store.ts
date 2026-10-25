@@ -3,6 +3,8 @@ import { persist } from 'zustand/middleware';
 import { WorkspaceTab } from '@/lib/dashboard/types';
 import { TerrainSurfaceCell } from '@/lib/terrain/types';
 
+export type WorkspaceMode = 'CONTEXT' | 'FLOW' | 'SETUP';
+
 export interface VisibleLayersState {
     gex: boolean;
     vanna: boolean;
@@ -18,6 +20,10 @@ export interface TerminalState {
     // Active Navigation
     activeWorkspace: WorkspaceTab;
     setActiveWorkspace: (tab: WorkspaceTab) => void;
+
+    // UX16 Workspace Mode Shell (Context / Flow / Setup)
+    workspaceMode: WorkspaceMode;
+    setWorkspaceMode: (mode: WorkspaceMode) => void;
 
     // Data Mode
     dataMode: 'LIVE' | 'DEMO' | 'DEGRADED';
@@ -78,10 +84,10 @@ export interface TerminalState {
 
 const defaultChartLayers = {
     walls: true,
-    secondaryWalls: true,
+    secondaryWalls: false,
     gammaRegime: true,
     gammaFlip: true,
-    maxPain: true,
+    maxPain: false,
     liquidityHeatmap: true,
     volumeProfile: true,
     avwap: true,
@@ -90,6 +96,9 @@ const defaultChartLayers = {
 export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     activeWorkspace: 'MARKET STRUCTURE',
     setActiveWorkspace: (tab) => set({ activeWorkspace: tab }),
+
+    workspaceMode: 'CONTEXT',
+    setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
 
     dataMode: 'LIVE',
     setDataMode: (mode) => set({ dataMode: mode }),
@@ -137,7 +146,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
 
     inspectorOpen: true,
     setInspectorOpen: (open) => set({ inspectorOpen: open }),
-    inspectorTab: 'OPTIONS',
+    inspectorTab: 'DECISION',
     setInspectorTab: (tab) => set({ inspectorTab: tab }),
     studyPaneOpen: true,
     setStudyPaneOpen: (open) => set({ studyPaneOpen: open }),
@@ -156,8 +165,9 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         },
     })),
     resetWorkspaceUi: () => set({
+        workspaceMode: 'CONTEXT',
         inspectorOpen: true,
-        inspectorTab: 'OPTIONS',
+        inspectorTab: 'DECISION',
         studyPaneOpen: true,
         activeOrderFlowStudy: 'CVD',
         dteFilter: 'ALL',
@@ -169,6 +179,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     version: 1,
     partialize: (state) => ({
         activeWorkspace: state.activeWorkspace,
+        workspaceMode: state.workspaceMode,
         dataMode: state.dataMode,
         inspectorOpen: state.inspectorOpen,
         inspectorTab: state.inspectorTab,

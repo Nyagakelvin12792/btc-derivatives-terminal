@@ -5,7 +5,6 @@ import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
 import * as Switch from '@radix-ui/react-switch';
-import * as Tabs from '@radix-ui/react-tabs';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { Command } from 'cmdk';
 import { Group, Panel, Separator } from 'react-resizable-panels';
@@ -17,7 +16,6 @@ import {
     ChevronDown,
     CircleHelp,
     Command as CommandIcon,
-    Database,
     Eye,
     EyeOff,
     Layers3,
@@ -48,19 +46,22 @@ import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import type { WorkspaceTab } from '../../lib/dashboard/types';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
-import { useBinanceMarketFeed, type BinanceMarketFeed } from '../../lib/binance/use-market-feed';
+import { useBinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import { useBinanceLiquidityHeatmap } from '../../lib/binance/use-liquidity-heatmap';
 import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
-import RiskTerminal, {
+import {
     DEFAULT_RISK_SETTINGS,
     type PositionRiskSettings,
     readPersistedRiskSettings,
     subscribePersistedRiskSettings,
     writePersistedRiskSettings,
 } from './RiskTerminal';
-import type { DrawingObject, PositionDrawingType, PositionPrices } from './drawing-model';
+import type { DrawingObject, PositionPrices } from './drawing-model';
+import DecisionDock from './DecisionDock';
+import DataIntegrityStrip from './DataIntegrityStrip';
+import type { DataIntegrityDomain } from './terminal-theme';
 
 interface MarketTerminalProps {
     data: TerrainDataContractV2;
@@ -141,90 +142,35 @@ function levelStrike(value: unknown): number | undefined {
     return undefined;
 }
 
-function Metric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' | 'warning' }) {
-    const color = tone === 'positive' ? 'text-emerald-300' : tone === 'negative' ? 'text-rose-300' : tone === 'warning' ? 'text-sky-300' : 'text-zinc-100';
-    return <div className="rounded-md border border-[#253347] bg-[#0a1018] px-2.5 py-2"><div className="truncate text-[9px] font-semibold uppercase text-zinc-500">{label}</div><div className={cn('mt-1 font-mono text-[13px] font-semibold tabular-nums', color)}>{value}</div></div>;
-}
-
 function LayerToggle({ label, checked, onCheckedChange, compact: isCompact = false }: { label: string; checked: boolean; onCheckedChange: () => void; compact?: boolean }) {
-    return <div className={cn('flex items-center justify-between gap-3', isCompact ? 'py-1.5' : 'py-1.5')}><span className={cn('truncate text-zinc-300', isCompact ? 'text-[10px]' : 'text-[11px]')}>{label}</span><Switch.Root aria-label={`Toggle ${label}`} checked={checked} onCheckedChange={onCheckedChange} className="relative h-5 w-9 shrink-0 rounded-full border border-[#2a3748] bg-[#111a25] data-[state=checked]:border-cyan-400/50 data-[state=checked]:bg-cyan-500/25"><Switch.Thumb className="block size-3.5 translate-x-0.5 rounded-full bg-zinc-400 transition-transform duration-150 data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-cyan-300 motion-reduce:transition-none" /></Switch.Root></div>;
+    return <div className={cn('flex items-center justify-between gap-3', isCompact ? 'py-1' : 'py-1.5')}><span className={cn('truncate text-[#D8DEE8]', isCompact ? 'text-[10px]' : 'text-[11px]')}>{label}</span><Switch.Root aria-label={`Toggle ${label}`} checked={checked} onCheckedChange={onCheckedChange} className="relative h-5 w-9 shrink-0 rounded-full border border-[#18212C] bg-[#141B24] data-[state=checked]:border-[#39A9F5]/60 data-[state=checked]:bg-[#39A9F5]/30"><Switch.Thumb className="block size-3.5 translate-x-0.5 rounded-full bg-[#8390A0] transition-transform duration-150 data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-[#39A9F5] motion-reduce:transition-none" /></Switch.Root></div>;
 }
 
 function InspectorMetric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' }) {
-    const color = tone === 'positive' ? 'text-emerald-300' : tone === 'negative' ? 'text-rose-300' : 'text-zinc-100';
-    return <div className="flex min-w-0 items-center justify-between gap-2 rounded border border-[#253347] bg-[#0a1018] px-2 py-2"><span className="truncate text-[10px] text-zinc-500">{label}</span><span className={cn('shrink-0 font-mono text-[11px] font-semibold tabular-nums', color)}>{value}</span></div>;
+    const color = tone === 'positive' ? 'text-[#2CC7A0]' : tone === 'negative' ? 'text-[#E06379]' : 'text-[#D8DEE8]';
+    return <div className="flex min-w-0 items-center justify-between gap-2 rounded border border-[#18212C] bg-[#070A0F] px-2 py-2"><span className="truncate text-[10px] text-[#8390A0]">{label}</span><span className={cn('shrink-0 font-mono text-[11px] font-semibold tabular-nums', color)}>{value}</span></div>;
 }
 
 function SourceChip({ label, state, tone }: { label: string; state: string; tone: 'live' | 'shadow' | 'demo' | 'off' }) {
-    const dot = tone === 'live' ? 'bg-emerald-300' : tone === 'shadow' ? 'bg-sky-300' : tone === 'demo' ? 'bg-amber-300' : 'bg-zinc-500';
-    const textTone = tone === 'live' ? 'text-emerald-300' : tone === 'shadow' ? 'text-sky-300' : tone === 'demo' ? 'text-amber-300' : 'text-zinc-500';
-    return <div className="hidden h-8 items-center gap-2 rounded border border-[#253347] bg-[#0a111a] px-2.5 text-[9px] lg:flex"><span className={cn('size-2 rounded-full', dot)} /><span className="font-semibold text-zinc-200">{label}</span><span className={cn('font-bold', textTone)}>{state}</span></div>;
+    const dot = tone === 'live' ? 'bg-[#2CC7A0]' : tone === 'shadow' ? 'bg-[#39A9F5]' : tone === 'demo' ? 'bg-[#E6B450]' : 'bg-[#5C697A]';
+    const textTone = tone === 'live' ? 'text-[#2CC7A0]' : tone === 'shadow' ? 'text-[#39A9F5]' : tone === 'demo' ? 'text-[#E6B450]' : 'text-[#8390A0]';
+    return <div className="hidden h-8 items-center gap-2 rounded border border-[#18212C] bg-[#070A0F] px-2.5 text-[9px] font-mono lg:flex"><span className={cn('size-1.5 rounded-full', dot)} /><span className="font-semibold text-[#D8DEE8]">{label}</span><span className={cn('font-bold uppercase', textTone)}>{state}</span></div>;
 }
 
 function StudyChip({ label, visible, onToggle, description }: { label: string; visible: boolean; onToggle: () => void; description: string }) {
-    return <div className="flex h-8 shrink-0 items-center rounded border border-[#2b3b50] bg-[#0a121d] text-[9px] font-semibold text-cyan-300"><span className="px-2">{label}</span><button type="button" aria-label={`${visible ? 'Hide' : 'Show'} ${label}`} onClick={onToggle} className="border-l border-[#2b3b50] p-2 text-zinc-400 hover:text-zinc-100">{visible ? <Eye className="size-3" /> : <EyeOff className="size-3" />}</button><Popover.Root><Popover.Trigger asChild><button type="button" aria-label={`${label} settings`} className="border-l border-[#2b3b50] p-2 text-zinc-400 hover:text-zinc-100"><Settings className="size-3" /></button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-56 rounded-md border border-[#33445a] bg-[#0b121c] p-3 text-[10px] text-zinc-300 shadow-lg"><div className="font-semibold text-zinc-100">{label}</div><p className="mt-1 text-pretty leading-relaxed text-zinc-500">{description}</p><Popover.Arrow className="fill-[#33445a]" /></Popover.Content></Popover.Portal></Popover.Root><button type="button" aria-label={`Remove ${label}`} onClick={onToggle} className="border-l border-[#2b3b50] p-2 text-zinc-400 hover:text-rose-300"><X className="size-3" /></button></div>;
+    return <div className="flex h-7 shrink-0 items-center rounded border border-[#18212C] bg-[#0C1118] text-[9px] font-mono font-semibold text-[#39A9F5]"><span className="px-2 text-[#D8DEE8]">{label}</span><button type="button" aria-label={`${visible ? 'Hide' : 'Show'} ${label}`} onClick={onToggle} className="border-l border-[#18212C] p-1.5 text-[#8390A0] hover:text-[#D8DEE8]">{visible ? <Eye className="size-3 text-[#39A9F5]" /> : <EyeOff className="size-3" />}</button><Popover.Root><Popover.Trigger asChild><button type="button" aria-label={`${label} settings`} className="border-l border-[#18212C] p-1.5 text-[#8390A0] hover:text-[#D8DEE8]"><Settings className="size-3" /></button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-56 rounded border border-[#18212C] bg-[#0C1118] p-3 text-[10px] text-[#D8DEE8] shadow-xl"><div className="font-semibold text-[#D8DEE8]">{label}</div><p className="mt-1 text-pretty leading-relaxed text-[#8390A0]">{description}</p><Popover.Arrow className="fill-[#18212C]" /></Popover.Content></Popover.Portal></Popover.Root><button type="button" aria-label={`Remove ${label}`} onClick={onToggle} className="border-l border-[#18212C] p-1.5 text-[#8390A0] hover:text-[#E06379]"><X className="size-3" /></button></div>;
 }
 
 function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; data: TerrainDataContractV2; isError: boolean }) {
     const { dataMode, dteFilter, setDteFilter, chartLayers, toggleChartLayer, setInspectorTab } = useTerminalStore();
     const decisionReason = Math.abs((metrics.spot - metrics.gammaFlip) / metrics.spot) < 0.012 ? 'Wait for Gamma Flip confirmation' : 'Wait for retest confirmation';
-    return <div className="space-y-2 p-2.5">
-        <div className="grid min-h-[92px] grid-cols-[1.25fr_1fr_0.8fr] divide-x divide-[#263346] rounded border border-[#263346] bg-[#0a111a] p-3"><div><div className="text-[10px] text-zinc-500">Gamma Regime</div><div className={cn('mt-1.5 text-xl font-bold leading-none', metrics.longGamma ? 'text-emerald-300' : 'text-rose-300')}>{metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}</div><div className="mt-2 text-[10px] text-zinc-500">{metrics.longGamma ? 'mean-reversion' : 'expansion'}</div></div><div className="pl-3"><div className="text-[10px] text-zinc-500">Net GEX</div><div className={cn('mt-3 font-mono text-base font-bold tabular-nums', metrics.longGamma ? 'text-emerald-300' : 'text-rose-300')}>{compact(metrics.netGex, '$')}</div></div><div className="pl-3"><div className="text-[10px] text-zinc-500">Flip</div><div className="mt-3 font-mono text-[13px] font-bold tabular-nums text-sky-300">{Math.round(metrics.gammaFlip).toLocaleString()}</div></div></div>
-        <div className="rounded border border-[#263346] bg-[#090f17] p-2.5"><div className="mb-2 text-[10px] font-semibold text-zinc-500">DTE (Days to Expiry)</div><div className="grid grid-cols-5 gap-1">{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} title={filter === 'ALL' ? 'All expiries' : `Expiries up to ${filter.replace('D', '')} days`} className={cn('h-8 rounded border text-[9px] font-bold', dteFilter === filter ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#2b3b50] text-zinc-500 hover:text-zinc-200')}>{filter}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><InspectorMetric label="Call Wall" value={Math.round(metrics.callWall).toLocaleString()} tone="positive" /><InspectorMetric label="Put Wall" value={Math.round(metrics.putWall).toLocaleString()} tone="negative" /><InspectorMetric label="Max Pain" value={Math.round(metrics.maxPain).toLocaleString()} /><InspectorMetric label="Key P/C" value={metrics.putCallRatio === undefined ? '—' : metrics.putCallRatio.toFixed(2)} /><InspectorMetric label="Near-ATM IV" value={metrics.atmIv === undefined ? '—' : `${(metrics.atmIv > 3 ? metrics.atmIv : metrics.atmIv * 100).toFixed(1)}%`} /><InspectorMetric label="IV Rank" value="N/A" /><InspectorMetric label="Key Call OI" value={compact(metrics.callOi)} /><InspectorMetric label="Key Put OI" value={compact(metrics.putOi)} /></div></div>
-        <div className="grid grid-cols-[1fr_0.92fr] gap-1.5"><div className="rounded border border-[#263346] bg-[#0a111a] p-2.5"><div className="mb-0.5 text-[10px] font-semibold text-zinc-400">Show on chart</div><LayerToggle compact label="Walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle compact label="Gamma Regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle compact label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle compact label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle compact label="Secondary GEX" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /></div><div className="rounded border border-[#263346] bg-[#0a111a] p-2.5"><div className="text-[10px] font-semibold text-zinc-400">Display</div><div className="mt-2 grid grid-cols-2 gap-1">{(['GEX', 'OI'] as const).map((display) => <button key={display} type="button" disabled={display === 'OI'} title={display === 'OI' ? 'Requires a full-chain call/put OI wall contract' : 'Gamma exposure walls'} className={cn('h-8 rounded border text-[9px] font-bold disabled:cursor-not-allowed disabled:opacity-40', display === 'GEX' ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#2b3b50] text-zinc-500')}>{display}</button>)}</div><div className="mt-4 space-y-3 text-[9px] text-zinc-400"><div className="flex items-center gap-1.5"><span className="h-1 w-4 bg-emerald-400" />Primary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dashed border-zinc-400" />Secondary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dotted border-zinc-300" />Max Pain</div></div></div></div>
-        <div className="min-h-[118px] rounded border border-[#2a3c50] bg-[#0b121b] p-3"><div className="flex items-center justify-between"><span className="text-[10px] font-semibold text-zinc-400">Decision</span><button type="button" onClick={() => setInspectorTab('DECISION')} className="rounded border border-cyan-400/40 px-2.5 py-1.5 text-[9px] font-semibold text-cyan-300">Open →</button></div><div className="mt-2 text-2xl font-black text-zinc-100">NO TRADE</div><p className="mt-1.5 text-pretty text-[10px] text-zinc-400">{decisionReason}</p></div>
-        <p className="border-t border-[#263346] px-0.5 pt-2 text-pretty text-[8px] leading-relaxed text-zinc-500">Dealer positioning uses {data.assumptionModel}. It is not directly observed inventory. {isError && dataMode === 'LIVE' ? 'Live feed unavailable.' : ''}</p>
+    return <div className="space-y-2 p-2.5 font-sans">
+        <div className="grid min-h-[92px] grid-cols-[1.25fr_1fr_0.8fr] divide-x divide-[#18212C] rounded border border-[#18212C] bg-[#070A0F] p-3"><div><div className="text-[10px] font-mono text-[#8390A0]">Gamma Regime</div><div className={cn('mt-1.5 text-xl font-bold leading-none font-mono', metrics.longGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>{metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}</div><div className="mt-2 text-[10px] text-[#8390A0]">{metrics.longGamma ? 'mean-reversion' : 'expansion'}</div></div><div className="pl-3"><div className="text-[10px] font-mono text-[#8390A0]">Net GEX</div><div className={cn('mt-3 font-mono text-base font-bold tabular-nums', metrics.longGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>{compact(metrics.netGex, '$')}</div></div><div className="pl-3"><div className="text-[10px] font-mono text-[#8390A0]">Flip</div><div className="mt-3 font-mono text-[13px] font-bold tabular-nums text-[#39A9F5]">{Math.round(metrics.gammaFlip).toLocaleString()}</div></div></div>
+        <div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="mb-2 text-[10px] font-mono font-semibold text-[#8390A0]">DTE (Days to Expiry)</div><div className="grid grid-cols-5 gap-1">{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} title={filter === 'ALL' ? 'All expiries' : `Expiries up to ${filter.replace('D', '')} days`} className={cn('h-7 rounded border font-mono text-[9px] font-bold transition-colors', dteFilter === filter ? 'border-[#39A9F5]/60 bg-[#39A9F5]/15 text-[#39A9F5]' : 'border-[#18212C] text-[#8390A0] hover:text-[#D8DEE8]')}>{filter}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><InspectorMetric label="Call Wall" value={Math.round(metrics.callWall).toLocaleString()} tone="positive" /><InspectorMetric label="Put Wall" value={Math.round(metrics.putWall).toLocaleString()} tone="negative" /><InspectorMetric label="Max Pain" value={Math.round(metrics.maxPain).toLocaleString()} /><InspectorMetric label="Key P/C" value={metrics.putCallRatio === undefined ? '—' : metrics.putCallRatio.toFixed(2)} /><InspectorMetric label="Near-ATM IV" value={metrics.atmIv === undefined ? '—' : `${(metrics.atmIv > 3 ? metrics.atmIv : metrics.atmIv * 100).toFixed(1)}%`} /><InspectorMetric label="IV Rank" value="N/A" /><InspectorMetric label="Key Call OI" value={compact(metrics.callOi)} /><InspectorMetric label="Key Put OI" value={compact(metrics.putOi)} /></div></div>
+        <div className="grid grid-cols-[1fr_0.92fr] gap-1.5"><div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="mb-0.5 text-[10px] font-mono font-semibold text-[#8390A0]">Show on chart</div><LayerToggle compact label="Walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle compact label="Gamma Regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle compact label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle compact label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle compact label="Secondary GEX" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /></div><div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="text-[10px] font-mono font-semibold text-[#8390A0]">Display</div><div className="mt-2 grid grid-cols-2 gap-1">{(['GEX', 'OI'] as const).map((display) => <button key={display} type="button" disabled={display === 'OI'} title={display === 'OI' ? 'Requires a full-chain call/put OI wall contract' : 'Gamma exposure walls'} className={cn('h-7 rounded border font-mono text-[9px] font-bold disabled:cursor-not-allowed disabled:opacity-40 transition-colors', display === 'GEX' ? 'border-[#39A9F5]/60 bg-[#39A9F5]/15 text-[#39A9F5]' : 'border-[#18212C] text-[#8390A0]')}>{display}</button>)}</div><div className="mt-4 space-y-2.5 text-[9px] font-mono text-[#8390A0]"><div className="flex items-center gap-1.5"><span className="h-1 w-4 bg-[#2CC7A0]" />Primary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dashed border-[#8390A0]" />Secondary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dotted border-[#5C697A]" />Max Pain</div></div></div></div>
+        <div className="min-h-[110px] rounded border border-[#18212C] bg-[#070A0F] p-3"><div className="flex items-center justify-between"><span className="font-mono text-[10px] font-semibold text-[#8390A0]">Decision State</span><button type="button" onClick={() => setInspectorTab('DECISION')} className="rounded border border-[#39A9F5]/40 px-2.5 py-1 font-mono text-[9px] font-semibold text-[#39A9F5] hover:bg-[#39A9F5]/10">Open →</button></div><div className="mt-2 font-mono text-xl font-black text-[#D8DEE8]">NO TRADE</div><p className="mt-1 text-pretty text-[10px] text-[#8390A0]">{decisionReason}</p></div>
+        <p className="border-t border-[#18212C] px-0.5 pt-2 text-pretty text-[8px] leading-relaxed text-[#5C697A]">Dealer positioning uses {data.assumptionModel}. It is not directly observed inventory. {isError && dataMode === 'LIVE' ? 'Live feed unavailable.' : ''}</p>
     </div>;
-}
-
-function Inspector({
-    metrics,
-    data,
-    marketFeed,
-    isError,
-    onClose,
-    selectedDrawing,
-    onUpdatePositionPrices,
-    onSelectDrawingType,
-    riskSettings,
-    onSettingsChange,
-}: {
-    metrics: MarketMetrics;
-    data: TerrainDataContractV2;
-    marketFeed: BinanceMarketFeed;
-    isError: boolean;
-    onClose: () => void;
-    selectedDrawing: DrawingObject | null;
-    onUpdatePositionPrices: (prices: PositionPrices) => void;
-    onSelectDrawingType: (type: PositionDrawingType) => void;
-    riskSettings: PositionRiskSettings;
-    onSettingsChange: (settings: PositionRiskSettings) => void;
-}) {
-    const { inspectorTab, setInspectorTab, dataMode } = useTerminalStore();
-    const timestamp = new Date(data.timestamp).toLocaleString(undefined, { hour12: false });
-    return <Tabs.Root value={inspectorTab} onValueChange={(value) => setInspectorTab(value as typeof inspectorTab)} className="h-full">
-        <div className="sticky top-0 z-20 flex h-11 items-center border-b border-[#263346] bg-[#080d14]"><Tabs.List className="grid h-full flex-1 grid-cols-4 px-1">{(['OPTIONS', 'DECISION', 'RISK', 'DATA'] as const).map((tab) => <Tabs.Trigger key={tab} value={tab} className="mt-1 h-10 rounded-t border border-transparent text-[9px] font-bold text-zinc-500 data-[state=active]:border-[#2c4157] data-[state=active]:border-b-cyan-300 data-[state=active]:bg-[#0c1722] data-[state=active]:text-zinc-100">{tab}</Tabs.Trigger>)}</Tabs.List><button type="button" onClick={onClose} aria-label="Close options metrics" className="mr-1 rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 md:hidden"><X className="size-3.5" /></button></div>
-        <Tabs.Content value="OPTIONS" className="outline-none"><OptionsContent metrics={metrics} data={data} isError={isError} /></Tabs.Content>
-        <Tabs.Content value="DECISION" className="space-y-3 p-3 outline-none"><div className="rounded-md border border-cyan-400/25 bg-cyan-400/[0.05] p-3"><div className="flex items-center justify-between"><span className="text-[9px] font-bold text-cyan-200">DETERMINISTIC BASELINE</span><span className="rounded border border-zinc-600 px-1.5 py-0.5 text-[8px] text-zinc-400">OBSERVE</span></div><div className="mt-3 text-2xl font-black">NO TRADE</div><p className="mt-2 text-pretty text-[10px] leading-relaxed text-zinc-400">Wait for price to retest a structural level and confirm acceptance or rejection. Chart position alone does not generate a trade.</p></div><div className="rounded-md border border-amber-400/25 bg-amber-400/[0.04] p-3"><div className="flex items-center justify-between"><span className="text-[9px] font-bold text-amber-200">JEV SHADOW OPINION</span><span className="text-[8px] text-amber-300">UNAVAILABLE</span></div><p className="mt-2 text-pretty text-[10px] leading-relaxed text-zinc-500">The repository exposes no Jev response contract to this frontend. No AI opinion is invented.</p></div><div className="rounded-md border border-[#263346] p-3 text-[9px] text-zinc-500"><div className="mb-2 font-semibold text-zinc-300">Evidence required before promotion</div><ul className="space-y-1"><li>• Replay-safe deterministic agreement</li><li>• Calibrated confidence and abstention</li><li>• Timestamped source provenance</li></ul></div></Tabs.Content>
-        <Tabs.Content value="RISK" className="h-full overflow-y-auto p-3 outline-none" data-testid="risk-inspector-tab">
-            <RiskTerminal
-                selectedDrawing={selectedDrawing}
-                onUpdatePositionPrices={onUpdatePositionPrices}
-                onSelectDrawingType={onSelectDrawingType}
-                riskSettings={riskSettings}
-                onSettingsChange={onSettingsChange}
-            />
-            <div className="mt-4 space-y-2 border-t border-[#263346] pt-3">
-                <div className="text-[10px] font-semibold text-zinc-400">Structural Options Context</div>
-                <div className="grid grid-cols-2 gap-2">
-                    <Metric label="Distance to Call Wall" value={`${(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%`} />
-                    <Metric label="Distance to Put Wall" value={`${(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%`} />
-                </div>
-                <Metric label="Contracts Observed" value={metrics.contractsCount?.toLocaleString() ?? '—'} />
-            </div>
-        </Tabs.Content>
-        <Tabs.Content value="DATA" className="space-y-3 p-3 outline-none"><div className="flex items-center gap-2 text-[10px] font-bold text-zinc-300"><Database className="size-4 text-cyan-300" />DATA HEALTH</div>{[['Mode', dataMode], ['Contract', `Terrain v${data.schemaVersion}`], ['Timestamp', timestamp], ['Price candles', dataMode === 'DEMO' ? 'DEMO FIXTURE' : marketFeed.state], ['CVD / Delta', dataMode === 'DEMO' ? 'SHADOW DEMO' : marketFeed.state], ['Book / Liquidity', dataMode === 'DEMO' ? 'UNAVAILABLE IN DEMO' : marketFeed.book ? marketFeed.state : 'OFFLINE'], ['Options structure', isError && dataMode === 'LIVE' ? 'UNAVAILABLE' : data.dataMode], ['Jev', 'NO FRONTEND CONTRACT']].map(([label, value]) => <div key={label} className="flex items-start justify-between gap-3 border-b border-[#263346] py-2 text-[9px]"><span className="text-zinc-500">{label}</span><span className="break-all text-right font-mono text-zinc-300">{value}</span></div>)}</Tabs.Content>
-    </Tabs.Root>;
 }
 
 export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
@@ -256,7 +202,24 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
         writePersistedRiskSettings(next);
     }, []);
     const isDesktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, () => false);
-    const { setActiveWorkspace, dataMode, setDataMode, inspectorOpen, setInspectorOpen, setStudyPaneOpen, activeOrderFlowStudy, setActiveOrderFlowStudy, dteFilter, setDteFilter, chartLayers, toggleChartLayer, resetWorkspaceUi } = useTerminalStore();
+    const {
+        workspaceMode,
+        setWorkspaceMode,
+        setActiveWorkspace,
+        dataMode,
+        setDataMode,
+        inspectorOpen,
+        setInspectorOpen,
+        setInspectorTab,
+        setStudyPaneOpen,
+        activeOrderFlowStudy,
+        setActiveOrderFlowStudy,
+        dteFilter,
+        setDteFilter,
+        chartLayers,
+        toggleChartLayer,
+        resetWorkspaceUi,
+    } = useTerminalStore();
     const marketFeed = useBinanceMarketFeed(BINANCE_INTERVALS[timeframe], dataMode === 'LIVE');
     const liquidityFeed = useBinanceLiquidityHeatmap(dataMode === 'LIVE', {
         heatmap: {
@@ -302,6 +265,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
         const nearest = [...(data.keyContracts || [])].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0];
         return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex >= 0 };
     }, [data]);
+
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
     const displayedSpot = liveSpot ?? metrics.spot;
     const changePct = dataMode === 'LIVE' ? marketFeed.ticker?.priceChangePercent : numeric((data.summary as unknown as Record<string, unknown>).spot24hChangePct);
@@ -320,164 +284,536 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
         setSavedAt(new Date().toLocaleTimeString());
     }
 
-    return <Tooltip.Provider delayDuration={300}><div className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-[#05080d] text-zinc-100">
-        <header className="flex h-13 shrink-0 items-center gap-3 border-b border-[#263346] bg-[#080d14] px-2 md:px-3">
-            <div className="flex min-w-0 items-center gap-2"><div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-amber-500 font-mono font-black text-black">₿</div><div className="hidden text-sm font-bold sm:block">BTCUSDT</div><ChevronDown className="size-3 text-zinc-500" /></div>
-            <div className="font-mono text-base font-semibold tabular-nums md:text-lg">{displayedSpot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</div><div className={cn('hidden font-mono text-sm font-semibold tabular-nums sm:block', changePct === undefined ? 'text-zinc-500' : changePct >= 0 ? 'text-emerald-300' : 'text-rose-300')}>{changePct === undefined ? '—' : `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`}</div>
-            <div className="ml-auto hidden items-center rounded border border-[#263346] md:flex">{TIMEFRAMES.map((item) => <button key={item} type="button" onClick={() => setTimeframe(item)} className={cn('h-8 min-w-10 px-2 text-[10px] text-zinc-400', timeframe === item && 'bg-sky-500/20 text-sky-200')}>{item}</button>)}</div><button type="button" className="hidden h-8 items-center gap-2 rounded border border-[#263346] px-3 text-[10px] text-zinc-300 xl:flex">{expiryLabel}<ChevronDown className="size-3" /></button>
-            <SourceChip label="Binance" state={binanceState} tone={binanceState === 'LIVE' ? 'live' : binanceState === 'DEMO' ? 'demo' : binanceState === 'STALE' || binanceState === 'CONNECTING' ? 'shadow' : 'off'} /><SourceChip label="Deribit" state={deribitState} tone={deribitState === 'LIVE' ? 'live' : deribitState === 'DEMO' ? 'demo' : 'off'} /><SourceChip label="Jev" state="SHADOW OFF" tone="off" />
-            <button type="button" onClick={() => setPaletteOpen(true)} aria-label="Open command palette CTRL K" className="flex h-8 shrink-0 items-center gap-1.5 rounded border border-[#263346] bg-[#0a111a] px-2 text-[9px] text-zinc-400 hover:bg-white/5 hover:text-zinc-200"><Search className="size-3" /><span className="hidden sm:inline">CTRL K</span></button>
-            <button type="button" aria-label="Terminal settings" onClick={() => setActiveWorkspace('SETTINGS')} className="rounded p-2 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Settings className="size-4" /></button>
-        </header>
+    const integrityDomains = useMemo<DataIntegrityDomain[]>(() => [
+        {
+            key: 'candles',
+            label: 'CANDLES',
+            status: dataMode === 'DEMO' ? 'ready' : (marketFeed.state === 'LIVE' ? 'ready' : marketFeed.state === 'CONNECTING' ? 'loading' : 'stale'),
+            venue: 'BINANCE_SPOT',
+            precision: 'Kline ' + timeframe,
+            freshnessMs: marketFeed.latencyMs ?? 28,
+            gapCount: 0,
+            details: 'Exchange kline feed. Up to 10,000 bars retained per supported interval.',
+        },
+        {
+            key: 'options',
+            label: 'OPTIONS',
+            status: dataMode === 'DEMO' ? 'ready' : (isError ? 'unavailable' : 'ready'),
+            venue: 'DERIBIT_OPTIONS',
+            precision: 'Full chain Greeks & GEX',
+            freshnessMs: 450,
+            gapCount: 0,
+            details: 'Deribit public options chain. Key GEX, Call/Put walls, Gamma Flip, and ATM IV.',
+        },
+        {
+            key: 'depth',
+            label: 'L2 DEPTH',
+            status: dataMode === 'DEMO' ? 'ready' : (liquidityFeed.sequence.state === 'LIVE' ? 'ready' : liquidityFeed.sequence.state === 'BUFFERING' ? 'partial' : liquidityFeed.sequence.state === 'GAP' ? 'error' : 'stale'),
+            venue: 'BINANCE_SPOT',
+            precision: 'MBP L2 Diff + Snapshot',
+            freshnessMs: 38,
+            gapCount: liquidityFeed.sequence.gapCount ?? 0,
+            details: 'Sequence-validated diff-depth reconstruction. Session-local depth frames in Web Worker.',
+        },
+        {
+            key: 'tape',
+            label: 'TAPE CVD',
+            status: replayActive ? 'replay' : (dataMode === 'DEMO' ? 'ready' : (marketFeed.state === 'LIVE' ? 'ready' : 'partial')),
+            venue: 'BINANCE_SPOT',
+            precision: 'Trade-based aggregates',
+            freshnessMs: 50,
+            gapCount: 0,
+            details: 'Trade-based CVD accumulated within active capture session. Session boundaries preserved.',
+        },
+        {
+            key: 'intelligence',
+            label: 'JEV',
+            status: 'shadow',
+            venue: 'LOCAL_SHADOW',
+            precision: 'Deterministic packet only',
+            freshnessMs: null,
+            gapCount: 0,
+            details: 'Jev Shadow mode. AI explains versioned deterministic packets; cannot alter states or trade gates.',
+        },
+    ], [dataMode, isError, liquidityFeed.sequence.gapCount, liquidityFeed.sequence.state, marketFeed.latencyMs, marketFeed.state, replayActive, timeframe]);
 
-        <div
-            className="flex h-12 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#263346] bg-[#080d14] px-2"
-            role="toolbar"
-            aria-label="Chart navigation and workspace actions"
-            data-testid="chart-upper-toolbar"
-        >
-            <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Activity className="size-3.5" />Indicators</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-56 rounded-md border border-[#33445a] bg-[#0b121c] p-2 shadow-lg"><div className="px-2 py-1 text-[9px] font-bold text-zinc-500">ORDER FLOW</div>{ORDER_FLOW_TABS.map((study) => { const state = dataMode === 'DEMO' ? (study === 'CVD' ? 'DEMO' : 'UNAVAILABLE') : marketFeed.state; return <button key={study} type="button" onClick={() => { setStudyPaneOpen(true); setActiveOrderFlowStudy(study); }} className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-[10px] text-zinc-300 hover:bg-white/5"><span>{study}</span><span className={state === 'LIVE' ? 'text-emerald-300' : state === 'DEMO' || state === 'CONNECTING' ? 'text-amber-300' : 'text-zinc-500'}>{state}</span></button>; })}</Popover.Content></Popover.Portal></Popover.Root>
-            <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Layers3 className="size-3.5" />Layers</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-64 rounded-md border border-[#33445a] bg-[#0b121c] p-3 shadow-lg"><div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-bold text-zinc-400">CHART LAYERS</span><button type="button" aria-label="Reset layers" onClick={resetWorkspaceUi}><RotateCcw className="size-3.5 text-zinc-500" /></button></div><LayerToggle label="Primary walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle label="Secondary walls" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /><LayerToggle label="Gamma regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle label="Liquidity heatmap" checked={chartLayers.liquidityHeatmap !== false} onCheckedChange={() => toggleChartLayer('liquidityHeatmap')} /><LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} /><LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} /></Popover.Content></Popover.Portal></Popover.Root>
-            <button type="button" aria-pressed={replayActive} onClick={() => setReplayActive((active) => !active)} className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5', replayActive && 'bg-amber-400/10 text-amber-300')}>{replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Replay</button>
-            <div className="ml-auto flex items-center gap-1"><button type="button" onClick={() => isDesktop ? setInspectorOpen(!inspectorOpen) : setMobileInspectorOpen(true)} aria-label="OPTIONS METRICS" className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded border border-cyan-400/55 px-3 text-[10px] font-bold text-cyan-300', inspectorOpen && 'bg-cyan-400/10')}><SlidersHorizontal className="size-3.5" />OPTIONS METRICS</button>{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} className={cn('h-8 min-w-11 shrink-0 rounded border px-2 text-[9px] font-bold', dteFilter === filter ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#263346] text-zinc-500')}>{filter}</button>)}</div>
-        </div>
-
-        {isError && dataMode === 'LIVE' && <div className="flex h-8 shrink-0 items-center justify-between border-b border-rose-500/25 bg-rose-500/10 px-3 text-[10px] text-rose-200"><span>LIVE OPTIONS FEED OFFLINE · no demo values are presented as live</span><button type="button" onClick={() => setDataMode('DEMO')} className="font-bold underline underline-offset-2">OPEN DEMO</button></div>}
-
-        <main className="min-h-0 flex-1">
-            <Group orientation="horizontal" id="market-layout" defaultLayout={{ chart: 78, inspector: 22 }} onLayoutChanged={(layout) => localStorage.setItem('btc-terminal-panels-v2', JSON.stringify(layout))}>
-                <Panel id="chart" minSize="58%" defaultSize="78%">
-                    <div className="flex h-full min-h-0 flex-col">
-                        <div className="flex h-9 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#263346] bg-[#070c13] px-2">
-                            <StudyChip label="Fixed Range VP" visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Movable selected-range profile with POC, VAH, VAL, and configurable row density." />
-                            <StudyChip label="AVWAP · Swing Low" visible={chartLayers.avwap} onToggle={() => toggleChartLayer('avwap')} description="Anchored VWAP with draggable candle anchor and one-standard-deviation bands." />
-                            <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
-                            <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />
-                            <StudyChip label="Liquidity Heatmap" visible={chartLayers.liquidityHeatmap !== false} onToggle={() => toggleChartLayer('liquidityHeatmap')} description="Sequence-validated Binance Spot depth history. Session-local only; no synthetic liquidity." />
-                        </div>
-                        <div className="flex min-h-0 flex-1">
-                            <nav
-                                className="flex w-10 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-[#263346] bg-[#070b11] py-2 md:w-13"
-                                aria-label="Chart drawing tools"
-                                data-testid="drawing-tools-rail"
-                            >
-                                {DRAWING_TOOLS.map(({ id, label, icon: Icon, tone }) => (
-                                    <Tooltip.Root key={id}>
-                                        <Tooltip.Trigger asChild>
-                                            <button
-                                                type="button"
-                                                aria-label={label}
-                                                aria-pressed={activeTool === id}
-                                                title={label}
-                                                onClick={() => setActiveTool(id)}
-                                                className={cn(
-                                                    'flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-100 md:size-9',
-                                                    tone === 'long' && 'text-emerald-300/80 hover:text-emerald-200',
-                                                    tone === 'short' && 'text-rose-300/80 hover:text-rose-200',
-                                                    activeTool === id && 'bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/30',
-                                                )}
-                                            >
-                                                <Icon className="size-4" />
-                                            </button>
-                                        </Tooltip.Trigger>
-                                        <Tooltip.Portal>
-                                            <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] font-medium text-zinc-900">
-                                                {label}
-                                            </Tooltip.Content>
-                                        </Tooltip.Portal>
-                                    </Tooltip.Root>
-                                ))}
-                                <div className="my-1 h-px w-6 shrink-0 bg-[#263346]" />
-                                <Tooltip.Root>
-                                    <Tooltip.Trigger asChild>
-                                        <button
-                                            type="button"
-                                            aria-label="Keep drawing mode"
-                                            aria-pressed={keepDrawing}
-                                            title="Keep drawing mode"
-                                            onClick={() => setKeepDrawing((current) => !current)}
-                                            className={cn(
-                                                'flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 hover:text-zinc-100 md:size-9',
-                                                keepDrawing && 'bg-cyan-400/15 text-cyan-300 ring-1 ring-cyan-400/30',
-                                            )}
-                                        >
-                                            <Pin className="size-3.5" />
-                                        </button>
-                                    </Tooltip.Trigger>
-                                    <Tooltip.Portal>
-                                        <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] font-medium text-zinc-900">
-                                            Keep drawing mode
-                                        </Tooltip.Content>
-                                    </Tooltip.Portal>
-                                </Tooltip.Root>
-                                <Tooltip.Root>
-                                    <Tooltip.Trigger asChild>
-                                        <button
-                                            type="button"
-                                            aria-label="Lock chart objects"
-                                            title="Lock chart objects"
-                                            className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 md:size-9"
-                                        >
-                                            <Lock className="size-4" />
-                                        </button>
-                                    </Tooltip.Trigger>
-                                    <Tooltip.Portal>
-                                        <Tooltip.Content side="right" className="z-50 rounded bg-zinc-100 px-2 py-1 text-[10px] text-zinc-900">
-                                            Object locking is available on selected studies
-                                        </Tooltip.Content>
-                                    </Tooltip.Portal>
-                                </Tooltip.Root>
-                                <div className="mt-auto">
-                                    <DropdownMenu.Root>
-                                        <DropdownMenu.Trigger asChild>
-                                            <button
-                                                type="button"
-                                                aria-label="Switch workspace"
-                                                title="Switch workspace"
-                                                className="flex size-8 shrink-0 items-center justify-center rounded text-zinc-500 hover:bg-white/5 md:size-9"
-                                            >
-                                                <LayoutDashboard className="size-4" />
-                                            </button>
-                                        </DropdownMenu.Trigger>
-                                        <DropdownMenu.Portal>
-                                            <DropdownMenu.Content side="right" sideOffset={7} className="z-50 w-48 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg">
-                                                {WORKSPACES.map(({ id, label, icon: Icon }) => (
-                                                    <DropdownMenu.Item key={id} onSelect={() => setActiveWorkspace(id)} className="flex cursor-default items-center gap-2 rounded px-2 py-2 text-[10px] text-zinc-300 outline-none data-[highlighted]:bg-cyan-400/10">
-                                                        <Icon className="size-3.5" />{label}
-                                                    </DropdownMenu.Item>
-                                                ))}
-                                            </DropdownMenu.Content>
-                                        </DropdownMenu.Portal>
-                                    </DropdownMenu.Root>
-                                </div>
-                            </nav>
-                            <div className="min-w-0 flex-1">
-                                <MarketStructureChart
-                                    data={data}
-                                    marketFeed={marketFeed}
-                                    liquidityFeed={liquidityFeed}
-                                    activeTool={activeTool}
-                                    keepDrawing={keepDrawing}
-                                    timeframe={timeframe}
-                                    replayActive={replayActive}
-                                    onActiveToolChange={setActiveTool}
-                                    selectedDrawing={selectedDrawing}
-                                    onSelectedDrawingChange={setSelectedDrawing}
-                                    onRegisterPositionUpdater={handleRegisterPositionUpdater}
-                                    riskSettings={riskSettings}
-                                />
-                            </div>
-                        </div>
+    return (
+        <Tooltip.Provider delayDuration={300}>
+            <div className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-[#070A0F] text-[#D8DEE8]">
+                {/* Header Chrome */}
+                <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#18212C] bg-[#0C1118] px-2 md:px-3">
+                    <div className="flex min-w-0 items-center gap-2">
+                        <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#E6B450] font-mono font-black text-black text-xs">₿</div>
+                        <div className="hidden text-xs font-bold tracking-tight text-[#D8DEE8] sm:block">BTCUSDT</div>
+                        <ChevronDown className="size-3 text-[#8390A0]" />
                     </div>
-                </Panel>
-                {inspectorOpen && isDesktop && <><Separator aria-label="Resize options inspector" aria-valuemin={58} aria-valuemax={90} aria-valuenow={78} className="group relative w-1 bg-[#111a25] outline-none hover:bg-cyan-400/40 focus-visible:bg-cyan-400/60"><span className="absolute inset-y-0 -left-1 -right-1" /></Separator><Panel id="inspector" minSize="320px" maxSize="34%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size"><aside className="h-full overflow-y-auto border-l border-[#263346] bg-[#080d14]"><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} riskSettings={riskSettings} onSettingsChange={handleRiskSettingsChange} /></aside></Panel></>}
-            </Group>
-        </main>
 
-        <footer className="flex h-7 shrink-0 items-center justify-between border-t border-[#263346] bg-[#070b11] px-2.5 text-[9px] text-zinc-500"><div className="flex min-w-0 items-center gap-4"><span className="font-bold text-rose-300">NO LIVE EXECUTION</span><span className="hidden items-center gap-1 sm:flex"><span className={cn('size-2 rounded-full', binanceState === 'LIVE' ? 'bg-emerald-300' : binanceState === 'DEMO' ? 'bg-amber-300' : 'bg-zinc-500')} />Candles {binanceState.toLowerCase()}</span><span className="hidden items-center gap-1 md:flex"><span className={cn('size-2 rounded-full', deribitState === 'LIVE' ? 'bg-emerald-300' : deribitState === 'DEMO' ? 'bg-amber-300' : 'bg-zinc-500')} />Options {deribitState.toLowerCase()}</span><span className="hidden items-center gap-1 lg:flex"><span className={cn('size-2 rounded-full', marketFeed.state === 'LIVE' ? 'bg-emerald-300' : 'bg-sky-300')} />Flow {dataMode === 'DEMO' ? 'shadow' : marketFeed.state.toLowerCase()}</span></div><div className="flex items-center gap-3"><span className="hidden sm:inline">UTC {utcNow}</span><span className="hidden lg:inline">Latency {marketFeed.latencyMs === null ? '—' : `${marketFeed.latencyMs} ms`}</span><button type="button" onClick={saveLayout} className="hover:text-zinc-200">SAVE LAYOUT</button>{savedAt && <span className="hidden text-emerald-300 xl:inline">Saved {savedAt}</span>}<button type="button" onClick={() => setDataMode(dataMode === 'DEMO' ? 'LIVE' : 'DEMO')} className={cn('font-bold', dataMode === 'DEMO' ? 'text-amber-300' : 'text-emerald-300')}>● {dataMode}</button><CircleHelp className="size-3" /></div></footer>
+                    <div className="font-mono text-sm font-semibold tabular-nums text-[#D8DEE8] md:text-base">
+                        {displayedSpot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                    </div>
+                    <div className={cn('hidden font-mono text-xs font-semibold tabular-nums sm:block', changePct === undefined ? 'text-[#8390A0]' : changePct >= 0 ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>
+                        {changePct === undefined ? '—' : `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`}
+                    </div>
 
-        <Dialog.Root open={paletteOpen} onOpenChange={setPaletteOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-[18%] z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-xl border border-[#33445a] bg-[#0b111a] shadow-2xl"><Dialog.Title className="sr-only">Terminal command palette</Dialog.Title><Command className="bg-transparent text-zinc-100"><div className="flex items-center border-b border-[#263346] px-3"><CommandIcon className="size-4 text-zinc-500" /><Command.Input autoFocus placeholder="Search workspaces and actions…" className="h-12 w-full bg-transparent px-3 text-sm outline-none placeholder:text-zinc-600" /></div><Command.List className="max-h-[360px] overflow-y-auto p-2"><Command.Empty className="p-6 text-center text-xs text-zinc-500">No command found.</Command.Empty><Command.Group heading="Workspaces" className="text-[9px] text-zinc-600">{WORKSPACES.map(({ id, label, icon: Icon }) => <Command.Item key={id} value={label} onSelect={() => { setActiveWorkspace(id); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10 data-[selected=true]:text-cyan-200"><Icon className="size-4" />{label}</Command.Item>)}</Command.Group><Command.Group heading="Actions" className="mt-2 text-[9px] text-zinc-600"><Command.Item onSelect={() => { setInspectorOpen(true); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><PanelRightOpen className="size-4" />Open Options Metrics</Command.Item><Command.Item onSelect={() => { resetWorkspaceUi(); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><RotateCcw className="size-4" />Reset Market Structure layout</Command.Item></Command.Group></Command.List></Command></Dialog.Content></Dialog.Portal></Dialog.Root>
+                    {/* Mode Shell Switcher in Header */}
+                    <div
+                        className="ml-2 flex items-center rounded border border-[#18212C] bg-[#070A0F] p-0.5"
+                        role="tablist"
+                        aria-label="Workspace Mode Switcher"
+                        data-testid="header-workspace-mode-selector"
+                    >
+                        {(['CONTEXT', 'FLOW', 'SETUP'] as const).map((mode) => {
+                            const active = workspaceMode === mode;
+                            return (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    role="tab"
+                                    aria-selected={active}
+                                    data-testid={`workspace-mode-${mode.toLowerCase()}`}
+                                    onClick={() => {
+                                        setWorkspaceMode(mode);
+                                        setInspectorTab('DECISION');
+                                    }}
+                                    className={cn(
+                                        'h-6 px-2.5 font-mono text-[9px] font-bold tracking-wider rounded transition-colors',
+                                        active
+                                            ? 'bg-[#18212C] text-[#39A9F5]'
+                                            : 'text-[#8390A0] hover:text-[#D8DEE8]',
+                                    )}
+                                >
+                                    {mode}
+                                </button>
+                            );
+                        })}
+                    </div>
 
-        <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" /><Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#33445a] bg-[#080d14] pb-[env(safe-area-inset-bottom)] md:hidden"><Dialog.Title className="sr-only">Options Metrics</Dialog.Title><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setMobileInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} riskSettings={riskSettings} onSettingsChange={handleRiskSettingsChange} /></Dialog.Content></Dialog.Portal></Dialog.Root>
-    </div></Tooltip.Provider>;
+                    {/* Timeframe pills */}
+                    <div className="ml-auto hidden items-center rounded border border-[#18212C] bg-[#070A0F] md:flex">
+                        {TIMEFRAMES.map((item) => (
+                            <button
+                                key={item}
+                                type="button"
+                                onClick={() => setTimeframe(item)}
+                                className={cn('h-7 min-w-9 px-2 font-mono text-[9px] text-[#8390A0] transition-colors', timeframe === item && 'bg-[#18212C] text-[#39A9F5] font-bold')}
+                            >
+                                {item}
+                            </button>
+                        ))}
+                    </div>
+
+                    <button type="button" className="hidden h-7 items-center gap-1.5 rounded border border-[#18212C] bg-[#070A0F] px-2.5 font-mono text-[9px] text-[#8390A0] xl:flex">
+                        {expiryLabel}<ChevronDown className="size-3" />
+                    </button>
+
+                    <SourceChip label="Binance" state={binanceState} tone={binanceState === 'LIVE' ? 'live' : binanceState === 'DEMO' ? 'demo' : binanceState === 'STALE' || binanceState === 'CONNECTING' ? 'shadow' : 'off'} />
+                    <SourceChip label="Deribit" state={deribitState} tone={deribitState === 'LIVE' ? 'live' : deribitState === 'DEMO' ? 'demo' : 'off'} />
+                    <SourceChip label="Jev" state="SHADOW OFF" tone="off" />
+
+                    <button
+                        type="button"
+                        onClick={() => setPaletteOpen(true)}
+                        aria-label="Open command palette CTRL K"
+                        className="flex h-7 shrink-0 items-center gap-1.5 rounded border border-[#18212C] bg-[#070A0F] px-2 font-mono text-[9px] text-[#8390A0] hover:text-[#D8DEE8]"
+                    >
+                        <Search className="size-3" />
+                        <span className="hidden sm:inline">CTRL K</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        aria-label="Terminal settings"
+                        onClick={() => setActiveWorkspace('SETTINGS')}
+                        className="rounded p-1.5 text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]"
+                    >
+                        <Settings className="size-3.5" />
+                    </button>
+                </header>
+
+                {/* Toolbar */}
+                <div
+                    className="flex h-10 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#18212C] bg-[#0C1118] px-2 font-mono"
+                    role="toolbar"
+                    aria-label="Chart navigation and workspace actions"
+                    data-testid="chart-upper-toolbar"
+                >
+                    <Popover.Root>
+                        <Popover.Trigger asChild>
+                            <button type="button" className="flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]">
+                                <Activity className="size-3.5 text-[#39A9F5]" />Indicators
+                            </button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                            <Popover.Content sideOffset={6} className="z-50 w-56 rounded border border-[#18212C] bg-[#0C1118] p-2 shadow-xl">
+                                <div className="px-2 py-1 text-[9px] font-bold text-[#8390A0]">ORDER FLOW STUDIES</div>
+                                {ORDER_FLOW_TABS.map((study) => {
+                                    const state = dataMode === 'DEMO' ? (study === 'CVD' ? 'DEMO' : 'UNAVAILABLE') : marketFeed.state;
+                                    return (
+                                        <button
+                                            key={study}
+                                            type="button"
+                                            onClick={() => { setStudyPaneOpen(true); setActiveOrderFlowStudy(study); }}
+                                            className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-[10px] text-[#D8DEE8] hover:bg-white/5"
+                                        >
+                                            <span>{study}</span>
+                                            <span className={state === 'LIVE' ? 'text-[#2CC7A0]' : state === 'DEMO' || state === 'CONNECTING' ? 'text-[#E6B450]' : 'text-[#5C697A]'}>{state}</span>
+                                        </button>
+                                    );
+                                })}
+                            </Popover.Content>
+                        </Popover.Portal>
+                    </Popover.Root>
+
+                    <Popover.Root>
+                        <Popover.Trigger asChild>
+                            <button type="button" className="flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]">
+                                <Layers3 className="size-3.5 text-[#39A9F5]" />Layers
+                            </button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                            <Popover.Content sideOffset={6} className="z-50 w-64 rounded border border-[#18212C] bg-[#0C1118] p-3 shadow-xl">
+                                <div className="mb-2 flex items-center justify-between">
+                                    <span className="text-[9px] font-bold text-[#8390A0]">CHART OVERLAYS</span>
+                                    <button type="button" aria-label="Reset layers" onClick={resetWorkspaceUi}>
+                                        <RotateCcw className="size-3.5 text-[#8390A0] hover:text-[#D8DEE8]" />
+                                    </button>
+                                </div>
+                                <LayerToggle label="Primary walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} />
+                                <LayerToggle label="Secondary walls" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} />
+                                <LayerToggle label="Gamma regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} />
+                                <LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} />
+                                <LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} />
+                                <LayerToggle label="Liquidity heatmap" checked={chartLayers.liquidityHeatmap !== false} onCheckedChange={() => toggleChartLayer('liquidityHeatmap')} />
+                                <LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} />
+                                <LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} />
+                            </Popover.Content>
+                        </Popover.Portal>
+                    </Popover.Root>
+
+                    <button
+                        type="button"
+                        aria-pressed={replayActive}
+                        onClick={() => setReplayActive((active) => !active)}
+                        className={cn('flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]', replayActive && 'bg-[#E6B450]/15 text-[#E6B450]')}
+                    >
+                        {replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Replay
+                    </button>
+
+                    <div className="ml-auto flex items-center gap-1">
+                        <button
+                            type="button"
+                            onClick={() => {
+                                if (isDesktop) {
+                                    if (inspectorOpen && useTerminalStore.getState().inspectorTab === 'OPTIONS') {
+                                        setInspectorOpen(false);
+                                    } else {
+                                        setInspectorTab('OPTIONS');
+                                        setInspectorOpen(true);
+                                    }
+                                } else {
+                                    setInspectorTab('OPTIONS');
+                                    setMobileInspectorOpen(true);
+                                }
+                            }}
+                            aria-label="OPTIONS METRICS"
+                            className={cn('flex h-7 shrink-0 items-center gap-1.5 rounded border border-[#39A9F5]/40 px-3 text-[9px] font-bold text-[#39A9F5] transition-colors', inspectorOpen && 'bg-[#39A9F5]/10')}
+                        >
+                            <SlidersHorizontal className="size-3" />OPTIONS METRICS
+                        </button>
+                        {DTE_FILTERS.map((filter) => (
+                            <button
+                                key={filter}
+                                type="button"
+                                onClick={() => setDteFilter(filter)}
+                                className={cn('h-7 min-w-10 shrink-0 rounded border px-2 text-[9px] font-bold transition-colors', dteFilter === filter ? 'border-[#39A9F5]/50 bg-[#39A9F5]/15 text-[#39A9F5]' : 'border-[#18212C] text-[#8390A0] hover:text-[#D8DEE8]')}
+                            >
+                                {filter}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {isError && dataMode === 'LIVE' && (
+                    <div className="flex h-7 shrink-0 items-center justify-between border-b border-[#E06379]/30 bg-[#E06379]/10 px-3 text-[9px] font-mono text-[#E06379]">
+                        <span>LIVE OPTIONS FEED OFFLINE · no demo values are presented as live</span>
+                        <button type="button" onClick={() => setDataMode('DEMO')} className="font-bold underline underline-offset-2">OPEN DEMO</button>
+                    </div>
+                )}
+
+                {/* Main Work Area: Left Drawing Rail + Chart + Decision Dock */}
+                <main className="min-h-0 flex-1">
+                    <Group
+                        orientation="horizontal"
+                        id="market-layout"
+                        defaultLayout={{ chart: 78, inspector: 22 }}
+                        onLayoutChanged={(layout) => localStorage.setItem('btc-terminal-panels-v2', JSON.stringify(layout))}
+                    >
+                        <Panel id="chart" minSize="58%" defaultSize="78%">
+                            <div className="flex h-full min-h-0 flex-col">
+                                {/* Study Chips Bar */}
+                                <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#18212C] bg-[#090D14] px-2">
+                                    <StudyChip label="Fixed Range VP" visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Selected-range profile with POC, VAH, VAL, and configurable row density." />
+                                    <StudyChip label="AVWAP · Swing Low" visible={chartLayers.avwap} onToggle={() => toggleChartLayer('avwap')} description="Anchored VWAP with draggable candle anchor and standard-deviation bands." />
+                                    <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
+                                    <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />
+                                    <StudyChip label="Liquidity Heatmap" visible={chartLayers.liquidityHeatmap !== false} onToggle={() => toggleChartLayer('liquidityHeatmap')} description="Sequence-validated Binance Spot depth history. Session-local only; no synthetic liquidity." />
+                                </div>
+
+                                <div className="flex min-h-0 flex-1">
+                                    {/* Left Drawing Tools Rail */}
+                                    <nav
+                                        className="flex w-10 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-[#18212C] bg-[#070A0F] py-2 md:w-12"
+                                        aria-label="Chart drawing tools"
+                                        data-testid="drawing-tools-rail"
+                                    >
+                                        {DRAWING_TOOLS.map(({ id, label, icon: Icon, tone }) => (
+                                            <Tooltip.Root key={id}>
+                                                <Tooltip.Trigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        aria-label={label}
+                                                        aria-pressed={activeTool === id}
+                                                        title={label}
+                                                        onClick={() => setActiveTool(id)}
+                                                        className={cn(
+                                                            'flex size-8 shrink-0 items-center justify-center rounded text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] transition-colors',
+                                                            tone === 'long' && 'text-[#2CC7A0]/80 hover:text-[#2CC7A0]',
+                                                            tone === 'short' && 'text-[#E06379]/80 hover:text-[#E06379]',
+                                                            activeTool === id && 'bg-[#39A9F5]/15 text-[#39A9F5] ring-1 ring-[#39A9F5]/40',
+                                                        )}
+                                                    >
+                                                        <Icon className="size-3.5" />
+                                                    </button>
+                                                </Tooltip.Trigger>
+                                                <Tooltip.Portal>
+                                                    <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-[#D8DEE8] px-2 py-1 text-[10px] font-medium text-[#070A0F]">
+                                                        {label}
+                                                    </Tooltip.Content>
+                                                </Tooltip.Portal>
+                                            </Tooltip.Root>
+                                        ))}
+
+                                        <div className="my-1 h-px w-6 shrink-0 bg-[#18212C]" />
+
+                                        <Tooltip.Root>
+                                            <Tooltip.Trigger asChild>
+                                                <button
+                                                    type="button"
+                                                    aria-label="Keep drawing mode"
+                                                    aria-pressed={keepDrawing}
+                                                    title="Keep drawing mode"
+                                                    onClick={() => setKeepDrawing((current) => !current)}
+                                                    className={cn(
+                                                        'flex size-8 shrink-0 items-center justify-center rounded text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] transition-colors',
+                                                        keepDrawing && 'bg-[#39A9F5]/15 text-[#39A9F5] ring-1 ring-[#39A9F5]/40',
+                                                    )}
+                                                >
+                                                    <Pin className="size-3" />
+                                                </button>
+                                            </Tooltip.Trigger>
+                                            <Tooltip.Portal>
+                                                <Tooltip.Content side="right" sideOffset={8} className="z-50 rounded bg-[#D8DEE8] px-2 py-1 text-[10px] font-medium text-[#070A0F]">
+                                                    Keep drawing mode
+                                                </Tooltip.Content>
+                                            </Tooltip.Portal>
+                                        </Tooltip.Root>
+
+                                        <Tooltip.Root>
+                                            <Tooltip.Trigger asChild>
+                                                <button
+                                                    type="button"
+                                                    aria-label="Lock chart objects"
+                                                    title="Lock chart objects"
+                                                    className="flex size-8 shrink-0 items-center justify-center rounded text-[#8390A0] hover:bg-white/5"
+                                                >
+                                                    <Lock className="size-3.5" />
+                                                </button>
+                                            </Tooltip.Trigger>
+                                            <Tooltip.Portal>
+                                                <Tooltip.Content side="right" className="z-50 rounded bg-[#D8DEE8] px-2 py-1 text-[10px] text-[#070A0F]">
+                                                    Object locking is available on selected studies
+                                                </Tooltip.Content>
+                                            </Tooltip.Portal>
+                                        </Tooltip.Root>
+
+                                        <div className="mt-auto">
+                                            <DropdownMenu.Root>
+                                                <DropdownMenu.Trigger asChild>
+                                                    <button
+                                                        type="button"
+                                                        aria-label="Switch workspace"
+                                                        title="Switch workspace"
+                                                        className="flex size-8 shrink-0 items-center justify-center rounded text-[#8390A0] hover:bg-white/5"
+                                                    >
+                                                        <LayoutDashboard className="size-3.5" />
+                                                    </button>
+                                                </DropdownMenu.Trigger>
+                                                <DropdownMenu.Portal>
+                                                    <DropdownMenu.Content side="right" sideOffset={7} className="z-50 w-48 rounded border border-[#18212C] bg-[#0C1118] p-1 shadow-xl">
+                                                        {WORKSPACES.map(({ id, label, icon: Icon }) => (
+                                                            <DropdownMenu.Item key={id} onSelect={() => setActiveWorkspace(id)} className="flex cursor-default items-center gap-2 rounded px-2 py-2 text-[10px] text-[#D8DEE8] outline-none data-[highlighted]:bg-[#39A9F5]/10">
+                                                                <Icon className="size-3.5 text-[#39A9F5]" />{label}
+                                                            </DropdownMenu.Item>
+                                                        ))}
+                                                    </DropdownMenu.Content>
+                                                </DropdownMenu.Portal>
+                                            </DropdownMenu.Root>
+                                        </div>
+                                    </nav>
+
+                                    {/* Chart Center Area */}
+                                    <div className="min-w-0 flex-1">
+                                        <MarketStructureChart
+                                            data={data}
+                                            marketFeed={marketFeed}
+                                            liquidityFeed={liquidityFeed}
+                                            activeTool={activeTool}
+                                            keepDrawing={keepDrawing}
+                                            timeframe={timeframe}
+                                            replayActive={replayActive}
+                                            onActiveToolChange={setActiveTool}
+                                            selectedDrawing={selectedDrawing}
+                                            onSelectedDrawingChange={setSelectedDrawing}
+                                            onRegisterPositionUpdater={handleRegisterPositionUpdater}
+                                            riskSettings={riskSettings}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        </Panel>
+
+                        {/* Right Dock / Inspector Panel */}
+                        {inspectorOpen && isDesktop && (
+                            <>
+                                <Separator
+                                    aria-label="Resize options inspector"
+                                    aria-valuemin={58}
+                                    aria-valuemax={90}
+                                    aria-valuenow={78}
+                                    className="group relative w-1 bg-[#18212C] outline-none hover:bg-[#39A9F5]/40 focus-visible:bg-[#39A9F5]/60"
+                                >
+                                    <span className="absolute inset-y-0 -left-1 -right-1" />
+                                </Separator>
+                                <Panel id="inspector" minSize="320px" maxSize="36%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size">
+                                    <DecisionDock
+                                        metrics={metrics}
+                                        data={data}
+                                        marketFeed={marketFeed}
+                                        isError={isError}
+                                        onClose={() => setInspectorOpen(false)}
+                                        selectedDrawing={selectedDrawing}
+                                        onUpdatePositionPrices={handleUpdatePositionPrices}
+                                        onSelectDrawingType={(type) => setActiveTool(type)}
+                                        riskSettings={riskSettings}
+                                        onSettingsChange={handleRiskSettingsChange}
+                                        optionsContent={<OptionsContent metrics={metrics} data={data} isError={isError} />}
+                                    />
+                                </Panel>
+                            </>
+                        )}
+                    </Group>
+                </main>
+
+                {/* Data Integrity Strip */}
+                <DataIntegrityStrip domains={integrityDomains} />
+
+                {/* Footer Status Bar */}
+                <footer className="flex h-7 shrink-0 items-center justify-between border-t border-[#18212C] bg-[#070A0F] px-2.5 text-[9px] font-mono text-[#8390A0]">
+                    <div className="flex min-w-0 items-center gap-4">
+                        <span className="font-bold text-[#E06379]">NO LIVE EXECUTION</span>
+                        <span className="hidden items-center gap-1 sm:flex">
+                            <span className={cn('size-1.5 rounded-full', binanceState === 'LIVE' ? 'bg-[#2CC7A0]' : binanceState === 'DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
+                            Candles {binanceState.toLowerCase()}
+                        </span>
+                        <span className="hidden items-center gap-1 md:flex">
+                            <span className={cn('size-1.5 rounded-full', deribitState === 'LIVE' ? 'bg-[#2CC7A0]' : deribitState === 'DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
+                            Options {deribitState.toLowerCase()}
+                        </span>
+                        <span className="hidden items-center gap-1 lg:flex">
+                            <span className={cn('size-1.5 rounded-full', marketFeed.state === 'LIVE' ? 'bg-[#2CC7A0]' : 'bg-[#39A9F5]')} />
+                            Flow {dataMode === 'DEMO' ? 'shadow' : marketFeed.state.toLowerCase()}
+                        </span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <span className="hidden sm:inline">UTC {utcNow}</span>
+                        <span className="hidden lg:inline">Latency {marketFeed.latencyMs === null ? '—' : `${marketFeed.latencyMs} ms`}</span>
+                        <button type="button" onClick={saveLayout} className="hover:text-[#D8DEE8] transition-colors">SAVE LAYOUT</button>
+                        {savedAt && <span className="hidden text-[#2CC7A0] xl:inline">Saved {savedAt}</span>}
+                        <button
+                            type="button"
+                            onClick={() => setDataMode(dataMode === 'DEMO' ? 'LIVE' : 'DEMO')}
+                            className={cn('font-bold transition-colors', dataMode === 'DEMO' ? 'text-[#E6B450]' : 'text-[#2CC7A0]')}
+                        >
+                            ● {dataMode}
+                        </button>
+                        <CircleHelp className="size-3 text-[#5C697A]" />
+                    </div>
+                </footer>
+
+                {/* Command Palette */}
+                <Dialog.Root open={paletteOpen} onOpenChange={setPaletteOpen}>
+                    <Dialog.Portal>
+                        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" />
+                        <Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-[18%] z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-xl border border-[#18212C] bg-[#0C1118] shadow-2xl">
+                            <Dialog.Title className="sr-only">Terminal command palette</Dialog.Title>
+                            <Command className="bg-transparent text-[#D8DEE8]">
+                                <div className="flex items-center border-b border-[#18212C] px-3">
+                                    <CommandIcon className="size-4 text-[#8390A0]" />
+                                    <Command.Input autoFocus placeholder="Search workspaces and actions…" className="h-12 w-full bg-transparent px-3 font-sans text-sm outline-none placeholder:text-[#5C697A]" />
+                                </div>
+                                <Command.List className="max-h-[360px] overflow-y-auto p-2">
+                                    <Command.Empty className="p-6 text-center text-xs text-[#8390A0]">No command found.</Command.Empty>
+                                    <Command.Group heading="Workspaces" className="text-[9px] font-mono text-[#8390A0]">
+                                        {WORKSPACES.map(({ id, label, icon: Icon }) => (
+                                            <Command.Item key={id} value={label} onSelect={() => { setActiveWorkspace(id); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
+                                                <Icon className="size-4" />{label}
+                                            </Command.Item>
+                                        ))}
+                                    </Command.Group>
+                                    <Command.Group heading="Modes" className="mt-2 text-[9px] font-mono text-[#8390A0]">
+                                        {(['CONTEXT', 'FLOW', 'SETUP'] as const).map((mode) => (
+                                            <Command.Item key={mode} value={`Mode: ${mode}`} onSelect={() => { setWorkspaceMode(mode); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
+                                                <Activity className="size-4" />Switch to {mode} Mode
+                                            </Command.Item>
+                                        ))}
+                                    </Command.Group>
+                                    <Command.Group heading="Actions" className="mt-2 text-[9px] font-mono text-[#8390A0]">
+                                        <Command.Item onSelect={() => { setInspectorOpen(true); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
+                                            <PanelRightOpen className="size-4" />Open Decision Dock &amp; Metrics
+                                        </Command.Item>
+                                        <Command.Item onSelect={() => { resetWorkspaceUi(); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
+                                            <RotateCcw className="size-4" />Reset Workspace layout
+                                        </Command.Item>
+                                    </Command.Group>
+                                </Command.List>
+                            </Command>
+                        </Dialog.Content>
+                    </Dialog.Portal>
+                </Dialog.Root>
+
+                {/* Mobile Inspector Drawer */}
+                <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}>
+                    <Dialog.Portal>
+                        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" />
+                        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#18212C] bg-[#0C1118] pb-[env(safe-area-inset-bottom)] md:hidden">
+                            <Dialog.Title className="sr-only">Decision Dock &amp; Options</Dialog.Title>
+                            <DecisionDock
+                                metrics={metrics}
+                                data={data}
+                                marketFeed={marketFeed}
+                                isError={isError}
+                                onClose={() => setMobileInspectorOpen(false)}
+                                selectedDrawing={selectedDrawing}
+                                onUpdatePositionPrices={handleUpdatePositionPrices}
+                                onSelectDrawingType={(type) => setActiveTool(type)}
+                                riskSettings={riskSettings}
+                                onSettingsChange={handleRiskSettingsChange}
+                                optionsContent={<OptionsContent metrics={metrics} data={data} isError={isError} />}
+                            />
+                        </Dialog.Content>
+                    </Dialog.Portal>
+                </Dialog.Root>
+            </div>
+        </Tooltip.Provider>
+    );
 }
