@@ -241,12 +241,12 @@ test('exposes the approved market-structure controls and honest states without s
     await page.keyboard.press('Escape');
     await expect(page.getByRole('toolbar', { name: 'VP controls' })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Replay' }).click();
+    await page.getByTestId('chart-upper-toolbar').getByRole('button', { name: 'Replay', exact: true }).click();
     await expect(page.getByText('REPLAY PAUSED · HISTORICAL DEMO')).toBeVisible();
 
     await page.getByRole('tab', { name: 'DECISION' }).click();
     await expect(page.getByText('JEV SHADOW OPINION')).toBeVisible();
-    await expect(page.getByText('UNAVAILABLE', { exact: true })).toBeVisible();
+    await expect(page.getByTestId('context-mode-container').getByText('UNAVAILABLE', { exact: true })).toBeVisible();
     await expect(page.getByText('NO LIVE EXECUTION', { exact: true }).first()).toBeVisible();
 });
 
@@ -355,10 +355,11 @@ test('keeps bottom dock mounted when collapsed, reopens on any tab click, persis
     }
 
     // Verify crosshair synchronization after reopening CVD
-    const chartBox = await chart.boundingBox();
+    const chartCanvas = chart.locator('canvas').first();
+    const chartBox = await chartCanvas.boundingBox();
     expect(chartBox).not.toBeNull();
     const reopenedPane = page.getByTestId('order-flow-pane');
-    await page.mouse.move(chartBox!.x + chartBox!.width * 0.55, chartBox!.y + chartBox!.height * 0.45);
+    await page.mouse.move(chartBox!.x + chartBox!.width * 0.55, chartBox!.y + chartBox!.height * 0.45, { steps: 4 });
     await expect.poll(() => chart.getAttribute('data-crosshair-time')).not.toBe('');
     const chartTime = await chart.getAttribute('data-crosshair-time');
     await expect(reopenedPane).toHaveAttribute('data-crosshair-time', chartTime!);
@@ -997,6 +998,13 @@ test('renders sequence-validated liquidity frames as a toggleable chart heatmap'
     await page.reload({ waitUntil: 'domcontentloaded' });
     await expect(page.getByLabel('Live BTC price chart with options structure overlays')).toBeVisible({ timeout: 30_000 });
 
+    // Context mode keeps the full raw heatmap off by default. Enable it explicitly.
+    await page.getByRole('button', { name: 'Layers', exact: true }).click();
+    const heatmapSwitch = page.getByRole('switch', { name: 'Liquidity heatmap' });
+    await expect(heatmapSwitch).toHaveAttribute('data-state', 'unchecked');
+    await heatmapSwitch.click();
+    await page.keyboard.press('Escape');
+
     const heatmap = page.getByTestId('liquidity-heatmap');
     await expect(heatmap).toBeVisible({ timeout: 20_000 });
     await expect(heatmap).toHaveAttribute('data-state', 'LIVE');
@@ -1004,7 +1012,6 @@ test('renders sequence-validated liquidity frames as a toggleable chart heatmap'
     await expect.poll(async () => Number(await heatmap.getAttribute('data-cell-count'))).toBeGreaterThan(0);
 
     await page.getByRole('button', { name: 'Layers', exact: true }).click();
-    const heatmapSwitch = page.getByRole('switch', { name: 'Liquidity heatmap' });
     await expect(heatmapSwitch).toHaveAttribute('data-state', 'checked');
     await heatmapSwitch.click();
     await expect(heatmap).toHaveCount(0);

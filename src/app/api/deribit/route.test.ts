@@ -59,7 +59,7 @@ describe('/api/deribit route', () => {
             options: [],
         } as unknown as NormalizedDeribitChain);
 
-        const response = await GET();
+        const response = await GET(new NextRequest('http://localhost/api/deribit'));
         const body = await response.json();
 
         expect(response.headers.get('cache-control')).toBe(
@@ -109,7 +109,7 @@ describe('/api/deribit route', () => {
         mockedFetchDeribitOptionChain.mockRejectedValue(new Error('upstream unavailable'));
         const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
 
-        const response = await GET();
+        const response = await GET(new NextRequest('http://localhost/api/deribit'));
         const body = await response.json();
 
         expect(response.headers.get('cache-control')).toBe('no-store');

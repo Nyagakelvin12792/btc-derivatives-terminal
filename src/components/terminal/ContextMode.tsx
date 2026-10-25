@@ -15,9 +15,10 @@ export interface ContextModeProps {
     volumeProfilePoc?: number;
     volumeProfileVah?: number;
     volumeProfileVal?: number;
-    decisionState?: 'NO_SETUP' | 'WATCH' | 'OBSERVE' | 'CONFIRMING';
-    decisionReason?: string;
-    dataFreshnessMs?: number | null;
+    decisionState: 'NO_SETUP' | 'WATCH' | 'OBSERVE' | 'CONFIRMING' | 'INSUFFICIENT_DATA';
+    decisionReason: string;
+    dataFreshnessMs: number | null;
+    activeOverlayCount?: number;
     className?: string;
 }
 
@@ -27,14 +28,15 @@ export default function ContextMode({
     putWall,
     gammaFlip,
     gammaRegime,
-    avwapLabel = 'Swing Low Anchor',
+    avwapLabel = 'Anchored VWAP',
     avwapPrice,
     volumeProfilePoc,
     volumeProfileVah,
     volumeProfileVal,
-    decisionState = 'OBSERVE',
-    decisionReason = 'Price testing neutral range between Call and Put walls. Awaiting test of decision zone.',
-    dataFreshnessMs = 28,
+    decisionState,
+    decisionReason,
+    dataFreshnessMs,
+    activeOverlayCount,
     className,
 }: ContextModeProps) {
     const isPositiveGamma = gammaRegime === 'POSITIVE';
@@ -54,7 +56,7 @@ export default function ContextMode({
                     </span>
                     <span className="flex items-center gap-1 rounded border border-[#18212C] bg-[#070A0F] px-1.5 py-0.5 font-mono text-[8px] text-[#8390A0]">
                         <Clock className="size-2.5 text-[#39A9F5]" />
-                        {dataFreshnessMs !== null ? `${dataFreshnessMs}ms` : 'FRESH'}
+                        {dataFreshnessMs !== null ? `${dataFreshnessMs}ms` : 'NO FRESHNESS'}
                     </span>
                 </div>
                 <div className="mt-2 flex items-baseline justify-between">
@@ -123,7 +125,7 @@ export default function ContextMode({
                     <div className="flex items-center justify-between rounded border border-[#18212C] bg-[#070A0F] px-2.5 py-1.5">
                         <span className="text-[#8390A0]">{avwapLabel}</span>
                         <span className="font-mono font-bold text-[#D8DEE8]">
-                            {avwapPrice ? `$${Math.round(avwapPrice).toLocaleString()}` : 'CALCULATING'}
+                            {avwapPrice !== undefined ? `$${Math.round(avwapPrice).toLocaleString()}` : 'NOT AVAILABLE'}
                         </span>
                     </div>
                     {volumeProfilePoc && (
@@ -162,7 +164,7 @@ export default function ContextMode({
             <div className="flex items-center justify-between rounded border border-[#18212C] bg-[#070A0F] px-3 py-2 font-mono text-[8px] text-[#5C697A]">
                 <div className="flex items-center gap-1.5">
                     <CheckCircle2 className="size-3 text-[#39A9F5]" />
-                    <span>ATTENTION BUDGET: 3 OVERLAYS ACTIVE</span>
+                    <span>ATTENTION BUDGET: {activeOverlayCount ?? '—'} OVERLAYS ACTIVE</span>
                 </div>
                 <span>CONTEXT MODE</span>
             </div>

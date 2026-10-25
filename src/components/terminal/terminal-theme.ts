@@ -1,3 +1,5 @@
+import type { DataIntegrityStatus } from '../../lib/orderflow/contracts';
+
 /**
  * Calm Analytical Instrument Design Tokens (UX16.0)
  *
@@ -40,44 +42,25 @@ export const CALM_TOKENS = {
     staleBorder: 'rgba(142, 152, 166, 0.30)',
 } as const;
 
-export type DataIntegrityStatus =
-    | 'loading'
-    | 'ready'
-    | 'partial'
-    | 'stale'
-    | 'unavailable'
-    | 'error'
-    | 'replay'
-    | 'shadow';
-
-export interface DataIntegrityDomain {
-    key: string;
-    label: string;
-    status: DataIntegrityStatus;
-    venue: string;
-    precision?: string;
-    freshnessMs?: number | null;
-    gapCount?: number;
-    details?: string;
-}
+export type { DataIntegrityStatus } from '../../lib/orderflow/contracts';
 
 export function getDataIntegrityBadgeClasses(status: DataIntegrityStatus): string {
     switch (status) {
-        case 'ready':
+        case 'READY':
             return 'border-[#18212C] bg-[#0C1118] text-[#D8DEE8]';
-        case 'loading':
+        case 'LOADING':
             return 'border-[#18212C] bg-[#0C1118] text-[#8390A0]';
-        case 'partial':
+        case 'PARTIAL':
             return 'border-[#E6B450]/40 bg-[#E6B450]/10 text-[#E6B450]';
-        case 'stale':
+        case 'STALE':
             return 'border-[#8E98A6]/40 bg-[#8E98A6]/10 text-[#8E98A6]';
-        case 'unavailable':
+        case 'UNAVAILABLE':
             return 'border-[#18212C] bg-[#0C1118] text-[#5C697A]';
-        case 'error':
+        case 'ERROR':
             return 'border-[#E06379]/40 bg-[#E06379]/10 text-[#E06379]';
-        case 'replay':
+        case 'REPLAY':
             return 'border-[#39A9F5]/40 bg-[#39A9F5]/10 text-[#39A9F5]';
-        case 'shadow':
+        case 'SHADOW':
             return 'border-[#39A9F5]/30 bg-[#0C1118] text-[#8390A0]';
         default:
             return 'border-[#18212C] bg-[#0C1118] text-[#8390A0]';
@@ -86,21 +69,21 @@ export function getDataIntegrityBadgeClasses(status: DataIntegrityStatus): strin
 
 export function getDataIntegrityDotClasses(status: DataIntegrityStatus): string {
     switch (status) {
-        case 'ready':
+        case 'READY':
             return 'bg-[#2CC7A0]';
-        case 'loading':
+        case 'LOADING':
             return 'bg-[#8390A0]';
-        case 'partial':
+        case 'PARTIAL':
             return 'bg-[#E6B450]';
-        case 'stale':
+        case 'STALE':
             return 'bg-[#8E98A6]';
-        case 'unavailable':
+        case 'UNAVAILABLE':
             return 'bg-[#5C697A]';
-        case 'error':
+        case 'ERROR':
             return 'bg-[#E06379]';
-        case 'replay':
+        case 'REPLAY':
             return 'bg-[#39A9F5]';
-        case 'shadow':
+        case 'SHADOW':
             return 'bg-[#39A9F5]';
         default:
             return 'bg-[#5C697A]';

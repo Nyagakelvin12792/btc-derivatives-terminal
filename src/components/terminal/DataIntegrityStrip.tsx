@@ -1,98 +1,35 @@
 'use client';
 
-import React from 'react';
 import * as Popover from '@radix-ui/react-popover';
-import { Database, ShieldAlert, CheckCircle2, AlertTriangle, RefreshCw, Radio } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Database, Radio, RefreshCw, ShieldAlert } from 'lucide-react';
+import type { DataIntegritySourceV1, DataIntegrityStatus } from '../../lib/orderflow/contracts';
 import { cn } from '../../lib/ui/cn';
-import {
-    type DataIntegrityDomain,
-    type DataIntegrityStatus,
-    getDataIntegrityBadgeClasses,
-    getDataIntegrityDotClasses,
-} from './terminal-theme';
+import { getDataIntegrityBadgeClasses, getDataIntegrityDotClasses } from './terminal-theme';
 
 export interface DataIntegrityStripProps {
-    domains?: DataIntegrityDomain[];
+    domains: DataIntegritySourceV1[];
     className?: string;
 }
 
-export const DEFAULT_INTEGRITY_DOMAINS: DataIntegrityDomain[] = [
-    {
-        key: 'candles',
-        label: 'CANDLES',
-        status: 'ready',
-        venue: 'BINANCE_SPOT',
-        precision: 'Kline 1m/5m/1h/4h',
-        freshnessMs: 24,
-        gapCount: 0,
-        details: 'Exchange kline feed. Up to 10,000 bars retained per supported interval.',
-    },
-    {
-        key: 'options',
-        label: 'OPTIONS',
-        status: 'ready',
-        venue: 'DERIBIT_OPTIONS',
-        precision: 'Full chain Greeks & GEX',
-        freshnessMs: 450,
-        gapCount: 0,
-        details: 'Deribit public options chain. Key GEX, Call/Put walls, Gamma Flip, and ATM IV.',
-    },
-    {
-        key: 'depth',
-        label: 'L2 DEPTH',
-        status: 'ready',
-        venue: 'BINANCE_SPOT',
-        precision: 'MBP L2 Diff + Snapshot',
-        freshnessMs: 38,
-        gapCount: 0,
-        details: 'Sequence-validated diff-depth reconstruction. Session-local depth frames in Web Worker.',
-    },
-    {
-        key: 'tape',
-        label: 'TAPE CVD',
-        status: 'partial',
-        venue: 'BINANCE_SPOT',
-        precision: 'Trade-based aggregates',
-        freshnessMs: 50,
-        gapCount: 0,
-        details: 'Trade-based CVD accumulated within active capture session. Session boundaries preserved.',
-    },
-    {
-        key: 'intelligence',
-        label: 'JEV',
-        status: 'shadow',
-        venue: 'LOCAL_SHADOW',
-        precision: 'Deterministic packet only',
-        freshnessMs: null,
-        gapCount: 0,
-        details: 'Jev Shadow mode. AI explains versioned deterministic packets; cannot alter states or trade gates.',
-    },
-];
-
 function statusIcon(status: DataIntegrityStatus) {
     switch (status) {
-        case 'ready':
+        case 'READY':
             return <CheckCircle2 className="size-3 text-[#2CC7A0]" />;
-        case 'partial':
-        case 'stale':
+        case 'PARTIAL':
+        case 'STALE':
             return <AlertTriangle className="size-3 text-[#E6B450]" />;
-        case 'error':
+        case 'ERROR':
             return <ShieldAlert className="size-3 text-[#E06379]" />;
-        case 'loading':
-            return <RefreshCw className="size-3 animate-spin text-[#8390A0]" />;
-        case 'replay':
+        case 'LOADING':
+            return <RefreshCw className="size-3 text-[#8390A0]" />;
+        case 'REPLAY':
             return <Radio className="size-3 text-[#39A9F5]" />;
-        case 'shadow':
-            return <Database className="size-3 text-[#39A9F5]" />;
         default:
             return <Database className="size-3 text-[#5C697A]" />;
     }
 }
 
-export default function DataIntegrityStrip({
-    domains = DEFAULT_INTEGRITY_DOMAINS,
-    className,
-}: DataIntegrityStripProps) {
+export default function DataIntegrityStrip({ domains, className }: DataIntegrityStripProps) {
     return (
         <div
             className={cn(
@@ -112,28 +49,26 @@ export default function DataIntegrityStrip({
                 {domains.map((domain) => {
                     const badgeClasses = getDataIntegrityBadgeClasses(domain.status);
                     const dotClass = getDataIntegrityDotClasses(domain.status);
-                    const freshnessLabel = domain.freshnessMs !== null && domain.freshnessMs !== undefined
-                        ? `${domain.freshnessMs}ms`
-                        : domain.status === 'shadow'
-                            ? 'SHADOW'
-                            : '—';
+                    const freshnessLabel = domain.coverage.quality === 'UNAVAILABLE'
+                        ? '—'
+                        : `${domain.coverage.freshnessMs}ms`;
 
                     return (
                         <Popover.Root key={domain.key}>
                             <Popover.Trigger asChild>
                                 <button
                                     type="button"
-                                    data-testid={`data-integrity-${domain.key}`}
-                                    data-status={domain.status}
+                                    data-testid={`data-integrity-${domain.key.toLowerCase()}`}
+                                    data-status={domain.status.toLowerCase()}
                                     className={cn(
                                         'flex h-5 shrink-0 items-center gap-1.5 rounded border px-2 text-[9px] font-semibold transition-colors duration-150 hover:border-[#263445]',
                                         badgeClasses,
                                     )}
-                                    title={`${domain.label}: ${domain.status.toUpperCase()} (${domain.venue})`}
+                                    title={`${domain.label}: ${domain.status} (${domain.coverage.venue})`}
                                 >
                                     <span className={cn('size-1.5 rounded-full', dotClass)} />
                                     <span className="font-sans text-[#D8DEE8]">{domain.label}</span>
-                                    <span className="uppercase">{domain.status}</span>
+                                    <span>{domain.status}</span>
                                     <span className="opacity-50">·</span>
                                     <span className="text-[#8390A0]">{freshnessLabel}</span>
                                 </button>
@@ -149,33 +84,30 @@ export default function DataIntegrityStrip({
                                             {statusIcon(domain.status)}
                                             <span>{domain.label}</span>
                                         </div>
-                                        <span className={cn('rounded px-1.5 py-0.5 text-[8px] font-bold uppercase', badgeClasses)}>
+                                        <span className={cn('rounded px-1.5 py-0.5 text-[8px] font-bold', badgeClasses)}>
                                             {domain.status}
                                         </span>
                                     </div>
                                     <div className="mt-2 space-y-1.5 font-mono text-[9px]">
-                                        <div className="flex justify-between">
-                                            <span className="text-[#8390A0]">Venue:</span>
-                                            <span className="text-[#D8DEE8]">{domain.venue}</span>
-                                        </div>
-                                        {domain.precision && (
-                                            <div className="flex justify-between">
-                                                <span className="text-[#8390A0]">Precision:</span>
-                                                <span className="text-[#D8DEE8]">{domain.precision}</span>
+                                        {[
+                                            ['Mode', domain.coverage.dataMode],
+                                            ['Source', domain.coverage.source],
+                                            ['Venue', domain.coverage.venue],
+                                            ['Precision', domain.coverage.precision],
+                                            ['Approximation', domain.coverage.approximation],
+                                            ['Freshness', freshnessLabel],
+                                            ['Capture gaps', String(domain.coverage.gapCount)],
+                                            ['Quality', domain.coverage.quality],
+                                        ].map(([label, value]) => (
+                                            <div key={label} className="flex justify-between gap-3">
+                                                <span className="text-[#8390A0]">{label}:</span>
+                                                <span className="text-right text-[#D8DEE8]">{value}</span>
                                             </div>
-                                        )}
-                                        <div className="flex justify-between">
-                                            <span className="text-[#8390A0]">Freshness:</span>
-                                            <span className="text-[#D8DEE8]">{freshnessLabel}</span>
-                                        </div>
-                                        <div className="flex justify-between">
-                                            <span className="text-[#8390A0]">Capture gaps:</span>
-                                            <span className="text-[#D8DEE8]">{domain.gapCount ?? 0}</span>
-                                        </div>
+                                        ))}
                                     </div>
-                                    {domain.details && (
+                                    {domain.detail && (
                                         <p className="mt-2.5 border-t border-[#18212C] pt-2 font-sans text-[9px] leading-relaxed text-[#8390A0]">
-                                            {domain.details}
+                                            {domain.detail}
                                         </p>
                                     )}
                                     <Popover.Arrow className="fill-[#18212C]" />

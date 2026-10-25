@@ -6,7 +6,8 @@ import {
     getDataIntegrityDotClasses,
 } from './terminal-theme';
 import { useTerminalStore } from '../../lib/dashboard/store';
-import { DEFAULT_INTEGRITY_DOMAINS } from './DataIntegrityStrip';
+import { UX16_DATA_INTEGRITY_STATUS_FIXTURES_V1, UX16_REPLAY_CONTRACT_FIXTURE_V1 } from '../../lib/orderflow/fixtures';
+import { resolveUx16PublicFeatureFlags } from '../../lib/orderflow/feature-flags';
 
 describe('UX16.0 Calm Analytical Instrument Visual Tokens', () => {
     it('defines restrained dark neutral canvas and surface tokens', () => {
@@ -36,14 +37,14 @@ describe('UX16.0 Calm Analytical Instrument Visual Tokens', () => {
 
 describe('UX16.0 Data Integrity Strip State Matrix', () => {
     const allStatuses: DataIntegrityStatus[] = [
-        'loading',
-        'ready',
-        'partial',
-        'stale',
-        'unavailable',
-        'error',
-        'replay',
-        'shadow',
+        'LOADING',
+        'READY',
+        'PARTIAL',
+        'STALE',
+        'UNAVAILABLE',
+        'ERROR',
+        'REPLAY',
+        'SHADOW',
     ];
 
     it.each(allStatuses)('generates valid styling classes for status: %s', (status) => {
@@ -56,20 +57,24 @@ describe('UX16.0 Data Integrity Strip State Matrix', () => {
         expect(dotClasses.startsWith('bg-')).toBe(true);
     });
 
-    it('contains all required data domains in default configuration', () => {
-        const keys = DEFAULT_INTEGRITY_DOMAINS.map((d) => d.key);
-        expect(keys).toContain('candles');
-        expect(keys).toContain('options');
-        expect(keys).toContain('depth');
-        expect(keys).toContain('tape');
-        expect(keys).toContain('intelligence');
+    it('contains every integrity status as a contract-validated UI fixture', () => {
+        expect(UX16_DATA_INTEGRITY_STATUS_FIXTURES_V1.map((fixture) => fixture.status)).toEqual(allStatuses);
     });
 
-    it('verifies Jev is in shadow status in default integrity domains', () => {
-        const jevDomain = DEFAULT_INTEGRITY_DOMAINS.find((d) => d.key === 'intelligence');
+    it('verifies Jev remains explicitly shadow-only in the replay contract', () => {
+        const jevDomain = UX16_REPLAY_CONTRACT_FIXTURE_V1.integrity.find((domain) => domain.key === 'JEV');
         expect(jevDomain).toBeDefined();
-        expect(jevDomain?.status).toBe('shadow');
-        expect(jevDomain?.venue).toBe('LOCAL_SHADOW');
+        expect(jevDomain?.status).toBe('SHADOW');
+        expect(jevDomain?.coverage.venue).toBe('NOT_APPLICABLE');
+    });
+
+    it('keeps all public UX16 feature flags off by default', () => {
+        expect(resolveUx16PublicFeatureFlags()).toEqual({
+            calmWorkspace: false,
+            liquiditySurfaceV2: false,
+            footprint: false,
+            setupDock: false,
+        });
     });
 });
 

@@ -44,7 +44,9 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         await expect(contextContainer.getByText('Put Wall (Lower)')).toBeVisible();
         await expect(contextContainer.getByText('Gamma Flip')).toBeVisible();
         await expect(contextContainer.getByText('Gamma Regime')).toBeVisible();
-        await expect(contextContainer.getByText('ATTENTION BUDGET: 3 OVERLAYS ACTIVE')).toBeVisible();
+        await expect(contextContainer.getByText(/ATTENTION BUDGET: .* OVERLAYS ACTIVE/)).toBeVisible();
+        await expect(contextContainer.getByText('INSUFFICIENT_DATA')).toBeVisible();
+        await expect(contextContainer.getByText('NOT AVAILABLE')).toBeVisible();
 
         // 3. Verify Data Integrity Strip
         const integrityStrip = page.getByTestId('data-integrity-strip');
@@ -52,14 +54,21 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         await expect(page.getByTestId('data-integrity-candles')).toBeVisible();
         await expect(page.getByTestId('data-integrity-options')).toBeVisible();
         await expect(page.getByTestId('data-integrity-depth')).toBeVisible();
-        await expect(page.getByTestId('data-integrity-tape')).toBeVisible();
-        const jevBadge = page.getByTestId('data-integrity-intelligence');
+        const candleBadge = page.getByTestId('data-integrity-candles');
+        const optionsBadge = page.getByTestId('data-integrity-options');
+        const depthBadge = page.getByTestId('data-integrity-depth');
+        const tradesBadge = page.getByTestId('data-integrity-trades');
+        await expect(candleBadge).toHaveAttribute('data-status', 'replay');
+        await expect(optionsBadge).toHaveAttribute('data-status', 'replay');
+        await expect(depthBadge).toHaveAttribute('data-status', 'unavailable');
+        await expect(tradesBadge).toHaveAttribute('data-status', 'unavailable');
+        const jevBadge = page.getByTestId('data-integrity-jev');
         await expect(jevBadge).toBeVisible();
         await expect(jevBadge).toHaveAttribute('data-status', 'shadow');
 
         // Click a badge to test provenance popover
         await page.getByTestId('data-integrity-options').click();
-        await expect(page.getByText('Deribit public options chain')).toBeVisible();
+        await expect(page.getByText('UX16 demo fixture; not live market data.')).toBeVisible();
         await page.keyboard.press('Escape');
 
         // 4. Capture Context Mode visual regression screenshots across reference viewports
@@ -90,6 +99,12 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         await expect(page.getByTestId('flow-footprint-container')).toBeVisible();
         await expect(page.getByTestId('flow-cvd-container')).toBeVisible();
         await expect(page.getByTestId('flow-events-container')).toBeVisible();
+        await expect(flowContainer.getByText('UNAVAILABLE')).toBeVisible();
+        await expect(flowContainer.getByText('0 OBSERVED')).toBeVisible();
+        await expect(flowContainer.getByText('No deterministic microstructure events. Aggregate-trade capture begins in UX16.1.')).toBeVisible();
+        await expect(flowContainer.getByText('PROBABLE_ABSORPTION')).toHaveCount(0);
+        await expect(flowContainer.getByText('REPLENISHMENT')).toHaveCount(0);
+        await expect(flowContainer.getByText('$12.40M')).toHaveCount(0);
 
         await page.screenshot({
             path: '.artifacts/ui-overhaul/ux16-flow-mode-1920x1080.png',
@@ -108,6 +123,9 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         await expect(page.getByTestId('setup-grade-container')).toBeVisible();
         await expect(page.getByTestId('setup-evidence-container')).toBeVisible();
         await expect(page.getByTestId('setup-conflicts-container')).toBeVisible();
+        await expect(setupContainer.getByText('INSUFFICIENT_DATA')).toBeVisible();
+        await expect(setupContainer.getByText('GRADE: NONE')).toBeVisible();
+        await expect(setupContainer.getByText('WATCH_LONG')).toHaveCount(0);
         const jevContainer = page.getByTestId('setup-jev-shadow-container');
         await expect(jevContainer).toBeVisible();
         await expect(jevContainer.getByText('SHADOW DISABLED')).toBeVisible();

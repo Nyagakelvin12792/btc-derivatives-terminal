@@ -2,6 +2,11 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { WorkspaceTab } from '@/lib/dashboard/types';
 import { TerrainSurfaceCell } from '@/lib/terrain/types';
+import { resolveUx16PublicFeatureFlags } from '../orderflow/feature-flags';
+
+const calmWorkspaceEnabled = resolveUx16PublicFeatureFlags({
+    NEXT_PUBLIC_UX16_CALM_WORKSPACE: process.env.NEXT_PUBLIC_UX16_CALM_WORKSPACE,
+}).calmWorkspace;
 
 export type WorkspaceMode = 'CONTEXT' | 'FLOW' | 'SETUP';
 
@@ -88,7 +93,7 @@ const defaultChartLayers = {
     gammaRegime: true,
     gammaFlip: true,
     maxPain: false,
-    liquidityHeatmap: true,
+    liquidityHeatmap: !calmWorkspaceEnabled,
     volumeProfile: true,
     avwap: true,
 };
@@ -146,7 +151,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
 
     inspectorOpen: true,
     setInspectorOpen: (open) => set({ inspectorOpen: open }),
-    inspectorTab: 'DECISION',
+    inspectorTab: calmWorkspaceEnabled ? 'DECISION' : 'OPTIONS',
     setInspectorTab: (tab) => set({ inspectorTab: tab }),
     studyPaneOpen: true,
     setStudyPaneOpen: (open) => set({ studyPaneOpen: open }),
@@ -167,7 +172,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     resetWorkspaceUi: () => set({
         workspaceMode: 'CONTEXT',
         inspectorOpen: true,
-        inspectorTab: 'DECISION',
+        inspectorTab: calmWorkspaceEnabled ? 'DECISION' : 'OPTIONS',
         studyPaneOpen: true,
         activeOrderFlowStudy: 'CVD',
         dteFilter: 'ALL',

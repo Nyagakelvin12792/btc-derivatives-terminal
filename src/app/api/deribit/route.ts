@@ -5,10 +5,10 @@ import { buildDemoTerrainDataContract, buildTerrainDataContract } from '@/lib/te
 
 const DERIBIT_RESPONSE_CACHE_CONTROL = 'public, max-age=5, s-maxage=15, stale-while-revalidate=30';
 
-export async function GET(request?: NextRequest) {
+export async function GET(request: NextRequest) {
     const now = new Date();
-    const mode = request?.nextUrl.searchParams.get('mode');
-    const dteParam = request?.nextUrl.searchParams.get('dte') ?? 'ALL';
+    const mode = request.nextUrl.searchParams.get('mode');
+    const dteParam = request.nextUrl.searchParams.get('dte') ?? 'ALL';
     if (!isDeribitDteFilter(dteParam)) {
         return NextResponse.json({ error: 'Unsupported DTE filter' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
     }

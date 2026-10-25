@@ -11,6 +11,9 @@ import RiskTerminal, { type PositionRiskSettings } from './RiskTerminal';
 import type { DrawingObject, PositionDrawingType, PositionPrices } from './drawing-model';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
+import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
+import { ORDERFLOW_SCHEMA_VERSION, type SetupAssessmentV1 } from '../../lib/orderflow/contracts';
+import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
 
 export interface DecisionDockProps {
     metrics: {
@@ -29,6 +32,7 @@ export interface DecisionDockProps {
     };
     data: TerrainDataContractV2;
     marketFeed: BinanceMarketFeed;
+    liquidityFeed: BinanceLiquidityHeatmapFeed;
     isError: boolean;
     onClose: () => void;
     selectedDrawing: DrawingObject | null;
@@ -43,6 +47,7 @@ export default function DecisionDock({
     metrics,
     data,
     marketFeed,
+    liquidityFeed,
     isError,
     onClose,
     selectedDrawing,
@@ -54,63 +59,70 @@ export default function DecisionDock({
 }: DecisionDockProps) {
     const {
         workspaceMode,
-        setWorkspaceMode,
         inspectorTab,
         setInspectorTab,
         dataMode,
+        chartLayers,
     } = useTerminalStore();
 
     const timestamp = new Date(data.timestamp).toLocaleString(undefined, { hour12: false });
+    const parsedTimestamp = Date.parse(data.timestamp);
+    const asOf = Number.isSafeInteger(parsedTimestamp) && parsedTimestamp >= 0 ? parsedTimestamp : 0;
+    const orderflowMode = dataMode === 'DEMO' ? 'REPLAY' : 'LIVE';
+    const unavailableCoverage = createCaptureCoverageV1({
+        dataMode: orderflowMode,
+        source: dataMode === 'DEMO' ? 'UX16_FIXTURE' : 'ORDERFLOW_DERIVED',
+        venue: 'NOT_APPLICABLE',
+        symbol: 'BTCUSDT',
+        capturedAt: asOf,
+        eventTime: asOf,
+        coverageStart: null,
+        coverageEnd: null,
+        sequenceState: 'OFFLINE',
+        gapCount: 0,
+        precision: 'STRUCTURAL',
+        approximation: 'NONE',
+        quality: 'UNAVAILABLE',
+    });
+    const setupAssessment: SetupAssessmentV1 = {
+        schemaVersion: ORDERFLOW_SCHEMA_VERSION,
+        state: 'INSUFFICIENT_DATA',
+        asOf,
+        symbol: 'BTCUSDT',
+        contextTimeframes: ['4h', '1h'],
+        triggerTimeframe: '5m',
+        zone: null,
+        trigger: null,
+        invalidation: null,
+        mandatoryGates: {
+            dataIntegrity: 'MISSING',
+            location: 'MISSING',
+            aggression: 'MISSING',
+            response: 'MISSING',
+            confirmation: 'MISSING',
+            invalidation: 'MISSING',
+            riskCompatibility: 'MISSING',
+        },
+        enhancers: {
+            persistentLiquidity: 'UNAVAILABLE',
+            optionsStructure: 'UNAVAILABLE',
+        },
+        evidenceIds: [],
+        conflictIds: [],
+        grade: 'NONE',
+        dataQuality: unavailableCoverage,
+        deterministicVersion: 'ux16.0-shell-only',
+    };
+    const activeOverlayCount = Object.values(chartLayers).filter(Boolean).length;
 
     return (
         <aside
             className="flex h-full flex-col overflow-hidden border-l border-[#18212C] bg-[#0C1118] font-sans text-[#D8DEE8]"
             data-testid="decision-dock"
         >
-            {/* Top Workspace Mode Selector: Context | Flow | Setup */}
-            <div className="flex h-10 shrink-0 items-center justify-between border-b border-[#18212C] bg-[#070A0F] px-2">
-                <div
-                    className="grid grid-cols-3 gap-1 rounded bg-[#0C1118] p-0.5"
-                    role="tablist"
-                    aria-label="Workspace modes"
-                    data-testid="workspace-mode-selector"
-                >
-                    {(['CONTEXT', 'FLOW', 'SETUP'] as const).map((mode) => {
-                        const active = workspaceMode === mode;
-                        return (
-                            <button
-                                key={mode}
-                                type="button"
-                                role="tab"
-                                aria-selected={active}
-                                data-testid={`workspace-mode-${mode.toLowerCase()}`}
-                                onClick={() => {
-                                    setWorkspaceMode(mode);
-                                    setInspectorTab('DECISION');
-                                }}
-                                className={cn(
-                                    'h-7 px-2.5 text-[9px] font-mono font-bold tracking-wider rounded transition-colors duration-150',
-                                    active
-                                        ? 'bg-[#18212C] text-[#39A9F5] shadow-sm'
-                                        : 'text-[#8390A0] hover:text-[#D8DEE8]',
-                                )}
-                            >
-                                {mode}
-                            </button>
-                        );
-                    })}
-                </div>
-
-                <div className="flex items-center gap-1">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        aria-label="Close options metrics"
-                        className="rounded p-1 text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] md:hidden"
-                    >
-                        <X className="size-3.5" />
-                    </button>
-                </div>
+            <div className="flex h-8 shrink-0 items-center justify-between border-b border-[#18212C] bg-[#070A0F] px-2">
+                <span className="font-mono text-[9px] font-bold text-[#8390A0]">DECISION DOCK · {workspaceMode}</span>
+                <button type="button" onClick={onClose} aria-label="Close options metrics" className="rounded p-1 text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] md:hidden"><X className="size-3.5" /></button>
             </div>
 
             {/* Mode-Specific Body or Tab Inspector */}
@@ -153,35 +165,25 @@ export default function DecisionDock({
                                     putWall={metrics.putWall}
                                     gammaFlip={metrics.gammaFlip}
                                     gammaRegime={metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}
-                                    avwapPrice={metrics.spot * 0.985}
-                                    volumeProfilePoc={metrics.spot * 1.002}
-                                    volumeProfileVah={metrics.spot * 1.025}
-                                    volumeProfileVal={metrics.spot * 0.978}
-                                    dataFreshnessMs={marketFeed.latencyMs ?? 28}
+                                    decisionState="INSUFFICIENT_DATA"
+                                    decisionReason="UX16.0 provides structural context only. Setup classification is not enabled."
+                                    dataFreshnessMs={dataMode === 'DEMO' ? null : marketFeed.latencyMs}
+                                    activeOverlayCount={activeOverlayCount}
                                 />
                             )}
                             {workspaceMode === 'FLOW' && (
                                 <FlowMode
-                                    retainedFrames={1_800}
-                                    currentCvdUsd={metrics.netGex > 0 ? 12_400_000 : -8_500_000}
+                                    liquidityStatus={dataMode === 'DEMO' ? 'OFFLINE' : liquidityFeed.paused ? 'PAUSED' : liquidityFeed.sequence.state}
+                                    retainedFrames={dataMode === 'DEMO' ? 0 : liquidityFeed.frames.length}
+                                    footprintStatus="NOT_CONNECTED"
+                                    cvdStatus="UNAVAILABLE"
+                                    currentCvdUsd={null}
+                                    events={[]}
+                                    dataMode={orderflowMode}
                                 />
                             )}
                             {workspaceMode === 'SETUP' && (
-                                <SetupMode
-                                    zone={{
-                                        low: Math.round(metrics.putWall),
-                                        high: Math.round(metrics.gammaFlip),
-                                        label: 'Primary Put Wall & Gamma Flip Transition Zone',
-                                    }}
-                                    trigger={{
-                                        description: 'Reclaim and 5m close above Gamma Flip level',
-                                        price: Math.round(metrics.gammaFlip),
-                                    }}
-                                    invalidation={{
-                                        description: 'Sustained 5m close below Primary Put Wall',
-                                        price: Math.round(metrics.putWall),
-                                    }}
-                                />
+                                <SetupMode assessment={setupAssessment} evidence={[]} />
                             )}
                         </>
                     )}
@@ -229,7 +231,7 @@ export default function DecisionDock({
                                     ['Data Feed Mode', dataMode],
                                     ['Timestamp', timestamp],
                                     ['Spot Price Candles', dataMode === 'DEMO' ? 'DEMO FIXTURE' : marketFeed.state],
-                                    ['CVD / Tape Delta', dataMode === 'DEMO' ? 'SHADOW DEMO' : marketFeed.state],
+                                    ['CVD / Tape Delta', 'UNAVAILABLE (UX16.1 capture required)'],
                                     ['L2 Depth Reconstruction', dataMode === 'DEMO' ? 'UNAVAILABLE IN DEMO' : marketFeed.book ? marketFeed.state : 'OFFLINE'],
                                     ['Options Chain', isError && dataMode === 'LIVE' ? 'UNAVAILABLE' : data.dataMode],
                                     ['Jev Intelligence', 'SHADOW STANDBY (UX16.7)'],
