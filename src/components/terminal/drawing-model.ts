@@ -302,7 +302,7 @@ export type DrawingDragTarget =
     | { kind: 'body' }
     | { kind: 'anchor'; pointIndex: number }
     | { kind: 'position-line'; line: PositionLine }
-    | { kind: 'position-extent' };
+    | { kind: 'position-extent'; edge?: 'left' | 'right' };
 
 export function dragTargetMode(target: DrawingDragTarget): 'moving' | 'resizing' {
     return target.kind === 'body' ? 'moving' : 'resizing';
@@ -345,7 +345,18 @@ export function applyDrawingDrag(original: DrawingObject, target: DrawingDragTar
         return next;
     }
     if (target.kind === 'position-extent' && original.points.length >= 2) {
-        next.points = [{ ...original.points[0] }, { ...original.points[1], time: delta.current.time }];
+        const edge = target.edge ?? 'right';
+        if (edge === 'left') {
+            next.points = [
+                { ...original.points[0], time: delta.current.time },
+                { ...original.points[1] },
+            ];
+        } else {
+            next.points = [
+                { ...original.points[0] },
+                { ...original.points[1], time: delta.current.time },
+            ];
+        }
         return next;
     }
     return next;

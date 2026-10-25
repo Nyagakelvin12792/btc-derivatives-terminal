@@ -107,6 +107,7 @@ interface MarketStructureChartProps {
     selectedDrawing?: DrawingObject | null;
     onSelectedDrawingChange?: (drawing: DrawingObject | null) => void;
     onRegisterPositionUpdater?: (updater: ((prices: PositionPrices) => void) | null) => void;
+    riskSettings?: PositionRiskSettings;
 }
 
 interface OverlayLevel {
@@ -222,6 +223,7 @@ export default function MarketStructureChart({
     onActiveToolChange,
     onSelectedDrawingChange,
     onRegisterPositionUpdater,
+    riskSettings: propRiskSettings,
 }: MarketStructureChartProps) {
     const workspaceContainerRef = useRef<HTMLDivElement>(null);
     const chartHostRef = useRef<HTMLDivElement>(null);
@@ -332,7 +334,7 @@ export default function MarketStructureChart({
         return () => onRegisterPositionUpdater(null);
     }, [onRegisterPositionUpdater, selectedDrawingId]);
 
-    const riskSettings = useMemo<PositionRiskSettings>(() => readPersistedRiskSettings(), []);
+    const riskSettings = propRiskSettings ?? readPersistedRiskSettings();
     const riskResults = useMemo<Record<string, PositionRiskResult | null>>(() => {
         const map: Record<string, PositionRiskResult | null> = {};
         for (const drawing of drawings) {

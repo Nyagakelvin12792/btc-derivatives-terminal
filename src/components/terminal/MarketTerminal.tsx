@@ -52,7 +52,10 @@ import { useBinanceMarketFeed, type BinanceMarketFeed } from '../../lib/binance/
 import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
-import RiskTerminal from './RiskTerminal';
+import RiskTerminal, {
+    type PositionRiskSettings,
+    readPersistedRiskSettings,
+} from './RiskTerminal';
 import type { DrawingObject, PositionDrawingType, PositionPrices } from './drawing-model';
 
 interface MarketTerminalProps {
@@ -179,6 +182,8 @@ function Inspector({
     selectedDrawing,
     onUpdatePositionPrices,
     onSelectDrawingType,
+    riskSettings,
+    onSettingsChange,
 }: {
     metrics: MarketMetrics;
     data: TerrainDataContractV2;
@@ -188,6 +193,8 @@ function Inspector({
     selectedDrawing: DrawingObject | null;
     onUpdatePositionPrices: (prices: PositionPrices) => void;
     onSelectDrawingType: (type: PositionDrawingType) => void;
+    riskSettings: PositionRiskSettings;
+    onSettingsChange: (settings: PositionRiskSettings) => void;
 }) {
     const { inspectorTab, setInspectorTab, dataMode } = useTerminalStore();
     const timestamp = new Date(data.timestamp).toLocaleString(undefined, { hour12: false });
@@ -200,6 +207,8 @@ function Inspector({
                 selectedDrawing={selectedDrawing}
                 onUpdatePositionPrices={onUpdatePositionPrices}
                 onSelectDrawingType={onSelectDrawingType}
+                riskSettings={riskSettings}
+                onSettingsChange={onSettingsChange}
             />
             <div className="mt-4 space-y-2 border-t border-[#263346] pt-3">
                 <div className="text-[10px] font-semibold text-zinc-400">Structural Options Context</div>
@@ -233,6 +242,11 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
     const [timeframe, setTimeframe] = useState<ChartTimeframe>('1H');
     const [replayActive, setReplayActive] = useState(false);
     const [utcNow, setUtcNow] = useState('--:--:--');
+    const [riskSettings, setRiskSettings] = useState<PositionRiskSettings>(readPersistedRiskSettings);
+
+    const handleRiskSettingsChange = useCallback((next: PositionRiskSettings) => {
+        setRiskSettings(next);
+    }, []);
     const isDesktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, () => false);
     const { setActiveWorkspace, dataMode, setDataMode, inspectorOpen, setInspectorOpen, setStudyPaneOpen, activeOrderFlowStudy, setActiveOrderFlowStudy, dteFilter, setDteFilter, chartLayers, toggleChartLayer, resetWorkspaceUi } = useTerminalStore();
     const marketFeed = useBinanceMarketFeed(BINANCE_INTERVALS[timeframe], dataMode === 'LIVE');
@@ -429,12 +443,13 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                                     selectedDrawing={selectedDrawing}
                                     onSelectedDrawingChange={setSelectedDrawing}
                                     onRegisterPositionUpdater={handleRegisterPositionUpdater}
+                                    riskSettings={riskSettings}
                                 />
                             </div>
                         </div>
                     </div>
                 </Panel>
-                {inspectorOpen && isDesktop && <><Separator aria-label="Resize options inspector" aria-valuemin={58} aria-valuemax={90} aria-valuenow={78} className="group relative w-1 bg-[#111a25] outline-none hover:bg-cyan-400/40 focus-visible:bg-cyan-400/60"><span className="absolute inset-y-0 -left-1 -right-1" /></Separator><Panel id="inspector" minSize="320px" maxSize="34%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size"><aside className="h-full overflow-y-auto border-l border-[#263346] bg-[#080d14]"><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} /></aside></Panel></>}
+                {inspectorOpen && isDesktop && <><Separator aria-label="Resize options inspector" aria-valuemin={58} aria-valuemax={90} aria-valuenow={78} className="group relative w-1 bg-[#111a25] outline-none hover:bg-cyan-400/40 focus-visible:bg-cyan-400/60"><span className="absolute inset-y-0 -left-1 -right-1" /></Separator><Panel id="inspector" minSize="320px" maxSize="34%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size"><aside className="h-full overflow-y-auto border-l border-[#263346] bg-[#080d14]"><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} riskSettings={riskSettings} onSettingsChange={handleRiskSettingsChange} /></aside></Panel></>}
             </Group>
         </main>
 
@@ -442,6 +457,6 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
 
         <Dialog.Root open={paletteOpen} onOpenChange={setPaletteOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-[18%] z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-xl border border-[#33445a] bg-[#0b111a] shadow-2xl"><Dialog.Title className="sr-only">Terminal command palette</Dialog.Title><Command className="bg-transparent text-zinc-100"><div className="flex items-center border-b border-[#263346] px-3"><CommandIcon className="size-4 text-zinc-500" /><Command.Input autoFocus placeholder="Search workspaces and actions…" className="h-12 w-full bg-transparent px-3 text-sm outline-none placeholder:text-zinc-600" /></div><Command.List className="max-h-[360px] overflow-y-auto p-2"><Command.Empty className="p-6 text-center text-xs text-zinc-500">No command found.</Command.Empty><Command.Group heading="Workspaces" className="text-[9px] text-zinc-600">{WORKSPACES.map(({ id, label, icon: Icon }) => <Command.Item key={id} value={label} onSelect={() => { setActiveWorkspace(id); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10 data-[selected=true]:text-cyan-200"><Icon className="size-4" />{label}</Command.Item>)}</Command.Group><Command.Group heading="Actions" className="mt-2 text-[9px] text-zinc-600"><Command.Item onSelect={() => { setInspectorOpen(true); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><PanelRightOpen className="size-4" />Open Options Metrics</Command.Item><Command.Item onSelect={() => { resetWorkspaceUi(); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><RotateCcw className="size-4" />Reset Market Structure layout</Command.Item></Command.Group></Command.List></Command></Dialog.Content></Dialog.Portal></Dialog.Root>
 
-        <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" /><Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#33445a] bg-[#080d14] pb-[env(safe-area-inset-bottom)] md:hidden"><Dialog.Title className="sr-only">Options Metrics</Dialog.Title><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setMobileInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} /></Dialog.Content></Dialog.Portal></Dialog.Root>
+        <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" /><Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#33445a] bg-[#080d14] pb-[env(safe-area-inset-bottom)] md:hidden"><Dialog.Title className="sr-only">Options Metrics</Dialog.Title><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setMobileInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} riskSettings={riskSettings} onSettingsChange={handleRiskSettingsChange} /></Dialog.Content></Dialog.Portal></Dialog.Root>
     </div></Tooltip.Provider>;
 }

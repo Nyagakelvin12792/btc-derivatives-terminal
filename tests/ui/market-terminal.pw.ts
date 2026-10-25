@@ -694,3 +694,135 @@ test('creates Long/Short position objects with interactive risk HUD and synchron
     const severe = results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''));
     expect(severe).toEqual([]);
 });
+
+test('UX15.1/UX15.2 verifies independent position line and extent dragging, locked immutability, and live risk synchronization', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop position risk interaction check');
+
+    const chart = page.locator('[role="group"][aria-label*="BTC price chart"]');
+    await expect(chart).toBeVisible();
+    const chartBox = await chart.boundingBox();
+    expect(chartBox).not.toBeNull();
+
+    const drawingRail = page.getByTestId('drawing-tools-rail');
+    await drawingRail.getByRole('button', { name: 'Long position', exact: true }).click();
+    await page.mouse.click(chartBox!.x + 360, chartBox!.y + 180);
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+
+    const longDrawing = chart.locator('[data-drawing-type="long-position"]').first();
+    await expect(longDrawing).toBeVisible();
+
+    // Select drawing
+    const longBox = await longDrawing.boundingBox();
+    expect(longBox).not.toBeNull();
+    await page.mouse.click(longBox!.x + longBox!.width / 2, longBox!.y + longBox!.height / 2);
+
+    // Open RISK tab
+    await page.getByRole('tab', { name: 'RISK', exact: true }).click();
+    const metricsCard = page.getByTestId('risk-metrics-card');
+    await expect(metricsCard).toBeVisible();
+
+    // Verify initial attribute synchronization between chart position root and Risk Terminal
+    const initialChartQty = await longDrawing.getAttribute('data-position-quantity');
+    const initialTermQty = await metricsCard.getAttribute('data-terminal-quantity');
+    expect(initialChartQty).toBeTruthy();
+    expect(initialChartQty).toBe(initialTermQty);
+
+    // 1. Drag Stop line independently
+    const stopHit = longDrawing.locator('[data-testid="position-hit-stop"]');
+    await expect(stopHit).toBeAttached();
+    const stopBox = await stopHit.boundingBox();
+    expect(stopBox).not.toBeNull();
+
+    const stopInput = page.getByTestId('risk-input-stop');
+    const entryInput = page.getByTestId('risk-input-entry');
+    const targetInput = page.getByTestId('risk-input-target');
+
+    const origStopPrice = Number(await stopInput.inputValue());
+    const origEntryPrice = Number(await entryInput.inputValue());
+    const origTargetPrice = Number(await targetInput.inputValue());
+
+    // Drag stop downwards by 20px
+    await page.mouse.move(stopBox!.x + stopBox!.width / 2, stopBox!.y + stopBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(stopBox!.x + stopBox!.width / 2, stopBox!.y + stopBox!.height / 2 + 20);
+    await page.mouse.up();
+
+    const draggedStopPrice = Number(await stopInput.inputValue());
+    const draggedEntryPrice = Number(await entryInput.inputValue());
+    const draggedTargetPrice = Number(await targetInput.inputValue());
+
+    // Stop moved (lower price -> higher pixel Y), entry and target remain identical
+    expect(draggedStopPrice).toBeLessThan(origStopPrice);
+    expect(draggedEntryPrice).toBe(origEntryPrice);
+    expect(draggedTargetPrice).toBe(origTargetPrice);
+
+    // 2. Drag Target line independently
+    const targetHit = longDrawing.locator('[data-testid="position-hit-target"]');
+    await expect(targetHit).toBeAttached();
+    const targetBox = await targetHit.boundingBox();
+    expect(targetBox).not.toBeNull();
+
+    // Drag target upwards by 20px (higher price -> lower pixel Y)
+    await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(targetBox!.x + targetBox!.width / 2, targetBox!.y + targetBox!.height / 2 - 20);
+    await page.mouse.up();
+
+    const afterTargetPrice = Number(await targetInput.inputValue());
+    const afterEntryPrice = Number(await entryInput.inputValue());
+    const afterStopPrice = Number(await stopInput.inputValue());
+
+    expect(afterTargetPrice).toBeGreaterThan(draggedTargetPrice);
+    expect(afterEntryPrice).toBe(draggedEntryPrice);
+    expect(afterStopPrice).toBe(draggedStopPrice);
+
+    // 3. Test Left and Right extent drag handles
+    const leftHandle = longDrawing.locator('[data-testid="position-handle-left"]');
+    const rightHandle = longDrawing.locator('[data-testid="position-handle-right"]');
+    await expect(leftHandle).toBeVisible();
+    await expect(rightHandle).toBeVisible();
+
+    const rightHandleBox = await rightHandle.boundingBox();
+    expect(rightHandleBox).not.toBeNull();
+
+    // Drag right handle to the right by 40px
+    await page.mouse.move(rightHandleBox!.x + rightHandleBox!.width / 2, rightHandleBox!.y + rightHandleBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rightHandleBox!.x + rightHandleBox!.width / 2 + 40, rightHandleBox!.y + rightHandleBox!.height / 2);
+    await page.mouse.up();
+
+    // All prices must be strictly preserved after extent drag
+    expect(Number(await entryInput.inputValue())).toBe(afterEntryPrice);
+    expect(Number(await stopInput.inputValue())).toBe(afterStopPrice);
+    expect(Number(await targetInput.inputValue())).toBe(afterTargetPrice);
+
+    // 4. Change risk settings in Risk Terminal and assert live updates on both terminal and chart HUD
+    const beforeSettingsChartQty = await longDrawing.getAttribute('data-position-quantity');
+    const equityInput = page.getByTestId('risk-input-equity');
+    await equityInput.fill('200000');
+
+    await expect(async () => {
+        const updatedChartQty = await longDrawing.getAttribute('data-position-quantity');
+        const updatedTermQty = await metricsCard.getAttribute('data-terminal-quantity');
+        expect(updatedChartQty).toBe(updatedTermQty);
+        expect(Number(updatedChartQty)).toBeGreaterThan(Number(beforeSettingsChartQty));
+    }).toPass();
+
+    // Reset defaults button resets equity and syncs back
+    const resetBtn = page.getByTitle('Reset risk parameters to defaults');
+    await resetBtn.click();
+    await expect(async () => {
+        const resetChartQty = await longDrawing.getAttribute('data-position-quantity');
+        const resetTermQty = await metricsCard.getAttribute('data-terminal-quantity');
+        expect(resetChartQty).toBe(resetTermQty);
+        expect(resetChartQty).toBe(beforeSettingsChartQty);
+    }).toPass();
+
+    // 5. Test locking prevents modifications
+    const toolbar = page.getByRole('toolbar', { name: 'Drawing controls' });
+    const lockBtn = toolbar.getByRole('button', { name: 'Lock selected drawing' });
+    await lockBtn.click();
+    await expect(longDrawing).toHaveAttribute('data-locked', 'true');
+    // When locked, the draggable hit area elements are unmounted to prevent interaction
+    await expect(longDrawing.locator('[data-testid="position-hit-stop"]')).toHaveCount(0);
+});

@@ -23,6 +23,7 @@ import {
 import {
     DEFAULT_RISK_SETTINGS,
     evaluatePositionRiskForDrawing,
+    sanitizeRiskSettings,
     type PositionRiskSettings,
 } from './RiskTerminal';
 
@@ -385,5 +386,133 @@ describe('UX15.2 Shared Model Agreement Between Chart HUD and Risk Terminal', ()
         expect(chartResult!.metrics!.rewardToRisk).toBe(directResult.metrics!.rewardToRisk);
         expect(chartResult!.metrics!.notionalUsd).toBe(directResult.metrics!.notionalUsd);
         expect(chartResult!.metrics!.limitedBy).toBe(directResult.metrics!.limitedBy);
+    });
+
+    it('sanitizeRiskSettings safely sanitizes malformed, negative, or invalid structures to default fallback bounds', () => {
+        expect(sanitizeRiskSettings(null)).toEqual(DEFAULT_RISK_SETTINGS);
+        expect(sanitizeRiskSettings(undefined)).toEqual(DEFAULT_RISK_SETTINGS);
+        expect(sanitizeRiskSettings('invalid-string')).toEqual(DEFAULT_RISK_SETTINGS);
+        expect(sanitizeRiskSettings(42)).toEqual(DEFAULT_RISK_SETTINGS);
+
+        const malformed = {
+            equityUsd: -500,
+            riskMode: 'unknown-mode',
+            riskValue: Number.NaN,
+            leverage: 0,
+            dailyLossLimitUsd: -10,
+            maxDrawdownUsd: -100,
+            pointValueUsdPerPriceUnit: 0,
+            lotSize: -1,
+            quantityStep: 0,
+            minimumQuantity: -2,
+            maximumQuantity: -5,
+            entryFeeRate: -0.01,
+            exitFeeRate: -0.01,
+            slippageBpsPerSide: -5,
+        };
+
+        const sanitized = sanitizeRiskSettings(malformed);
+        expect(sanitized.equityUsd).toBe(DEFAULT_RISK_SETTINGS.equityUsd);
+        expect(sanitized.riskMode).toBe(DEFAULT_RISK_SETTINGS.riskMode);
+        expect(sanitized.riskValue).toBe(DEFAULT_RISK_SETTINGS.riskValue);
+        expect(sanitized.leverage).toBe(DEFAULT_RISK_SETTINGS.leverage);
+        expect(sanitized.pointValueUsdPerPriceUnit).toBe(DEFAULT_RISK_SETTINGS.pointValueUsdPerPriceUnit);
+        expect(sanitized.lotSize).toBe(DEFAULT_RISK_SETTINGS.lotSize);
+        expect(sanitized.quantityStep).toBe(DEFAULT_RISK_SETTINGS.quantityStep);
+        expect(sanitized.entryFeeRate).toBe(DEFAULT_RISK_SETTINGS.entryFeeRate);
+        expect(sanitized.slippageBpsPerSide).toBe(DEFAULT_RISK_SETTINGS.slippageBpsPerSide);
+
+        // Valid partial overrides should be preserved
+        const partialValid = sanitizeRiskSettings({
+            equityUsd: 250_000,
+            riskMode: 'amount',
+            riskValue: 5_000,
+            leverage: 20,
+        });
+        expect(partialValid.equityUsd).toBe(250_000);
+        expect(partialValid.riskMode).toBe('amount');
+        expect(partialValid.riskValue).toBe(5_000);
+        expect(partialValid.leverage).toBe(20);
+        expect(partialValid.slippageBpsPerSide).toBe(DEFAULT_RISK_SETTINGS.slippageBpsPerSide);
+    });
+
+    it('recalculates risk immediately when risk settings change (shared state simulation)', () => {
+        const drawing = createPositionDrawing('long-settings-change', 'long-position', { time: 1_000, price: 68_000 }, 2_000);
+        drawing.position!.stop = 67_320;
+        drawing.position!.target = 69_360;
+
+        const defaultResult = evaluatePositionRiskForDrawing(drawing, DEFAULT_RISK_SETTINGS);
+        expect(defaultResult?.metrics?.quantity).toBeDefined();
+
+        // 2x equity
+        const updatedSettings: PositionRiskSettings = {
+            ...DEFAULT_RISK_SETTINGS,
+            equityUsd: DEFAULT_RISK_SETTINGS.equityUsd * 2,
+        };
+        const updatedResult = evaluatePositionRiskForDrawing(drawing, updatedSettings);
+
+        expect(updatedResult?.metrics?.quantity).toBeGreaterThan(defaultResult!.metrics!.quantity);
+        expect(updatedResult?.metrics?.lossAtStopUsd).toBeCloseTo(defaultResult!.metrics!.lossAtStopUsd * 2, -1);
+    });
+
+    it('handles left and right extent drags modifying only time and preserving prices and risk results', () => {
+        const drawing = createPositionDrawing('long-extent-test', 'long-position', { time: 1_000, price: 68_000 }, 2_000);
+        drawing.position!.stop = 67_000;
+        drawing.position!.target = 70_000;
+
+        const initialRisk = evaluatePositionRiskForDrawing(drawing, DEFAULT_RISK_SETTINGS);
+
+        // Right extent drag
+        const rightDragged = applyDrawingDrag(drawing, { kind: 'position-extent', edge: 'right' }, {
+            current: { time: 3_500, price: 69_000 },
+            priceDelta: 1_000,
+            shiftTime: (t) => t,
+        });
+
+        expect(rightDragged.points[0].time).toBe(1_000);
+        expect(rightDragged.points[1].time).toBe(3_500);
+        expect(rightDragged.position!.entry).toBe(68_000);
+        expect(rightDragged.position!.stop).toBe(67_000);
+        expect(rightDragged.position!.target).toBe(70_000);
+
+        const rightRisk = evaluatePositionRiskForDrawing(rightDragged, DEFAULT_RISK_SETTINGS);
+        expect(rightRisk?.metrics?.quantity).toBe(initialRisk?.metrics?.quantity);
+        expect(rightRisk?.metrics?.rewardToRisk).toBe(initialRisk?.metrics?.rewardToRisk);
+
+        // Left extent drag
+        const leftDragged = applyDrawingDrag(drawing, { kind: 'position-extent', edge: 'left' }, {
+            current: { time: 500, price: 67_500 },
+            priceDelta: -500,
+            shiftTime: (t) => t,
+        });
+
+        expect(leftDragged.points[0].time).toBe(500);
+        expect(leftDragged.points[1].time).toBe(2_000);
+        expect(leftDragged.position!.entry).toBe(68_000);
+        expect(leftDragged.position!.stop).toBe(67_000);
+        expect(leftDragged.position!.target).toBe(70_000);
+
+        const leftRisk = evaluatePositionRiskForDrawing(leftDragged, DEFAULT_RISK_SETTINGS);
+        expect(leftRisk?.metrics?.quantity).toBe(initialRisk?.metrics?.quantity);
+        expect(leftRisk?.metrics?.rewardToRisk).toBe(initialRisk?.metrics?.rewardToRisk);
+    });
+
+    it('preserves stop and target distances on body drag while shifting entry and anchor prices', () => {
+        const drawing = createPositionDrawing('long-body-test', 'long-position', { time: 1_000, price: 68_000 }, 2_000);
+        drawing.position!.stop = 67_000; // stop dist = 1000
+        drawing.position!.target = 70_000; // target dist = 2000
+
+        const dragged = applyDrawingDrag(drawing, { kind: 'body' }, {
+            current: { time: 1_200, price: 69_500 },
+            priceDelta: 1_500,
+            shiftTime: (t) => t + 200,
+        });
+
+        expect(dragged.points[0].time).toBe(1_200);
+        expect(dragged.points[1].time).toBe(2_200);
+        expect(dragged.points[0].price).toBe(69_500);
+        expect(dragged.position!.entry).toBe(69_500);
+        expect(dragged.position!.stop).toBe(68_500); // 69_500 - 1_000 = 68_500
+        expect(dragged.position!.target).toBe(71_500); // 69_500 + 2_000 = 71_500
     });
 });

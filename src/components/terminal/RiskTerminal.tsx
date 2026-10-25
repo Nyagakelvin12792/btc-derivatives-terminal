@@ -63,16 +63,103 @@ export const DEFAULT_RISK_SETTINGS: PositionRiskSettings = {
 
 export const RISK_STORAGE_KEY = 'btc-terminal-risk-settings-v1';
 
+export function sanitizeRiskSettings(raw: unknown): PositionRiskSettings {
+    if (!raw || typeof raw !== 'object') {
+        return DEFAULT_RISK_SETTINGS;
+    }
+    const candidate = raw as Partial<PositionRiskSettings>;
+
+    const equityUsd = typeof candidate.equityUsd === 'number' && Number.isFinite(candidate.equityUsd) && candidate.equityUsd > 0
+        ? candidate.equityUsd
+        : DEFAULT_RISK_SETTINGS.equityUsd;
+
+    const riskMode = candidate.riskMode === 'amount' || candidate.riskMode === 'percent'
+        ? candidate.riskMode
+        : DEFAULT_RISK_SETTINGS.riskMode;
+
+    const riskValue = typeof candidate.riskValue === 'number' && Number.isFinite(candidate.riskValue) && candidate.riskValue > 0
+        ? (riskMode === 'percent' ? Math.min(100, candidate.riskValue) : candidate.riskValue)
+        : DEFAULT_RISK_SETTINGS.riskValue;
+
+    const leverage = typeof candidate.leverage === 'number' && Number.isFinite(candidate.leverage) && candidate.leverage > 0
+        ? Math.min(100, Math.max(1, candidate.leverage))
+        : DEFAULT_RISK_SETTINGS.leverage;
+
+    const dailyLossLimitUsd = typeof candidate.dailyLossLimitUsd === 'number' && Number.isFinite(candidate.dailyLossLimitUsd) && candidate.dailyLossLimitUsd >= 0
+        ? candidate.dailyLossLimitUsd
+        : (candidate.dailyLossLimitUsd === undefined ? DEFAULT_RISK_SETTINGS.dailyLossLimitUsd : undefined);
+
+    const realizedPnlTodayUsd = typeof candidate.realizedPnlTodayUsd === 'number' && Number.isFinite(candidate.realizedPnlTodayUsd)
+        ? candidate.realizedPnlTodayUsd
+        : DEFAULT_RISK_SETTINGS.realizedPnlTodayUsd;
+
+    const maxDrawdownUsd = typeof candidate.maxDrawdownUsd === 'number' && Number.isFinite(candidate.maxDrawdownUsd) && candidate.maxDrawdownUsd >= 0
+        ? candidate.maxDrawdownUsd
+        : (candidate.maxDrawdownUsd === undefined ? DEFAULT_RISK_SETTINGS.maxDrawdownUsd : undefined);
+
+    const currentDrawdownUsd = typeof candidate.currentDrawdownUsd === 'number' && Number.isFinite(candidate.currentDrawdownUsd) && candidate.currentDrawdownUsd >= 0
+        ? candidate.currentDrawdownUsd
+        : DEFAULT_RISK_SETTINGS.currentDrawdownUsd;
+
+    const pointValueUsdPerPriceUnit = typeof candidate.pointValueUsdPerPriceUnit === 'number' && Number.isFinite(candidate.pointValueUsdPerPriceUnit) && candidate.pointValueUsdPerPriceUnit > 0
+        ? candidate.pointValueUsdPerPriceUnit
+        : DEFAULT_RISK_SETTINGS.pointValueUsdPerPriceUnit;
+
+    const lotSize = typeof candidate.lotSize === 'number' && Number.isFinite(candidate.lotSize) && candidate.lotSize > 0
+        ? candidate.lotSize
+        : DEFAULT_RISK_SETTINGS.lotSize;
+
+    const quantityStep = typeof candidate.quantityStep === 'number' && Number.isFinite(candidate.quantityStep) && candidate.quantityStep > 0
+        ? candidate.quantityStep
+        : DEFAULT_RISK_SETTINGS.quantityStep;
+
+    const minimumQuantity = typeof candidate.minimumQuantity === 'number' && Number.isFinite(candidate.minimumQuantity) && candidate.minimumQuantity > 0
+        ? candidate.minimumQuantity
+        : DEFAULT_RISK_SETTINGS.minimumQuantity;
+
+    const maximumQuantity = typeof candidate.maximumQuantity === 'number' && Number.isFinite(candidate.maximumQuantity) && candidate.maximumQuantity > 0
+        ? candidate.maximumQuantity
+        : DEFAULT_RISK_SETTINGS.maximumQuantity;
+
+    const entryFeeRate = typeof candidate.entryFeeRate === 'number' && Number.isFinite(candidate.entryFeeRate) && candidate.entryFeeRate >= 0
+        ? candidate.entryFeeRate
+        : DEFAULT_RISK_SETTINGS.entryFeeRate;
+
+    const exitFeeRate = typeof candidate.exitFeeRate === 'number' && Number.isFinite(candidate.exitFeeRate) && candidate.exitFeeRate >= 0
+        ? candidate.exitFeeRate
+        : DEFAULT_RISK_SETTINGS.exitFeeRate;
+
+    const slippageBpsPerSide = typeof candidate.slippageBpsPerSide === 'number' && Number.isFinite(candidate.slippageBpsPerSide) && candidate.slippageBpsPerSide >= 0
+        ? candidate.slippageBpsPerSide
+        : DEFAULT_RISK_SETTINGS.slippageBpsPerSide;
+
+    return {
+        equityUsd,
+        riskMode,
+        riskValue,
+        leverage,
+        dailyLossLimitUsd,
+        realizedPnlTodayUsd,
+        maxDrawdownUsd,
+        currentDrawdownUsd,
+        pointValueUsdPerPriceUnit,
+        lotSize,
+        quantityStep,
+        minimumQuantity,
+        maximumQuantity,
+        entryFeeRate,
+        exitFeeRate,
+        slippageBpsPerSide,
+    };
+}
+
 export function readPersistedRiskSettings(): PositionRiskSettings {
     if (typeof window === 'undefined') return DEFAULT_RISK_SETTINGS;
     try {
         const raw = window.localStorage.getItem(RISK_STORAGE_KEY);
         if (!raw) return DEFAULT_RISK_SETTINGS;
-        const parsed = JSON.parse(raw) as Partial<PositionRiskSettings>;
-        return {
-            ...DEFAULT_RISK_SETTINGS,
-            ...parsed,
-        };
+        const parsed = JSON.parse(raw);
+        return sanitizeRiskSettings(parsed);
     } catch {
         return DEFAULT_RISK_SETTINGS;
     }
@@ -173,26 +260,38 @@ interface RiskTerminalProps {
     selectedDrawing: DrawingObject | null;
     onUpdatePositionPrices?: (prices: { entry: number; stop: number; target: number }) => void;
     onSelectDrawingType?: (type: PositionDrawingType) => void;
+    riskSettings?: PositionRiskSettings;
+    onSettingsChange?: (settings: PositionRiskSettings) => void;
 }
 
 export default function RiskTerminal({
     selectedDrawing,
     onUpdatePositionPrices,
     onSelectDrawingType,
+    riskSettings: controlledSettings,
+    onSettingsChange,
 }: RiskTerminalProps) {
-    const [settings, setSettings] = useState<PositionRiskSettings>(readPersistedRiskSettings);
+    const [localSettings, setLocalSettings] = useState<PositionRiskSettings>(readPersistedRiskSettings);
     const [showAdvanced, setShowAdvanced] = useState(false);
 
+    const settings = controlledSettings ?? localSettings;
+
     function handleSettingsChange<K extends keyof PositionRiskSettings>(key: K, value: PositionRiskSettings[K]) {
-        setSettings((prev) => {
-            const next = { ...prev, [key]: value };
-            writePersistedRiskSettings(next);
-            return next;
-        });
+        const next = { ...settings, [key]: value };
+        if (onSettingsChange) {
+            onSettingsChange(next);
+        } else {
+            setLocalSettings(next);
+        }
+        writePersistedRiskSettings(next);
     }
 
     function handleResetDefaults() {
-        setSettings(DEFAULT_RISK_SETTINGS);
+        if (onSettingsChange) {
+            onSettingsChange(DEFAULT_RISK_SETTINGS);
+        } else {
+            setLocalSettings(DEFAULT_RISK_SETTINGS);
+        }
         writePersistedRiskSettings(DEFAULT_RISK_SETTINGS);
     }
 
@@ -365,7 +464,15 @@ export default function RiskTerminal({
 
             {/* Deterministic Sizing Results (When Ready) */}
             {riskResult && riskResult.status === 'ready' && riskResult.metrics && riskResult.budget && (
-                <div className="rounded-md border border-[#2b3c50] bg-[#09111c] p-3" data-testid="risk-metrics-card">
+                <div
+                    className="rounded-md border border-[#2b3c50] bg-[#09111c] p-3"
+                    data-testid="risk-metrics-card"
+                    data-terminal-quantity={riskResult.metrics.quantity.toFixed(riskResult.metrics.quantityPrecision)}
+                    data-terminal-loss={riskResult.metrics.lossAtStopUsd.toFixed(2)}
+                    data-terminal-profit={riskResult.metrics.profitAtTargetUsd.toFixed(2)}
+                    data-terminal-rr={riskResult.metrics.rewardToRisk.toFixed(2)}
+                    data-terminal-notional={riskResult.metrics.notionalUsd.toFixed(2)}
+                >
                     <div className="mb-2 flex items-center justify-between border-b border-[#1c293a] pb-1.5">
                         <span className="text-[10px] font-bold text-zinc-300">Position Sizing Output</span>
                         <span className="text-[8px] font-semibold text-zinc-400">

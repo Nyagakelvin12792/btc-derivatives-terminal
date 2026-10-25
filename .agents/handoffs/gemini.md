@@ -1,91 +1,107 @@
-# GEMINI HANDOFF REPORT — UX15.1 & UX15.2
+# GEMINI HANDOFF REPORT — UX15.1 & UX15.2 (Correction Complete)
 
 ```markdown
 >>> COMPLETED BY: Gemini (Antigravity)
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: agent/gemini
->>> TESTS: vitest 18 passed (129 tests); eslint 0 errors 0 warnings; tsc --noEmit 0 errors; next build passed; playwright 11 passed (7 mobile-skipped desktop checks), 0 failures
+>>> TESTS: vitest 18 passed (133 tests); eslint 0 errors 0 warnings; tsc --noEmit 0 errors; next build passed; playwright passed
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Architectural review of UX15.1 (Professional Drawing Tools & Fibonacci) and UX15.2 (Long/Short Position Objects & Risk Terminal) implementation on agent/gemini
->>> TARGET: src/components/terminal/drawing-model.ts, src/components/terminal/RiskTerminal.tsx, src/components/terminal/ChartDrawingLayer.tsx, src/components/terminal/MarketStructureChart.tsx, src/components/terminal/MarketTerminal.tsx, src/components/terminal/types.ts, src/components/terminal/ux15-drawing-risk.test.ts, tests/ui/market-terminal.pw.ts
+>>> ACTION REQUIRED: Architectural review of UX15.1 & UX15.2 defect corrections on agent/gemini (live shared risk state synchronization and SVG hit-testing priority repair)
+>>> TARGET: src/components/terminal/drawing-model.ts, src/components/terminal/RiskTerminal.tsx, src/components/terminal/ChartDrawingLayer.tsx, src/components/terminal/MarketStructureChart.tsx, src/components/terminal/MarketTerminal.tsx, src/components/terminal/ux15-drawing-risk.test.ts, tests/ui/market-terminal.pw.ts
 ```
 
 ---
 
 ## 1. Scope & Strict Ownership Compliance
 
-In accordance with the parallel Antigravity/Codex development cycle:
+In accordance with the Codex review findings and parallel development protocol:
 - **Codex Owned**: Order book and liquidity data foundations (`src/lib/binance/**`, `src/app/api/**`, etc.) and the deterministic risk engine (`src/lib/quant/position-risk.ts`, `src/lib/quant/position-risk.test.ts`).
 - **Gemini Owned**: Terminal UI components (`src/components/terminal/**`), UI tests (`tests/ui/market-terminal.pw.ts`), and Gemini handoff (`.agents/handoffs/gemini.md`).
 - **Strict Boundary Enforced**:
   - `src/lib/quant/position-risk.ts` and its test were strictly imported and read-only; **zero modifications made**.
   - `src/lib/binance/**`, `src/app/api/**`, `src/lib/deribit/**`, `src/lib/terrain/**`, `src/components/three/**`, `src/components/dashboard/**`, and `STATE.md` were **strictly untouched**.
-  - No synthetic heatmap, fake L2 history, or live broker execution was introduced.
-  - Pure time/price semantic persistence was preserved without saving raw pixel coordinates.
+  - All untracked artifacts (`.artifacts/ui-overhaul/*`, `test-results/`, `REMOVE_DIGIPROCTOR_CONFLICTS.bat`) were **strictly preserved** without being staged or deleted.
 
 ---
 
-## 2. Changed & Created Files
+## 2. Correction 1 — Live Shared PositionRiskSettings State
 
-| File | Type | Summary |
-| :--- | :--- | :--- |
-| `src/components/terminal/drawing-model.ts` | **Created** | Pure drawing model: semantic time/price data structures (`DrawingObject`, `DrawingPoint`, `FibonacciSettings`, `PositionPrices`, `DrawingView`), projection helper `projectDrawing`, drag logic `applyDrawingDrag`, keyboard nudge `nudgeDrawing`, immutable multi-level undo/redo stack (`pushHistory`, `undoHistory`, `redoHistory`), state derivation `deriveInteractionState`, and storage sanitization `sanitizePersistedDrawings`. |
-| `src/components/terminal/RiskTerminal.tsx` | **Created** | Account-aware Position Risk Terminal UI mounted in the right Inspector `RISK` tab. Imports and executes `calculatePositionRisk` from `src/lib/quant/position-risk.ts`. Implements sizing inputs (equity, risk mode %/$, leverage, daily loss limit, drawdown limits, fees, slippage), metric outputs (quantity, reward/risk, loss at stop, profit at target, notional, margin, limiting factor), error/warning diagnostics, and two-way binding with chart position drawings. |
-| `src/components/terminal/ChartDrawingLayer.tsx` | **Updated** | Added SVG rendering for Fibonacci retracement (trend baseline, shaded level bands, customizable lines/labels) and Long/Short position objects (shaded profit/loss zones, draggable entry/stop/target lines, left/right extent handles, and on-chart HUD badge showing status, reward:risk, quantity, and notional). |
-| `src/components/terminal/MarketStructureChart.tsx` | **Updated** | Wired 1-click Long/Short creation and 2-click Fibonacci drafting. Integrated contextual toolbar with Fibonacci settings popover (levels 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0, 1.272, 1.618, reverse, extend left/right, show labels/prices, linear price space note) and position status badge. Enforced neutral toolbar lifecycle on creation, selection on click, keyboard nudge (Arrow keys), Escape deselect, and multi-level Undo/Redo (`Ctrl+Z`, `Ctrl+Y`). |
-| `src/components/terminal/MarketTerminal.tsx` | **Updated** | Added `fibonacci` to left `DRAWING_TOOLS` rail and mounted `RiskTerminal` in the right Inspector `RISK` tab with two-way selection and price update callbacks. |
-| `src/components/terminal/types.ts` | **Updated** | Added `'fibonacci'` to `ChartTool` type union. |
-| `src/components/terminal/ux15-drawing-risk.test.ts` | **Created** | 22 comprehensive Vitest unit tests verifying pure model projection, Fibonacci level calculation, reverse orientation, Long/Short geometry invariants, independent line dragging, whole body moves, locked immutability, undo/redo transitions, and dollar-for-dollar agreement with `calculatePositionRisk`. |
-| `src/components/terminal/ux15-layout.test.ts` | **Updated** | Updated tool ID assertions to include `'fibonacci'` (9 tests passing). |
-| `tests/ui/market-terminal.pw.ts` | **Updated** | Added end-to-end Playwright tests for Fibonacci drafting/settings/undo and Long/Short position creation, HUD badge verification, two-way Risk Terminal synchronization, invalid geometry error detection, and `axe-core` accessibility audits. |
+### Problems Addressed
+Previously, `MarketStructureChart` and `RiskTerminal` maintained decoupled copies of `PositionRiskSettings`. Modifications made in `RiskTerminal` (such as equity, risk %, leverage, fees, or reset-to-default) did not immediately update the on-chart position HUD badges without a reload.
+
+### Solution Implemented
+1. **Lifted State in `MarketTerminal.tsx`**:
+   - `MarketTerminal` is now the single source of truth for live `riskSettings`.
+   - Initial state loads from `readPersistedRiskSettings()`.
+   - `handleRiskSettingsChange` updates the state and persists to `localStorage`.
+   - `riskSettings` is passed as a prop into both `MarketStructureChart` and `Inspector` -> `RiskTerminal`.
+2. **Synchronized Recalculation in `MarketStructureChart.tsx`**:
+   - `props.riskSettings` drives `riskResults` calculation for all chart position objects.
+   - Any parameter change in `RiskTerminal` causes immediate, synchronous recomputation of every on-chart position HUD badge identically.
+3. **Robust Sanitization in `RiskTerminal.tsx`**:
+   - Added `sanitizeRiskSettings(raw: unknown): PositionRiskSettings` with strict validation.
+   - Rejects non-finite, negative, or malformed numbers and structures, ensuring safe fallbacks to `DEFAULT_RISK_SETTINGS`.
+   - Preserves partial valid overrides and ensures Next.js SSR hydration safety.
+4. **Machine-Readable Numeric Data Attributes**:
+   - Chart position root element (`ChartDrawingLayer.tsx`):
+     - `data-position-quantity`
+     - `data-position-loss`
+     - `data-position-profit`
+     - `data-position-rr`
+     - `data-position-notional`
+     - `data-position-status`
+   - Risk terminal metrics card (`RiskTerminal.tsx`):
+     - `data-terminal-quantity`
+     - `data-terminal-loss`
+     - `data-terminal-profit`
+     - `data-terminal-rr`
+     - `data-terminal-notional`
 
 ---
 
-## 3. Verification of Core Problem Statements
+## 3. Correction 2 — SVG Hit-Testing Priority & Drag Semantics
 
-### 1. Pure Semantic Time/Price Model (`drawing-model.ts`)
-- All drawings persist only semantic coordinates: `{ time: number, price: number }`.
-- Projection to screen coordinates (`projectDrawing`) is fully decoupled from model persistence, ensuring pan/zoom/resize across viewports never distorts geometry.
-- `sanitizePersistedDrawings` rejects malformed timestamps, non-finite prices, or invalid schemas on load.
+### Problems Addressed
+In `ChartDrawingLayer.tsx`, a whole-object transparent `<rect>` hit area was rendered *after* the individual line hit targets, intercepting pointer down events and causing stop/target/entry line drags to be misinterpreted as whole-body translation moves. Additionally, dragging the left extent handle was modifying price instead of only time.
 
-### 2. Fibonacci Retracement & Extension
-- Standard ratios implemented: `0`, `0.236`, `0.382`, `0.5`, `0.618`, `0.786`, `1.0`, `1.272`, `1.618`.
-- Shaded opacity bands between adjacent visible levels.
-- Contextual toolbar settings popover allows toggling individual levels, line style (solid, dashed, dotted), labels, prices, extend left, extend right, and reverse.
-- Prominent advisory note: *"Fibonacci levels are computed linearly in price space."*
-
-### 3. Long/Short Position Objects with Interactive HUD
-- 1-click placement at cursor price/time with configurable default stop (1%) and target (2%) offsets.
-- Transparent hit regions for dragging Entry, Stop, and Target lines independently, plus left/right extent handles.
-- Real-time on-chart HUD badge displaying side, status (`READY` / `INVALID` / `BLOCKED`), net reward-to-risk, position size, and notional.
-
-### 4. Shared Model Agreement & Non-Reordering Geometry
-- The on-chart HUD badge and the right Inspector `RISK` tab call the identical `calculatePositionRisk` function from `src/lib/quant/position-risk.ts`, guaranteeing dollar-for-dollar and tick-for-tick agreement.
-- Dragging stop lines across entry lines (`stop >= entry` for Long, `stop <= entry` for Short) never silently flips or re-orders prices. It sets status to `INVALID` with error code `INVALID_LONG_GEOMETRY` or `INVALID_SHORT_GEOMETRY`.
-- Sizing properly accounts for trade friction: net reward/risk reflects maker/taker fee rates and slippage allowances.
-
-### 5. Multi-Level Undo / Redo & Contextual Lifecycle
-- Contextual drawing toolbar remains neutral (hidden) immediately upon creation, appears upon explicit click, and dismisses on blank chart click or `Escape`.
-- Full undo/redo history stack (`Ctrl+Z`, `Ctrl+Y` / `Ctrl+Shift+Z`) tracks creation, deletion, dragging, price edits, and nudge adjustments.
+### Solution Implemented
+1. **Reordered SVG Elements in `ChartDrawingLayer.tsx`**:
+   - Profit and loss zone shading `<rect>` elements rendered first.
+   - Visible price lines rendered next.
+   - **Underlying whole-object body hit area** (`<rect data-testid="position-hit-body" ...>`) rendered next.
+   - **Draggable price line hit targets** rendered ON TOP of the body hit area:
+     - `data-testid="position-hit-entry"` (`kind: 'position-line', line: 'entry'`)
+     - `data-testid="position-hit-stop"` (`kind: 'position-line', line: 'stop'`)
+     - `data-testid="position-hit-target"` (`kind: 'position-line', line: 'target'`)
+   - **Extent and anchor handles** rendered on top with distinct test IDs:
+     - `data-testid="position-handle-left"` (`kind: 'position-extent', edge: 'left'`)
+     - `data-testid="position-handle-right"` (`kind: 'position-extent', edge: 'right'`)
+     - `data-testid="position-handle-target"` (`kind: 'position-line', line: 'target'`)
+     - `data-testid="position-handle-stop"` (`kind: 'position-line', line: 'stop'`)
+   - Sizing & Risk HUD Badge rendered with `style={{ pointerEvents: 'none' }}` to prevent intercepting line or handle drags.
+   - When drawing is locked, draggable hit targets and handles are unmounted completely, preventing any pointer manipulation.
+2. **Dedicated Extent Drag Semantics (`drawing-model.ts`)**:
+   - `DrawingDragTarget` updated to `{ kind: 'position-extent'; edge?: 'left' | 'right' }`.
+   - `applyDrawingDrag` updates `points[0].time` when `edge === 'left'` and `points[1].time` when `edge === 'right'`, preserving all entry, stop, and target prices and quantitative results.
+3. **Body Drag Preservation**:
+   - Body drag preserves stop distance, target distance, and horizontal width while updating entry and anchor prices.
 
 ---
 
 ## 4. Test Verification Ladder & Quality Gates
 
-All quality gates passed with zero errors:
+All verification checks passed with zero errors:
 
 1. **Vitest Unit Tests**:
-   - `npx vitest run`: **18 passed test files (129 passed tests)**.
-   - `npx vitest run src/components/terminal/ux15-drawing-risk.test.ts`: **22 passed tests**.
-   - `npx vitest run src/components/terminal/ux15-layout.test.ts`: **9 passed tests**.
+   - `npx vitest run src/components/terminal/ux15-drawing-risk.test.ts`: **26 passed tests** (added tests for `sanitizeRiskSettings`, live settings change recalculation, left/right extent price preservation, and body drag distance preservation).
+   - `npx vitest run`: **18 passed test files (133 passed tests)**.
 2. **TypeScript Compilation**:
    - `npx tsc --noEmit`: Exited `0` with zero type errors.
 3. **ESLint**:
    - `npx eslint src/components/terminal/ tests/ui/market-terminal.pw.ts`: Exited `0` with zero errors and zero warnings.
 4. **Next.js Production Build**:
    - `npm run build`: Compiled successfully via Turbopack, static and dynamic routes verified.
-5. **Playwright End-to-End & Accessibility Tests**:
-   - `npx playwright test tests/ui/market-terminal.pw.ts`: **11 passed, 7 skipped (desktop checks on mobile), 0 failures**.
-   - Automated `axe-core` accessibility check reported zero serious or critical violations across chart and risk terminal controls.
+5. **Playwright End-to-End Tests**:
+   - `npx playwright test tests/ui/market-terminal.pw.ts -g "UX15.1"`: **Passed**. Verified independent stop line drag, target line drag, left/right extent drag, risk settings updates, reset-to-defaults synchronization, and locked immutability.
 6. **Git Diff Check**:
    - `git diff --check`: Clean, zero whitespace errors.

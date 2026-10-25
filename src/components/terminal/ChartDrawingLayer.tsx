@@ -308,6 +308,11 @@ function positionDrawing(
             data-start-time={view.drawing.points[0]?.time}
             data-start-price={view.drawing.points[0]?.price}
             data-position-status={riskResult?.status ?? 'evaluating'}
+            data-position-quantity={riskResult?.metrics ? riskResult.metrics.quantity.toFixed(riskResult.metrics.quantityPrecision) : undefined}
+            data-position-loss={riskResult?.metrics ? riskResult.metrics.lossAtStopUsd.toFixed(2) : undefined}
+            data-position-profit={riskResult?.metrics ? riskResult.metrics.profitAtTargetUsd.toFixed(2) : undefined}
+            data-position-rr={riskResult?.metrics ? riskResult.metrics.rewardToRisk.toFixed(2) : undefined}
+            data-position-notional={riskResult?.metrics ? riskResult.metrics.notionalUsd.toFixed(2) : undefined}
             data-locked={view.drawing.locked}
             onClick={(event) => {
                 if (view.preview) return;
@@ -375,8 +380,122 @@ function positionDrawing(
                 vectorEffect="non-scaling-stroke"
             />
 
+            {/* Whole Object Drag Area (Rendered underneath handles and price lines so specific hit areas take priority) */}
+            {!view.preview && !view.drawing.locked && (
+                <rect
+                    data-testid="position-hit-body"
+                    x={leftX}
+                    y={Math.min(profitTop, lossTop)}
+                    width={width}
+                    height={Math.max(8, profitHeight + lossHeight)}
+                    fill="transparent"
+                    stroke="transparent"
+                    style={{ pointerEvents: 'all', cursor: 'move' }}
+                    onPointerDown={(event) => {
+                        onSelect(view.drawing.id);
+                        onStartDrag(event, view.drawing.id, { kind: 'body' });
+                    }}
+                />
+            )}
+
+            {/* Draggable Price Line Hit Areas (Entry, Stop, Target) rendered ON TOP of body hit area */}
+            {!view.preview && !view.drawing.locked && (
+                <>
+                    {/* Entry Line Hit Target */}
+                    <line
+                        data-testid="position-hit-entry"
+                        x1={leftX}
+                        y1={entryY}
+                        x2={rightX}
+                        y2={entryY}
+                        style={{ stroke: 'transparent', strokeWidth: 14, pointerEvents: 'stroke', cursor: 'ns-resize' }}
+                        onPointerDown={(event) => {
+                            onSelect(view.drawing.id);
+                            onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'entry' });
+                        }}
+                    />
+                    {/* Stop Line Hit Target */}
+                    <line
+                        data-testid="position-hit-stop"
+                        x1={leftX}
+                        y1={stopY}
+                        x2={rightX}
+                        y2={stopY}
+                        style={{ stroke: 'transparent', strokeWidth: 14, pointerEvents: 'stroke', cursor: 'ns-resize' }}
+                        onPointerDown={(event) => {
+                            onSelect(view.drawing.id);
+                            onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'stop' });
+                        }}
+                    />
+                    {/* Target Line Hit Target */}
+                    <line
+                        data-testid="position-hit-target"
+                        x1={leftX}
+                        y1={targetY}
+                        x2={rightX}
+                        y2={targetY}
+                        style={{ stroke: 'transparent', strokeWidth: 14, pointerEvents: 'stroke', cursor: 'ns-resize' }}
+                        onPointerDown={(event) => {
+                            onSelect(view.drawing.id);
+                            onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'target' });
+                        }}
+                    />
+
+                    {/* Left/Right Extent Handles */}
+                    {selected && (
+                        <>
+                            <circle
+                                data-testid="position-handle-left"
+                                cx={leftX}
+                                cy={entryY}
+                                r={5}
+                                fill="#07111c"
+                                stroke="#dce6f2"
+                                strokeWidth={2}
+                                style={{ pointerEvents: 'all', cursor: 'ew-resize' }}
+                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-extent', edge: 'left' })}
+                            />
+                            <circle
+                                data-testid="position-handle-right"
+                                cx={rightX}
+                                cy={entryY}
+                                r={5}
+                                fill="#07111c"
+                                stroke="#dce6f2"
+                                strokeWidth={2}
+                                style={{ pointerEvents: 'all', cursor: 'ew-resize' }}
+                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-extent', edge: 'right' })}
+                            />
+                            {/* Target & Stop Anchor Handles */}
+                            <circle
+                                data-testid="position-handle-target"
+                                cx={rightX}
+                                cy={targetY}
+                                r={5}
+                                fill="#07111c"
+                                stroke={profitColor}
+                                strokeWidth={2}
+                                style={{ pointerEvents: 'all', cursor: 'ns-resize' }}
+                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'target' })}
+                            />
+                            <circle
+                                data-testid="position-handle-stop"
+                                cx={rightX}
+                                cy={stopY}
+                                r={5}
+                                fill="#07111c"
+                                stroke={lossColor}
+                                strokeWidth={2}
+                                style={{ pointerEvents: 'all', cursor: 'ns-resize' }}
+                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'stop' })}
+                            />
+                        </>
+                    )}
+                </>
+            )}
+
             {/* Chart Sizing & Risk HUD Badge */}
-            <g transform={`translate(${leftX + 6}, ${profitTop + 14})`}>
+            <g transform={`translate(${leftX + 6}, ${profitTop + 14})`} style={{ pointerEvents: 'none' }}>
                 <rect
                     x={0}
                     y={-10}
@@ -447,110 +566,6 @@ function positionDrawing(
                     </>
                 )}
             </g>
-
-            {/* Draggable Price Line Hit Areas (Entry, Stop, Target) */}
-            {!view.preview && !view.drawing.locked && (
-                <>
-                    {/* Entry Line Hit Target */}
-                    <line
-                        x1={leftX}
-                        y1={entryY}
-                        x2={rightX}
-                        y2={entryY}
-                        style={{ stroke: 'transparent', strokeWidth: 14, pointerEvents: 'stroke', cursor: 'ns-resize' }}
-                        onPointerDown={(event) => {
-                            onSelect(view.drawing.id);
-                            onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'entry' });
-                        }}
-                    />
-                    {/* Stop Line Hit Target */}
-                    <line
-                        x1={leftX}
-                        y1={stopY}
-                        x2={rightX}
-                        y2={stopY}
-                        style={{ stroke: 'transparent', strokeWidth: 14, pointerEvents: 'stroke', cursor: 'ns-resize' }}
-                        onPointerDown={(event) => {
-                            onSelect(view.drawing.id);
-                            onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'stop' });
-                        }}
-                    />
-                    {/* Target Line Hit Target */}
-                    <line
-                        x1={leftX}
-                        y1={targetY}
-                        x2={rightX}
-                        y2={targetY}
-                        style={{ stroke: 'transparent', strokeWidth: 14, pointerEvents: 'stroke', cursor: 'ns-resize' }}
-                        onPointerDown={(event) => {
-                            onSelect(view.drawing.id);
-                            onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'target' });
-                        }}
-                    />
-
-                    {/* Left/Right Extent Handles */}
-                    {selected && (
-                        <>
-                            <circle
-                                cx={leftX}
-                                cy={entryY}
-                                r={5}
-                                fill="#07111c"
-                                stroke="#dce6f2"
-                                strokeWidth={2}
-                                style={{ pointerEvents: 'all', cursor: 'ew-resize' }}
-                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'anchor', pointIndex: 0 })}
-                            />
-                            <circle
-                                cx={rightX}
-                                cy={entryY}
-                                r={5}
-                                fill="#07111c"
-                                stroke="#dce6f2"
-                                strokeWidth={2}
-                                style={{ pointerEvents: 'all', cursor: 'ew-resize' }}
-                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-extent' })}
-                            />
-                            {/* Target & Stop Anchor Handles */}
-                            <circle
-                                cx={rightX}
-                                cy={targetY}
-                                r={5}
-                                fill="#07111c"
-                                stroke={profitColor}
-                                strokeWidth={2}
-                                style={{ pointerEvents: 'all', cursor: 'ns-resize' }}
-                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'target' })}
-                            />
-                            <circle
-                                cx={rightX}
-                                cy={stopY}
-                                r={5}
-                                fill="#07111c"
-                                stroke={lossColor}
-                                strokeWidth={2}
-                                style={{ pointerEvents: 'all', cursor: 'ns-resize' }}
-                                onPointerDown={(event) => onStartDrag(event, view.drawing.id, { kind: 'position-line', line: 'stop' })}
-                            />
-                        </>
-                    )}
-
-                    {/* Whole Object Drag Area */}
-                    <rect
-                        x={leftX}
-                        y={Math.min(profitTop, lossTop)}
-                        width={width}
-                        height={Math.max(8, profitHeight + lossHeight)}
-                        fill="transparent"
-                        stroke="transparent"
-                        style={{ pointerEvents: 'all', cursor: 'move' }}
-                        onPointerDown={(event) => {
-                            onSelect(view.drawing.id);
-                            onStartDrag(event, view.drawing.id, { kind: 'body' });
-                        }}
-                    />
-                </>
-            )}
         </g>
     );
 }
