@@ -1,89 +1,101 @@
-# CODEX HANDOFF REPORT
+# CODEX HANDOFF REPORT — UX15.4 LIVE LIQUIDITY WORKER RUNTIME
 
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: agent/codex
->>> COMMIT: 00bdaea
->>> TESTS: PASS — 17 focused position-risk tests; full Vitest 16 files/98 tests; TypeScript; targeted ESLint; Next.js 16.4.2 production build; production npm audit 0 vulnerabilities
+>>> COMMIT: 619cc95
+>>> TESTS: PASS — focused worker/runtime tests; full Vitest 24 files/143 tests; TypeScript; targeted ESLint; Next.js 16.4.2 production build; production npm audit 0 vulnerabilities
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review the UX15.2 linear-instrument risk contract and calculations before Gemini connects it to Long/Short drawings or the Risk terminal
->>> TARGET: src/lib/quant/position-risk.ts, src/lib/quant/position-risk.test.ts
+>>> ACTION REQUIRED: Review worker lifecycle and sequence provenance, then allow Gemini to consume `useBinanceLiquidityHeatmap` in the heatmap renderer without duplicating networking or order-book logic
+>>> TARGET: src/lib/binance/liquidity-worker-protocol.ts, src/lib/binance/liquidity-runtime.ts, src/lib/binance/liquidity.worker.ts, src/lib/binance/liquidity-feed-state.ts, src/lib/binance/use-liquidity-heatmap.ts, tests
 
 ## Delivered
 
-- Added a pure deterministic position-risk engine for linear instruments.
-- Added shared Long and Short geometry validation:
-  - Long requires `stop < entry < target`.
-  - Short requires `target < entry < stop`.
-- Added account risk requests by USD amount or equity percentage.
-- Added daily-loss and maximum-drawdown remaining-budget caps.
-- Added risk-limited, leverage-limited, and configured maximum-quantity caps.
-- Added explicit point value, lot size, quantity step, minimum quantity, maximum quantity, and quantity precision.
-- Added entry/exit fees and adverse two-sided slippage to loss and reward estimates.
-- Added stop loss, target profit, reward/risk, notional, margin, distance, and underlying-unit outputs.
-- Added explicit `ready`, `blocked`, and `invalid` states with typed error and warning codes.
-- Added finite-number and derived-arithmetic overflow protection so invalid inputs fail closed.
-- Kept the model independent from React, chart components, APIs, exchange credentials, and execution code.
+- Preserved the sequence-safe Binance Spot depth foundation from `36c1104`.
+- Added a dedicated browser Web Worker that owns:
+  - `btcusdt@depth@100ms` WebSocket traffic;
+  - fresh `/api/binance/depth?limit=500` bootstrap snapshots;
+  - snapshot retry without discarding a healthy socket;
+  - capped exponential WebSocket reconnects;
+  - explicit gap resynchronization;
+  - 500 ms render-frame capture rather than React updates on every 100 ms diff event;
+  - periodic stale/offline/status reporting;
+  - safe error messages that do not expose raw upstream details.
+- Added a typed runtime controller that is testable without browser globals.
+- Added a bounded React-facing reducer and `useBinanceLiquidityHeatmap` hook.
+- Added pause, resume, clear, reset-reason, reconnect-attempt, warm-up, coverage, stale, gap, and offline states.
+- Added `getTelemetry()` to the deterministic engine so status checks do not clone the complete heatmap history.
+- Kept all work under `src/lib/binance/**`; no terminal component, visual renderer, route layout, risk UI, AI feature, or backend math was changed.
 
-## Formula Contract
+## Gemini Integration Contract
 
-- Requested risk is either the supplied USD amount or `equity × riskPercent / 100`.
-- Effective risk is the minimum of requested risk, remaining daily-loss budget, and remaining drawdown budget.
-- Stop risk per displayed quantity is:
+Import the client hook from:
 
-  `abs(entry - stop) × pointValue × lotSize + entry costs + stop-exit costs`
+```ts
+import { useBinanceLiquidityHeatmap } from '../../lib/binance/use-liquidity-heatmap';
+```
 
-- Risk quantity is `effectiveRisk / stopRiskPerQuantity`.
-- Leverage quantity is `(equity × leverage) / entryNotionalPerQuantity`.
-- Final raw quantity is the minimum of risk quantity, leverage quantity, and optional maximum quantity.
-- Final quantity is always rounded down to the permitted quantity step.
-- Target reward deducts entry costs and target-exit costs before reward/risk is reported.
+Create exactly one feed instance at the terminal ownership boundary:
 
-## Focused Test Coverage
+```ts
+const liquidityFeed = useBinanceLiquidityHeatmap(dataMode === 'LIVE', {
+    heatmap: {
+        tickSize: 10,
+        visibleDepthBps: 100,
+        minNotionalUsd: 0,
+        maxFrames: 1_800,
+        bucketMs: 500,
+        maxLevelsPerSide: 400,
+    },
+    maxClientFrames: 1_800,
+});
+```
 
-1. Canonical risk-limited Long position.
-2. Equivalent valid Short position.
-3. Leverage-limited position.
-4. Fees and two-sided slippage.
-5. Remaining daily-loss cap.
-6. Realized gains do not expand the daily-loss limit.
-7. Remaining maximum-drawdown cap.
-8. Exhausted daily-loss budget.
-9. Exhausted maximum-drawdown budget.
-10. Invalid Long and Short geometry.
-11. Quantity-step rounding without exceeding risk.
-12. Minimum-quantity block.
-13. Point value and lot-size conversion.
-14. Maximum-quantity cap.
-15. Non-finite and out-of-range input rejection.
-16. Non-positive net target reward after costs.
-17. Derived-arithmetic overflow rejection.
+Renderer inputs:
+
+- `liquidityFeed.frames`: chronological, bounded `LiquidityHeatmapFrame[]`.
+- Each frame contains `capturedAt`, `eventTime`, `lastUpdateId`, best bid/ask, mid-price, and side-aware aggregated levels.
+- `liquidityFeed.sequence.state`: `BUFFERING | LIVE | STALE | GAP | OFFLINE`.
+- `liquidityFeed.coverage`: honest session-only start/end, frame count, capacity, and warm-up percentage.
+- `liquidityFeed.connected`, `resyncRequired`, `reconnectAttempt`, and `error`: provenance/status UI.
+- `liquidityFeed.pause()`, `resume()`, and `clear()`: renderer controls.
+- `liquidityFeed.lastResetReason`: `CLEAR | GAP | RECONNECT`; use this to make discontinuities visible.
+
+Required rendering behavior:
+
+1. Render heatmap history only from `frames`; never derive history from the compact `depth20` book in `use-market-feed.ts`.
+2. Freeze the last rendered frame for `STALE` or `OFFLINE`; do not synthesize or extrapolate liquidity.
+3. Show `BUFFERING` while the stream is waiting for a sequence-valid REST bootstrap.
+4. Break visual continuity for `GAP` and `RECONNECT`. The hook clears client frames when coverage restarts.
+5. Pause stops frame capture but deliberately keeps reconstructing the live book; resume therefore returns to the current market rather than replaying stale depth.
+6. Keep opacity, decay, palette, visibility, and renderer-side intensity scaling in Gemini-owned UI code. Do not move sequence validation or WebSocket handling into React.
+7. The history is session-local and bounded. Do not label it as historical exchange depth before durable collection/storage exists.
+8. After importing the hook into a reachable client component, rerun `npm run build`; this is the final bundler integration gate for the worker asset.
+
+## Sequence and Recovery Contract
+
+1. Open `wss://stream.binance.com:9443/ws/btcusdt@depth@100ms`.
+2. Buffer validated diff events immediately.
+3. Fetch `/api/binance/depth?limit=500` after the socket opens.
+4. Bridge the first retained event across `snapshot.lastUpdateId + 1`.
+5. Apply `U/u` updates in order; quantity zero deletes a level.
+6. A future `U > localLastUpdateId + 1` creates an explicit `GAP`, clears continuity, and triggers a fresh snapshot.
+7. Socket closure exposes `OFFLINE`, then reconnects with capped exponential backoff.
+8. No frame is appended while buffering, stale, offline, or awaiting resynchronization.
 
 ## Verification Evidence
 
-- `npx vitest run src/lib/quant/position-risk.test.ts`: PASS — 1 file, 17 tests.
-- `npx vitest run`: PASS — 16 files, 98 tests.
-- `npx tsc --noEmit`: PASS.
-- `npx eslint src/lib/quant/position-risk.ts src/lib/quant/position-risk.test.ts`: PASS.
-- `npm run build`: PASS — Next.js 16.4.2 production compilation, TypeScript, page-data collection, and static generation.
-- `npm audit --omit=dev`: PASS — 152 production dependencies, 0 known vulnerabilities.
-- `git diff --check`: PASS.
+- Focused worker/runtime/reducer/config tests: 3 files, 10 tests passed.
+- Full Vitest: 24 files, 143 tests passed.
+- `npx tsc --noEmit`: passed.
+- Targeted ESLint for all changed TypeScript files: passed with zero errors/warnings.
+- `npm run build`: passed on Next.js 16.4.2.
+- `npm audit --omit=dev`: zero production vulnerabilities.
+- `git diff --cached --check`: passed before the source commit.
 
-## Integration Contract for Gemini
+## Remaining Visual Work
 
-- Import `calculatePositionRisk` from `@/lib/quant/position-risk` only after Architect approval.
-- Keep one calculation result as the source for both chart Long/Short labels and the Risk terminal.
-- Never reproduce the formulas inside React components.
-- Render `ready` only when `metrics` is non-null.
-- Render `blocked` as an account/risk-capacity state and show its typed reason.
-- Render `invalid` as a malformed-input or invalid-geometry state; do not retain a stale previous result.
-- Preserve `NO LIVE EXECUTION`. This result is an analysis/position-planning model, not an order payload.
-
-## Explicit Boundaries
-
-- This model supports linear instruments only; inverse and quanto contracts require a separately reviewed contract.
-- Fees and slippage are deterministic user/config inputs, not exchange estimates.
-- No UI component, API route, Binance/Deribit collector, Jev adapter, options engine, or execution path was changed.
-- No package or lockfile change was made.
-- Antigravity retains exclusive ownership of UX15.0 terminal layout and drawing-interface files during the parallel cycle.
-- `STATE.md` remains unchanged pending Architect review.
+- Gemini still owns the visible canvas/WebGL or chart renderer, palette, legend, settings popover, responsive layout, and browser screenshot verification.
+- The heatmap will not become visible merely by merging this commit; Gemini must call the hook and draw the frames.
+- A combined preview should be assembled only after Architect review and after Gemini finishes its current UI branch, then validated with the hook reachable in the production bundle.
+- No durable depth database, aggregate-trade footprint, candle imbalance, smart AVWAP, Jev reasoning, broker connection, or live execution path is included here.
