@@ -1,102 +1,107 @@
-# GEMINI HANDOFF REPORT — UX15.0
+# GEMINI HANDOFF REPORT — UX15.1 & UX15.2 (Correction Complete)
 
 ```markdown
->>> COMPLETED BY: Gemini
+>>> COMPLETED BY: Gemini (Antigravity)
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: agent/gemini
->>> COMMIT: d4cacf7
->>> TESTS: vitest 16 passed (90 tests); eslint 0 errors; tsc --noEmit 0 errors; next build passed; playwright 9 passed (5 mobile-skipped desktop-only checks)
->>> NEXT AGENT: Codex
->>> ACTION REQUIRED: UX15.0 review and integration with UX15.1–UX15.3 quant/analytics modules
->>> TARGET: src/components/terminal/LiquidityPanel.tsx, src/components/terminal/LowerStudyDock.tsx, src/components/terminal/LowerStudyPane.tsx, src/components/terminal/ChartDrawingLayer.tsx, src/components/terminal/MarketStructureChart.tsx, src/components/terminal/MarketTerminal.tsx, src/components/terminal/ux15-layout.test.ts, tests/ui/market-terminal.pw.ts
+>>> TESTS: vitest 18 passed (133 tests); eslint 0 errors 0 warnings; tsc --noEmit 0 errors; next build passed; playwright passed
+>>> NEXT AGENT: Architect
+>>> ACTION REQUIRED: Architectural review of UX15.1 & UX15.2 defect corrections on agent/gemini (live shared risk state synchronization and SVG hit-testing priority repair)
+>>> TARGET: src/components/terminal/drawing-model.ts, src/components/terminal/RiskTerminal.tsx, src/components/terminal/ChartDrawingLayer.tsx, src/components/terminal/MarketStructureChart.tsx, src/components/terminal/MarketTerminal.tsx, src/components/terminal/ux15-drawing-risk.test.ts, tests/ui/market-terminal.pw.ts
 ```
 
 ---
 
-## 1. Branch & Merge Baseline Verification
+## 1. Scope & Strict Ownership Compliance
 
-Before starting UX15.0, checkpoint `395dfa0` (`docs(handoff): record UX15 planning checkpoint`) was merged non-destructively into `agent/gemini` as commit `ad32974` inside the Gemini worktree (`C:\Users\HP\Videos\btc-derivatives-terminal`):
-- Preserved Round G2.1 commits `64b3a1f` and `0ac036c` in `agent/gemini` history and left all G2.1 terrain/dashboard files untouched.
-- Resolved `AGENTS.md` and `src/app/page.tsx` to the UX15 checkpoint versions.
-- Verified `npx tsc --noEmit`, `npx eslint src/app/page.tsx`, and `npm run build` all exited `0` before starting UX15.0.
-
----
-
-## 2. Changed Files (UX15.0 Scope Only)
-
-| File | Change Summary |
-| :--- | :--- |
-| `src/components/terminal/LowerStudyDock.tsx` | **Created**: Permanently mounted bottom tab dock (`CVD`, `Delta`, `Book`, `Liquidity`) with keyboard tab navigation (`ArrowLeft`, `ArrowRight`, `Home`, `End`), history bar count badge, and dedicated `Collapse` / `Expand` control (`data-testid="study-pane-collapse-button"`). Exported pure helper `resolveStudyTabClick`. |
-| `src/components/terminal/LowerStudyPane.tsx` | **Created**: Collapsible lower study content container (`156px`–`380px`, default `192px`) with draggable + keyboard resize separator (`role="separator"`, `data-testid="study-pane-resize-handle"`), height persistence (`btc-terminal-study-pane-v1` + `btc-terminal-ui-v1`), and study views (`CVD`, `Delta`, `Book`, `Liquidity`). Exported `clampStudyPaneHeight`, `readPersistedStudyPaneHeight`, and `writePersistedStudyPaneHeight`. |
-| `src/components/terminal/LiquidityPanel.tsx` | **Created**: Responsive `LiquidityPanel` separating compact 2×2 summary metrics (`Spread`, `Imbalance`, `Bid depth`, `Ask depth`) from an internally scrollable depth-level list (`data-testid="liquidity-depth-list"`) with non-color `▲ BID` (solid border, left-aligned bar) vs `▼ ASK` (dashed border, right-aligned bar) row indicators and tabular USD notional formatting (`formatCompactUsd`). |
-| `src/components/terminal/ChartDrawingLayer.tsx` | **Updated**: Added explicit selection/drag target discrimination (`data-drawing-id`, `data-drawing-type`, `data-start-time`), rendering circular endpoint handles only when `selectedId === drawing.id`, and suppressing drawing selection while a creation tool is active (`activeTool !== 'cursor'`). |
-| `src/components/terminal/MarketStructureChart.tsx` | **Updated**: Integrated `LowerStudyPane` and `LowerStudyDock`; cleared `selectedObject` and `selectedDrawingId` on initial render (no stranded toolbars); returned active tool to `'cursor'` after completing a drawing unless `keepDrawing` is enabled; rendered contextual floating `Drawing controls` toolbar only when a drawing is explicitly selected and clamped within chart bounds (`constrainToolbarPosition`); preserved main chart instance (`data-chart-generation="1"`) and visible logical range (`lastKnownLogicalRangeRef`) across lower-pane collapse, expand, resize, and study switches. |
-| `src/components/terminal/MarketTerminal.tsx` | **Updated**: Removed duplicated drawing buttons (`Cursor`, `Draw`, `Horizontal`, `Vertical`, `Long`, `Short`) from the upper toolbar (`data-testid="chart-upper-toolbar"`); consolidated all drawing creation tools plus `Keep drawing mode` (`aria-label="Keep drawing mode"`) into the single left vertical rail (`data-testid="drawing-tools-rail"`); moved the `Open command palette CTRL K` button into the top header so it never overlaps the bottom-right dock on mobile. |
-| `src/components/terminal/ux15-layout.test.ts` | **Created**: 9 Vitest unit tests covering `resolveStudyTabClick`, `clampStudyPaneHeight`, `readPersistedStudyPaneHeight` / `writePersistedStudyPaneHeight`, `constrainToolbarPosition`, `formatCompactUsd`, and `DRAWING_TOOLS` rail definitions. |
-| `tests/ui/market-terminal.pw.ts` | **Updated**: Comprehensive Playwright desktop + mobile browser verification covering all 7 UX15.0 problem statements, automated `axe-core` accessibility audit, 10,000-candle history preservation, and multi-resolution screenshot capture. |
+In accordance with the Codex review findings and parallel development protocol:
+- **Codex Owned**: Order book and liquidity data foundations (`src/lib/binance/**`, `src/app/api/**`, etc.) and the deterministic risk engine (`src/lib/quant/position-risk.ts`, `src/lib/quant/position-risk.test.ts`).
+- **Gemini Owned**: Terminal UI components (`src/components/terminal/**`), UI tests (`tests/ui/market-terminal.pw.ts`), and Gemini handoff (`.agents/handoffs/gemini.md`).
+- **Strict Boundary Enforced**:
+  - `src/lib/quant/position-risk.ts` and its test were strictly imported and read-only; **zero modifications made**.
+  - `src/lib/binance/**`, `src/app/api/**`, `src/lib/deribit/**`, `src/lib/terrain/**`, `src/components/three/**`, `src/components/dashboard/**`, and `STATE.md` were **strictly untouched**.
+  - All untracked artifacts (`.artifacts/ui-overhaul/*`, `test-results/`, `REMOVE_DIGIPROCTOR_CONFLICTS.bat`) were **strictly preserved** without being staged or deleted.
 
 ---
 
-## 3. Verification of All Seven UX15.0 Problem Statements
+## 2. Correction 1 — Live Shared PositionRiskSettings State
 
-1. **Liquidity panel overflow, value clipping, and dock collision fixed**:
-   - `LiquidityPanel.tsx` uses a bounded flex/grid layout (`min-h-0 overflow-hidden`) with an internal vertical scroll container (`data-testid="liquidity-depth-list"`, `overflow-y-auto min-h-0`) and tabular compact USD notionals (`$380.6K`, `$99.6K`, etc.).
-   - Verified via DOM geometry assertions in `tests/ui/market-terminal.pw.ts` at `1366×768`, `1664×936`, and `1920×1080`: `overlapsDock: false`, `clippedNotional: false`, `docOverflowX: false`.
-2. **Entire CVD/Delta/Book/Liquidity content pane is collapsible**:
-   - Clicking `study-pane-collapse-button` (`Collapse` / `Expand`) or re-clicking the active study tab unmounts/collapses `LowerStudyPane` (`data-testid="order-flow-pane"`) while reclaiming vertical height for the main price chart.
-3. **Bottom tab dock remains visible while content pane is collapsed**:
-   - `LowerStudyDock` (`data-testid="order-flow-dock"`, `role="tablist"`) is rendered as a sibling below `LowerStudyPane` and remains permanently visible when collapsed across desktop (`1366×768`, `1664×936`, `1920×1080`) and mobile (`390×844`).
-4. **Selecting any bottom tab reopens the pane and displays that study**:
-   - Clicking `CVD`, `Delta`, `Book`, or `Liquidity` while collapsed sets `studyPaneOpen = true`, activates that study (`data-study`), and restores the persisted pane height.
-5. **Drawing-object controls remain hidden when nothing is intentionally selected**:
-   - Initial state has `selectedObject = null` and `selectedDrawingId = null`; neither `VP controls` nor `Drawing controls` is mounted on initial load or immediately after drawing creation.
-   - Contextual `Drawing controls` toolbar appears only after explicitly clicking an existing drawing, and hides on blank chart click, `Escape`, tool change, workspace switch, or deletion.
-6. **Drawing creation tools appear only in the left rail (duplication removed)**:
-   - Upper toolbar (`data-testid="chart-upper-toolbar"`) contains only navigation/study/DTE/metrics controls (`Indicators`, `Layers`, `Replay`, `OPTIONS METRICS`, `0-2D`..`ALL`).
-   - Left vertical rail (`data-testid="drawing-tools-rail"`) is the single drawing-creation surface (`Cursor`, `Trend line`, `Horizontal line`, `Vertical line`, `Rectangle`, `Long position`, `Short position`, `Text note`, `Keep drawing mode`, `Lock chart objects`).
-7. **Chart pan, zoom, viewport, crosshair linking, and loaded history do not reset**:
-   - `priceChartRef` is created once (`data-chart-generation="1"`) and `lastKnownLogicalRangeRef` restores the exact logical range (`data-visible-from`, `data-visible-to`) across lower-pane collapse, expand, resize, and study switches.
-   - Native Lightweight Charts crosshair sync (`data-crosshair-sync="native"`) and 10,000-candle history (`10,000 / 10,000 bars`) remain intact.
+### Problems Addressed
+Previously, `MarketStructureChart` and `RiskTerminal` maintained decoupled copies of `PositionRiskSettings`. Modifications made in `RiskTerminal` (such as equity, risk %, leverage, fees, or reset-to-default) did not immediately update the on-chart position HUD badges without a reload.
 
----
-
-## 4. Tests Run & Outputs
-
-1. **Focused UX15.0 Unit Tests**:
-   - Command: `npx vitest run src/components/terminal/ux15-layout.test.ts`
-   - Output: `1 passed (9 tests)`
-2. **Full Vitest Unit Suite**:
-   - Command: `npx vitest run`
-   - Output: `Test Files 16 passed (16) | Tests 90 passed (90)`
-3. **Targeted ESLint**:
-   - Command: `npx eslint src/components/terminal/ tests/ui/market-terminal.pw.ts`
-   - Output: `0 errors, 0 warnings` (exit code `0`)
-4. **TypeScript Compiler Check**:
-   - Command: `npx tsc --noEmit`
-   - Output: `0 errors` (exit code `0`)
-5. **Production Build**:
-   - Command: `npm run build`
-   - Output: Next.js 16.4.2 (Turbopack) compiled and generated static/dynamic routes with `0 errors` (exit code `0`).
-6. **Playwright End-to-End & Accessibility Suite**:
-   - Command: `npx playwright test tests/ui/market-terminal.pw.ts`
-   - Output: `9 passed (5 mobile-skipped desktop-only tests), 0 failed` (including zero serious/critical `axe-core` accessibility violations on both `desktop-16x9` and `mobile`).
+### Solution Implemented
+1. **Lifted State in `MarketTerminal.tsx`**:
+   - `MarketTerminal` is now the single source of truth for live `riskSettings`.
+   - Initial state loads from `readPersistedRiskSettings()`.
+   - `handleRiskSettingsChange` updates the state and persists to `localStorage`.
+   - `riskSettings` is passed as a prop into both `MarketStructureChart` and `Inspector` -> `RiskTerminal`.
+2. **Synchronized Recalculation in `MarketStructureChart.tsx`**:
+   - `props.riskSettings` drives `riskResults` calculation for all chart position objects.
+   - Any parameter change in `RiskTerminal` causes immediate, synchronous recomputation of every on-chart position HUD badge identically.
+3. **Robust Sanitization in `RiskTerminal.tsx`**:
+   - Added `sanitizeRiskSettings(raw: unknown): PositionRiskSettings` with strict validation.
+   - Rejects non-finite, negative, or malformed numbers and structures, ensuring safe fallbacks to `DEFAULT_RISK_SETTINGS`.
+   - Preserves partial valid overrides and ensures Next.js SSR hydration safety.
+4. **Machine-Readable Numeric Data Attributes**:
+   - Chart position root element (`ChartDrawingLayer.tsx`):
+     - `data-position-quantity`
+     - `data-position-loss`
+     - `data-position-profit`
+     - `data-position-rr`
+     - `data-position-notional`
+     - `data-position-status`
+   - Risk terminal metrics card (`RiskTerminal.tsx`):
+     - `data-terminal-quantity`
+     - `data-terminal-loss`
+     - `data-terminal-profit`
+     - `data-terminal-rr`
+     - `data-terminal-notional`
 
 ---
 
-## 5. Verification Screenshot Paths (Uncommitted Evidence in `.artifacts/ui-overhaul/`)
+## 3. Correction 2 — SVG Hit-Testing Priority & Drag Semantics
 
-All 7 required screenshots were captured and visually inspected:
-- `.artifacts/ui-overhaul/ux15-0-liquidity-expanded-1366x768.png`
-- `.artifacts/ui-overhaul/ux15-0-pane-collapsed-1366x768.png`
-- `.artifacts/ui-overhaul/ux15-0-cvd-expanded-1664x936.png`
-- `.artifacts/ui-overhaul/ux15-0-liquidity-expanded-1664x936.png`
-- `.artifacts/ui-overhaul/ux15-0-drawing-selected-1920x1080.png`
-- `.artifacts/ui-overhaul/ux15-0-drawing-deselected-1920x1080.png`
-- `.artifacts/ui-overhaul/ux15-0-mobile-dock-collapse-390x844.png`
+### Problems Addressed
+In `ChartDrawingLayer.tsx`, a whole-object transparent `<rect>` hit area was rendered *after* the individual line hit targets, intercepting pointer down events and causing stop/target/entry line drags to be misinterpreted as whole-body translation moves. Additionally, dragging the left extent handle was modifying price instead of only time.
+
+### Solution Implemented
+1. **Reordered SVG Elements in `ChartDrawingLayer.tsx`**:
+   - Profit and loss zone shading `<rect>` elements rendered first.
+   - Visible price lines rendered next.
+   - **Underlying whole-object body hit area** (`<rect data-testid="position-hit-body" ...>`) rendered next.
+   - **Draggable price line hit targets** rendered ON TOP of the body hit area:
+     - `data-testid="position-hit-entry"` (`kind: 'position-line', line: 'entry'`)
+     - `data-testid="position-hit-stop"` (`kind: 'position-line', line: 'stop'`)
+     - `data-testid="position-hit-target"` (`kind: 'position-line', line: 'target'`)
+   - **Extent and anchor handles** rendered on top with distinct test IDs:
+     - `data-testid="position-handle-left"` (`kind: 'position-extent', edge: 'left'`)
+     - `data-testid="position-handle-right"` (`kind: 'position-extent', edge: 'right'`)
+     - `data-testid="position-handle-target"` (`kind: 'position-line', line: 'target'`)
+     - `data-testid="position-handle-stop"` (`kind: 'position-line', line: 'stop'`)
+   - Sizing & Risk HUD Badge rendered with `style={{ pointerEvents: 'none' }}` to prevent intercepting line or handle drags.
+   - When drawing is locked, draggable hit targets and handles are unmounted completely, preventing any pointer manipulation.
+2. **Dedicated Extent Drag Semantics (`drawing-model.ts`)**:
+   - `DrawingDragTarget` updated to `{ kind: 'position-extent'; edge?: 'left' | 'right' }`.
+   - `applyDrawingDrag` updates `points[0].time` when `edge === 'left'` and `points[1].time` when `edge === 'right'`, preserving all entry, stop, and target prices and quantitative results.
+3. **Body Drag Preservation**:
+   - Body drag preserves stop distance, target distance, and horizontal width while updating entry and anchor prices.
 
 ---
 
-## 6. Remaining Risks & Assumptions
+## 4. Test Verification Ladder & Quality Gates
 
-- **Parallel Ownership Boundary Respected**: No files under `src/app/api/**`, `src/lib/deribit/**`, `src/lib/quant/**`, `src/lib/terrain/**`, `STATE.md`, or UX15 planning docs were modified.
-- **UX15.1–UX15.3 Readiness**: `ChartDrawingLayer.tsx`, `MarketStructureChart.tsx`, and `LowerStudyPane.tsx` are cleanly modularized so UX15.1+ drawing tools (Fibonacci retracement, Long/Short risk calculator) and order-flow studies can plug in without restructuring the lower dock or toolbar lifecycle.
+All verification checks passed with zero errors:
+
+1. **Vitest Unit Tests**:
+   - `npx vitest run src/components/terminal/ux15-drawing-risk.test.ts`: **26 passed tests** (added tests for `sanitizeRiskSettings`, live settings change recalculation, left/right extent price preservation, and body drag distance preservation).
+   - `npx vitest run`: **18 passed test files (133 passed tests)**.
+2. **TypeScript Compilation**:
+   - `npx tsc --noEmit`: Exited `0` with zero type errors.
+3. **ESLint**:
+   - `npx eslint src/components/terminal/ tests/ui/market-terminal.pw.ts`: Exited `0` with zero errors and zero warnings.
+4. **Next.js Production Build**:
+   - `npm run build`: Compiled successfully via Turbopack, static and dynamic routes verified.
+5. **Playwright End-to-End Tests**:
+   - `npx playwright test tests/ui/market-terminal.pw.ts -g "UX15.1"`: **Passed**. Verified independent stop line drag, target line drag, left/right extent drag, risk settings updates, reset-to-defaults synchronization, and locked immutability.
+6. **Git Diff Check**:
+   - `git diff --check`: Clean, zero whitespace errors.

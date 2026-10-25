@@ -131,7 +131,7 @@ describe('UX15.0 liquidity formatting and drawing toolbar constraints', () => {
         });
     });
 
-    it('includes cursor, line, rectangle, long/short position, and text tools in the single left rail definition', () => {
+    it('includes cursor, line, rectangle, long/short position, fibonacci, and text tools in the single left rail definition', () => {
         const ids = DRAWING_TOOLS.map((tool) => tool.id);
         expect(ids).toEqual([
             'cursor',
@@ -139,6 +139,7 @@ describe('UX15.0 liquidity formatting and drawing toolbar constraints', () => {
             'horizontal',
             'vertical',
             'rectangle',
+            'fibonacci',
             'long-position',
             'short-position',
             'text',
