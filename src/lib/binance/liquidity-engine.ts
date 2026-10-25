@@ -33,6 +33,12 @@ export interface BinanceLiquidityEngineState {
     resyncRequired: boolean;
 }
 
+export interface BinanceLiquidityEngineTelemetry {
+    sequence: LiquiditySequenceStatus;
+    coverage: LiquidityHeatmapCoverage;
+    resyncRequired: boolean;
+}
+
 function positiveInteger(value: number | undefined, fallback: number, field: string): number {
     const resolved = value ?? fallback;
     if (!Number.isSafeInteger(resolved) || resolved < 1) throw new RangeError(`${field} must be a positive integer`);
@@ -112,6 +118,14 @@ export class BinanceLiquidityEngine {
             coverage: this.heatmap.getCoverage(),
             frames: this.heatmap.getFrames(),
             book: this.orderBook.getBook(this.captureDepth),
+            resyncRequired: this.resyncRequired,
+        };
+    }
+
+    getTelemetry(now = Date.now()): BinanceLiquidityEngineTelemetry {
+        return {
+            sequence: this.orderBook.getStatus(now, this.staleAfterMs),
+            coverage: this.heatmap.getCoverage(),
             resyncRequired: this.resyncRequired,
         };
     }
