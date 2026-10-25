@@ -48,6 +48,7 @@ import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
 import { useBinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import { useBinanceLiquidityHeatmap } from '../../lib/binance/use-liquidity-heatmap';
+import { useBinanceAggregateTradeCapture } from '../../lib/orderflow/use-aggregate-trade-capture';
 import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
@@ -62,7 +63,7 @@ import type { DrawingObject, PositionPrices } from './drawing-model';
 import DecisionDock from './DecisionDock';
 import DataIntegrityStrip from './DataIntegrityStrip';
 import { ORDERFLOW_SCHEMA_VERSION, type DataIntegritySourceV1 } from '../../lib/orderflow/contracts';
-import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
+import { createCaptureCoverageV1, dataIntegrityStatusFromCoverage } from '../../lib/orderflow/provenance';
 
 interface MarketTerminalProps {
     data: TerrainDataContractV2;
@@ -233,6 +234,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
         },
         maxClientFrames: 1_800,
     });
+    const aggregateTradeFeed = useBinanceAggregateTradeCapture(dataMode === 'LIVE');
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -292,6 +294,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
             safeReplayTimestamp,
             marketFeed.lastEventAt ?? 0,
             liquidityFeed.sequence.lastEventTime ?? 0,
+            aggregateTradeFeed.coverage.capturedAt,
         );
         const replayCoverage = (precision: 'BAR' | 'STRUCTURAL') => createCaptureCoverageV1({
             dataMode: 'REPLAY',
@@ -376,6 +379,23 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                 : liquidityFeed.sequence.state === 'BUFFERING' ? 'LOADING'
                     : liquidityFeed.sequence.state === 'GAP' ? 'PARTIAL'
                         : liquidityFeed.sequence.state === 'STALE' ? 'STALE' : 'UNAVAILABLE';
+        const tradeCoverage = dataMode === 'DEMO'
+            ? offlineCoverage('BINANCE_SPOT', 'TRADE')
+            : aggregateTradeFeed.coverage;
+        const tradeStatus = dataMode === 'DEMO' || aggregateTradeFeed.capability === 'DISABLED'
+            ? 'UNAVAILABLE'
+            : aggregateTradeFeed.capability === 'CHECKING' ? 'LOADING'
+                : aggregateTradeFeed.capability === 'ERROR' || aggregateTradeFeed.error ? 'ERROR'
+                    : dataIntegrityStatusFromCoverage(tradeCoverage);
+        const tradeDetail = dataMode === 'DEMO'
+            ? 'No replay tape is presented as observed live data.'
+            : aggregateTradeFeed.capability === 'DISABLED'
+                ? 'Shadow aggregate-trade capture is disabled by the server feature flag.'
+                : aggregateTradeFeed.capability === 'CHECKING'
+                    ? 'Checking the shadow aggregate-trade capture capability.'
+                    : aggregateTradeFeed.capability === 'ERROR'
+                        ? aggregateTradeFeed.error?.message ?? 'Shadow aggregate-trade capture is unavailable.'
+                        : `Binance Spot aggregate trades; ${aggregateTradeFeed.stats.acceptedCount.toLocaleString()} captured; capture only, no derived CVD yet.`;
 
         return [
             {
@@ -405,10 +425,10 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
             {
                 schemaVersion: ORDERFLOW_SCHEMA_VERSION,
                 key: 'TRADES',
-                label: 'TAPE / CVD',
-                status: 'UNAVAILABLE',
-                detail: 'Aggregate-trade capture is not connected in UX16.0; true trade-based CVD begins in UX16.1.',
-                coverage: offlineCoverage('BINANCE_SPOT', 'TRADE'),
+                label: 'SPOT TAPE',
+                status: tradeStatus,
+                detail: tradeDetail,
+                coverage: tradeCoverage,
             },
             {
                 schemaVersion: ORDERFLOW_SCHEMA_VERSION,
@@ -427,7 +447,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                 coverage: createCaptureCoverageV1({ ...offlineCoverage('ORDERFLOW_DERIVED', 'STRUCTURAL'), dataMode: 'SHADOW', source: 'UX16_FIXTURE' }),
             },
         ];
-    }, [data.dataMode, data.timestamp, dataMode, isError, liquidityFeed.coverage.endedAt, liquidityFeed.coverage.startedAt, liquidityFeed.sequence.gapCount, liquidityFeed.sequence.lastEventTime, liquidityFeed.sequence.state, marketFeed.lastEventAt, marketFeed.latencyMs, marketFeed.state, timeframe]);
+    }, [aggregateTradeFeed.capability, aggregateTradeFeed.coverage, aggregateTradeFeed.error, aggregateTradeFeed.stats.acceptedCount, data.dataMode, data.timestamp, dataMode, isError, liquidityFeed.coverage.endedAt, liquidityFeed.coverage.startedAt, liquidityFeed.sequence.gapCount, liquidityFeed.sequence.lastEventTime, liquidityFeed.sequence.state, marketFeed.lastEventAt, marketFeed.latencyMs, marketFeed.state, timeframe]);
 
     return (
         <Tooltip.Provider delayDuration={300}>

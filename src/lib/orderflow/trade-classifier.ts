@@ -8,7 +8,7 @@ import {
 const safeInteger = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER);
 const numericString = z.string().trim().min(1).max(32).regex(/^\d+(?:\.\d+)?$/);
 
-const BinanceAggregateTradePayloadSchema = z.object({
+export const BinanceAggregateTradePayloadSchema = z.object({
     e: z.literal('aggTrade'),
     E: safeInteger,
     s: z.literal('BTCUSDT'),
@@ -21,6 +21,8 @@ const BinanceAggregateTradePayloadSchema = z.object({
     m: z.boolean(),
     M: z.boolean().optional(),
 }).strict();
+
+export type BinanceAggregateTradePayload = z.infer<typeof BinanceAggregateTradePayloadSchema>;
 
 export class BinanceAggregateTradePayloadError extends Error {
     constructor(message: string) {

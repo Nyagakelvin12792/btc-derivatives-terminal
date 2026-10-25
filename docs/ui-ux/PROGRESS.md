@@ -222,3 +222,20 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Recorded a clean-room public TradingView accessibility capture using Reverse Engineer Anything. No scripts, request bodies, headers, cookies, local storage, private endpoints, or proprietary assets were collected.
 - Verified the live history route returned 10 pages and 10,000 unique hourly candles; the browser opened on roughly 196 recent bars and retained the persistent lower dock.
 - Promoted deployment `dpl_ixtqgAkKZMLhbjzqjG2uBuRZ7tDq` to the production alias and repeated the live API and collapse/reopen browser checks successfully.
+
+### 2026-10-26 — UX16.0 approved baseline
+
+- The user approved the reviewed Calm Analytical Instrument workspace on `codex/ux16-integration` at `7b8e091`.
+- The UX16 workspace remains opt-in through `NEXT_PUBLIC_UX16_CALM_WORKSPACE`; the accepted UX15 terminal remains the default fallback.
+- The approval authorizes staged UX16 work but does not authorize live execution, fabricated order-flow metrics, or promotion of Jev beyond shadow interpretation.
+
+### 2026-10-26 — UX16.1 aggregate-trade capture checkpoint
+
+- Added a server-gated Binance Spot `btcusdt@aggTrade` capture worker behind `ORDERFLOW_AGGTRADE_ENABLED`, disabled by default.
+- Added strict aggregate-trade validation and buyer-maker aggressor classification, bounded batching outside React, exact duplicate rejection, deterministic late-event rejection, and explicit forward-ID gap handling.
+- Added versioned capture-start, reconnect, and missing-ID boundaries without fabricating unavailable trades.
+- Added deterministic replay fixtures and a replay adapter that reproduces accepted, duplicate, out-of-order, malformed, reconnect, and gap behavior.
+- Added a no-store capability endpoint that exposes only the safe boolean capability contract and no secret values.
+- Connected the calm workspace integrity strip to truthful `SPOT TAPE` health, provenance, accepted count, and gap state while explicitly withholding derived CVD until UX16.2.
+- Verified a bounded live Binance observation of 20 consecutive aggregate trades. This confirms the public upstream stream was reachable during verification; it is not a claim of permanent availability.
+- Preserved `NO LIVE EXECUTION`; no footprint, imbalance, absorption, setup-grade, or AI decision output was added.
