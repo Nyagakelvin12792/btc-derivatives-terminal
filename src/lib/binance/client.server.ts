@@ -1,5 +1,13 @@
-import { buildBinanceMarketSnapshot, normalizeBinanceKlines } from './normalization';
-import { BINANCE_MARKET_SCHEMA_VERSION, type BinanceHistorySnapshot, type BinanceInterval, type BinanceMarketSnapshot, type BinanceProfileInterval, type BinanceVolumeProfileSnapshot } from './types';
+import { buildBinanceMarketSnapshot, normalizeBinanceKlines, normalizeBinanceOrderBook } from './normalization';
+import {
+    BINANCE_MARKET_SCHEMA_VERSION,
+    type BinanceDepthSnapshot,
+    type BinanceHistorySnapshot,
+    type BinanceInterval,
+    type BinanceMarketSnapshot,
+    type BinanceProfileInterval,
+    type BinanceVolumeProfileSnapshot,
+} from './types';
 
 const BINANCE_MARKET_BASE_URL = 'https://data-api.binance.vision/api/v3';
 const REQUEST_TIMEOUT_MS = 8_000;
@@ -18,10 +26,10 @@ function requestSignal(): AbortSignal | undefined {
     return abortSignal.timeout?.(REQUEST_TIMEOUT_MS);
 }
 
-async function fetchJson(url: string): Promise<unknown> {
+async function fetchJson(url: string, fresh = false): Promise<unknown> {
     const response = await fetch(url, {
         headers: { accept: 'application/json' },
-        next: { revalidate: REVALIDATE_SECONDS },
+        ...(fresh ? { cache: 'no-store' as const } : { next: { revalidate: REVALIDATE_SECONDS } }),
         signal: requestSignal(),
     } satisfies NextFetchInit);
 
@@ -35,6 +43,25 @@ async function fetchJson(url: string): Promise<unknown> {
     } catch {
         throw new BinanceUpstreamError('Binance market response contained invalid JSON');
     }
+}
+
+export async function fetchBinanceDepthSnapshot(limit: number, now = new Date()): Promise<BinanceDepthSnapshot> {
+    if (!Number.isSafeInteger(limit) || limit < 100 || limit > 1_000) {
+        throw new RangeError('Binance depth limit must be an integer between 100 and 1000');
+    }
+    const startedAtMs = Date.now();
+    const query = new URLSearchParams({ symbol: 'BTCUSDT', limit: String(limit) });
+    const book = normalizeBinanceOrderBook(await fetchJson(`${BINANCE_MARKET_BASE_URL}/depth?${query}`, true));
+    return {
+        schemaVersion: BINANCE_MARKET_SCHEMA_VERSION,
+        dataMode: 'LIVE',
+        source: 'BINANCE_SPOT',
+        symbol: 'BTCUSDT',
+        timestamp: now.toISOString(),
+        upstreamLatencyMs: Math.max(0, Date.now() - startedAtMs),
+        depthLimit: limit,
+        book,
+    };
 }
 
 export async function fetchBinanceMarketSnapshot(interval: BinanceInterval, limit: number, now = new Date()): Promise<BinanceMarketSnapshot> {

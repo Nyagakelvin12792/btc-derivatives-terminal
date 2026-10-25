@@ -3,6 +3,7 @@ export const BINANCE_MARKET_SCHEMA_VERSION = 1 as const;
 export type BinanceInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
 export type BinanceProfileInterval = '1s' | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 export type MarketFeedState = 'CONNECTING' | 'LIVE' | 'STALE' | 'OFFLINE';
+export type LiquiditySequenceState = 'BUFFERING' | 'LIVE' | 'STALE' | 'GAP' | 'OFFLINE';
 
 export interface BinanceMarketBar {
     time: number;
@@ -37,6 +38,69 @@ export interface BinanceOrderBook {
     bidDepthUsd: number;
     askDepthUsd: number;
     imbalance: number;
+}
+
+export interface BinanceDepthSnapshot {
+    schemaVersion: typeof BINANCE_MARKET_SCHEMA_VERSION;
+    dataMode: 'LIVE';
+    source: 'BINANCE_SPOT';
+    symbol: 'BTCUSDT';
+    timestamp: string;
+    upstreamLatencyMs: number;
+    depthLimit: number;
+    book: BinanceOrderBook;
+}
+
+export interface BinanceDepthLevelUpdate {
+    price: number;
+    quantity: number;
+}
+
+export interface BinanceDepthDiffEvent {
+    eventTime: number;
+    symbol: 'BTCUSDT';
+    firstUpdateId: number;
+    finalUpdateId: number;
+    bids: BinanceDepthLevelUpdate[];
+    asks: BinanceDepthLevelUpdate[];
+}
+
+export interface LiquidityHeatmapLevel {
+    side: 'BID' | 'ASK';
+    price: number;
+    quantity: number;
+    notionalUsd: number;
+}
+
+export interface LiquidityHeatmapFrame {
+    schemaVersion: typeof BINANCE_MARKET_SCHEMA_VERSION;
+    source: 'BINANCE_SPOT';
+    symbol: 'BTCUSDT';
+    venue: 'BINANCE_SPOT';
+    capturedAt: number;
+    eventTime: number;
+    lastUpdateId: number;
+    bestBid: number;
+    bestAsk: number;
+    midPrice: number;
+    levels: LiquidityHeatmapLevel[];
+}
+
+export interface LiquidityHeatmapCoverage {
+    startedAt: number | null;
+    endedAt: number | null;
+    frameCount: number;
+    frameCapacity: number;
+    warmupPercent: number;
+}
+
+export interface LiquiditySequenceStatus {
+    state: LiquiditySequenceState;
+    lastUpdateId: number | null;
+    lastEventTime: number | null;
+    bufferedEventCount: number;
+    gapCount: number;
+    successfulBootstrapCount: number;
 }
 
 export interface BinanceTicker24h {
