@@ -78,6 +78,42 @@ describe('UX16.0 Data Integrity Strip State Matrix', () => {
     });
 });
 
+describe('UX16.1 SPOT TAPE Data Integrity Presentation', () => {
+    it('verifies SPOT TAPE / TRADES domain integrity fixture exists', () => {
+        const tradeDomain = UX16_REPLAY_CONTRACT_FIXTURE_V1.integrity.find((domain) => domain.key === 'TRADES');
+        expect(tradeDomain).toBeDefined();
+        expect(tradeDomain?.coverage.precision).toBe('TRADE');
+        expect(tradeDomain?.coverage.approximation).toBe('NONE');
+        expect(tradeDomain?.coverage.venue).toBe('BINANCE_SPOT');
+    });
+
+    it('verifies SPOT TAPE theme badge and dot classes for each capture lifecycle status', () => {
+        // Disabled / Offline -> UNAVAILABLE
+        expect(getDataIntegrityBadgeClasses('UNAVAILABLE')).toContain('text-[#5C697A]');
+        expect(getDataIntegrityDotClasses('UNAVAILABLE')).toBe('bg-[#5C697A]');
+
+        // Checking capability / Stream buffering -> LOADING
+        expect(getDataIntegrityBadgeClasses('LOADING')).toContain('text-[#8390A0]');
+        expect(getDataIntegrityDotClasses('LOADING')).toBe('bg-[#8390A0]');
+
+        // Active accepted capture -> READY (neutral text, green status dot)
+        expect(getDataIntegrityBadgeClasses('READY')).toContain('text-[#D8DEE8]');
+        expect(getDataIntegrityDotClasses('READY')).toBe('bg-[#2CC7A0]');
+
+        // Sequence jump / gap -> PARTIAL
+        expect(getDataIntegrityBadgeClasses('PARTIAL')).toContain('text-[#E6B450]');
+        expect(getDataIntegrityDotClasses('PARTIAL')).toBe('bg-[#E6B450]');
+
+        // No trade for > 15s -> STALE
+        expect(getDataIntegrityBadgeClasses('STALE')).toContain('text-[#8E98A6]');
+        expect(getDataIntegrityDotClasses('STALE')).toBe('bg-[#8E98A6]');
+
+        // Worker or network error -> ERROR
+        expect(getDataIntegrityBadgeClasses('ERROR')).toContain('text-[#E06379]');
+        expect(getDataIntegrityDotClasses('ERROR')).toBe('bg-[#E06379]');
+    });
+});
+
 describe('UX16.0 Terminal Store Workspace Modes and Attention Budget', () => {
     it('defaults to CONTEXT workspace mode', () => {
         const store = useTerminalStore.getState();

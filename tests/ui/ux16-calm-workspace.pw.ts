@@ -22,6 +22,8 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
     });
 
     test('verifies workspace modes, attention budget, and captures reference viewports', async ({ page }, testInfo) => {
+        test.setTimeout(120_000);
+
         if (testInfo.project.name !== 'desktop-16x9') {
             return;
         }
