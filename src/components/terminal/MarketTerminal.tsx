@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
 import * as Popover from '@radix-ui/react-popover';
@@ -11,6 +11,7 @@ import { Command } from 'cmdk';
 import { Group, Panel, Separator } from 'react-resizable-panels';
 import {
     Activity,
+    AlignVerticalSpaceAround,
     BarChart3,
     Boxes,
     ChevronDown,
@@ -34,7 +35,6 @@ import {
     RotateCcw,
     Search,
     Settings,
-    ShieldAlert,
     SlidersHorizontal,
     Sparkles,
     Square,
@@ -52,6 +52,8 @@ import { useBinanceMarketFeed, type BinanceMarketFeed } from '../../lib/binance/
 import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
+import RiskTerminal from './RiskTerminal';
+import type { DrawingObject, PositionDrawingType, PositionPrices } from './drawing-model';
 
 interface MarketTerminalProps {
     data: TerrainDataContractV2;
@@ -96,6 +98,7 @@ export const DRAWING_TOOLS: Array<{ id: ChartTool; label: string; icon: React.El
     { id: 'horizontal', label: 'Horizontal line', icon: Minus },
     { id: 'vertical', label: 'Vertical line', icon: MoveVertical },
     { id: 'rectangle', label: 'Rectangle', icon: Square },
+    { id: 'fibonacci', label: 'Fibonacci retracement', icon: AlignVerticalSpaceAround },
     { id: 'long-position', label: 'Long position', icon: TrendingUp, tone: 'long' },
     { id: 'short-position', label: 'Short position', icon: TrendingDown, tone: 'short' },
     { id: 'text', label: 'Text note', icon: Type },
@@ -167,14 +170,46 @@ function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; da
     </div>;
 }
 
-function Inspector({ metrics, data, marketFeed, isError, onClose }: { metrics: MarketMetrics; data: TerrainDataContractV2; marketFeed: BinanceMarketFeed; isError: boolean; onClose: () => void }) {
+function Inspector({
+    metrics,
+    data,
+    marketFeed,
+    isError,
+    onClose,
+    selectedDrawing,
+    onUpdatePositionPrices,
+    onSelectDrawingType,
+}: {
+    metrics: MarketMetrics;
+    data: TerrainDataContractV2;
+    marketFeed: BinanceMarketFeed;
+    isError: boolean;
+    onClose: () => void;
+    selectedDrawing: DrawingObject | null;
+    onUpdatePositionPrices: (prices: PositionPrices) => void;
+    onSelectDrawingType: (type: PositionDrawingType) => void;
+}) {
     const { inspectorTab, setInspectorTab, dataMode } = useTerminalStore();
     const timestamp = new Date(data.timestamp).toLocaleString(undefined, { hour12: false });
     return <Tabs.Root value={inspectorTab} onValueChange={(value) => setInspectorTab(value as typeof inspectorTab)} className="h-full">
         <div className="sticky top-0 z-20 flex h-11 items-center border-b border-[#263346] bg-[#080d14]"><Tabs.List className="grid h-full flex-1 grid-cols-4 px-1">{(['OPTIONS', 'DECISION', 'RISK', 'DATA'] as const).map((tab) => <Tabs.Trigger key={tab} value={tab} className="mt-1 h-10 rounded-t border border-transparent text-[9px] font-bold text-zinc-500 data-[state=active]:border-[#2c4157] data-[state=active]:border-b-cyan-300 data-[state=active]:bg-[#0c1722] data-[state=active]:text-zinc-100">{tab}</Tabs.Trigger>)}</Tabs.List><button type="button" onClick={onClose} aria-label="Close options metrics" className="mr-1 rounded p-1.5 text-zinc-500 hover:bg-white/5 hover:text-zinc-200 md:hidden"><X className="size-3.5" /></button></div>
         <Tabs.Content value="OPTIONS" className="outline-none"><OptionsContent metrics={metrics} data={data} isError={isError} /></Tabs.Content>
         <Tabs.Content value="DECISION" className="space-y-3 p-3 outline-none"><div className="rounded-md border border-cyan-400/25 bg-cyan-400/[0.05] p-3"><div className="flex items-center justify-between"><span className="text-[9px] font-bold text-cyan-200">DETERMINISTIC BASELINE</span><span className="rounded border border-zinc-600 px-1.5 py-0.5 text-[8px] text-zinc-400">OBSERVE</span></div><div className="mt-3 text-2xl font-black">NO TRADE</div><p className="mt-2 text-pretty text-[10px] leading-relaxed text-zinc-400">Wait for price to retest a structural level and confirm acceptance or rejection. Chart position alone does not generate a trade.</p></div><div className="rounded-md border border-amber-400/25 bg-amber-400/[0.04] p-3"><div className="flex items-center justify-between"><span className="text-[9px] font-bold text-amber-200">JEV SHADOW OPINION</span><span className="text-[8px] text-amber-300">UNAVAILABLE</span></div><p className="mt-2 text-pretty text-[10px] leading-relaxed text-zinc-500">The repository exposes no Jev response contract to this frontend. No AI opinion is invented.</p></div><div className="rounded-md border border-[#263346] p-3 text-[9px] text-zinc-500"><div className="mb-2 font-semibold text-zinc-300">Evidence required before promotion</div><ul className="space-y-1"><li>• Replay-safe deterministic agreement</li><li>• Calibrated confidence and abstention</li><li>• Timestamped source provenance</li></ul></div></Tabs.Content>
-        <Tabs.Content value="RISK" className="space-y-3 p-3 outline-none"><div className="flex items-center gap-2 rounded-md border border-rose-400/25 bg-rose-400/[0.05] p-3 text-rose-200"><ShieldAlert className="size-4" /><span className="text-[10px] font-bold">NO LIVE EXECUTION</span></div><Metric label="Distance to Call Wall" value={`${(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%`} /><Metric label="Distance to Put Wall" value={`${(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%`} /><Metric label="Contracts Observed" value={metrics.contractsCount?.toLocaleString() ?? '—'} /><p className="text-pretty text-[9px] leading-relaxed text-zinc-500">Risk tools are observational. Long and Short chart tools are measurements, not order-entry controls.</p></Tabs.Content>
+        <Tabs.Content value="RISK" className="h-full overflow-y-auto p-3 outline-none" data-testid="risk-inspector-tab">
+            <RiskTerminal
+                selectedDrawing={selectedDrawing}
+                onUpdatePositionPrices={onUpdatePositionPrices}
+                onSelectDrawingType={onSelectDrawingType}
+            />
+            <div className="mt-4 space-y-2 border-t border-[#263346] pt-3">
+                <div className="text-[10px] font-semibold text-zinc-400">Structural Options Context</div>
+                <div className="grid grid-cols-2 gap-2">
+                    <Metric label="Distance to Call Wall" value={`${(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%`} />
+                    <Metric label="Distance to Put Wall" value={`${(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%`} />
+                </div>
+                <Metric label="Contracts Observed" value={metrics.contractsCount?.toLocaleString() ?? '—'} />
+            </div>
+        </Tabs.Content>
         <Tabs.Content value="DATA" className="space-y-3 p-3 outline-none"><div className="flex items-center gap-2 text-[10px] font-bold text-zinc-300"><Database className="size-4 text-cyan-300" />DATA HEALTH</div>{[['Mode', dataMode], ['Contract', `Terrain v${data.schemaVersion}`], ['Timestamp', timestamp], ['Price candles', dataMode === 'DEMO' ? 'DEMO FIXTURE' : marketFeed.state], ['CVD / Delta', dataMode === 'DEMO' ? 'SHADOW DEMO' : marketFeed.state], ['Book / Liquidity', dataMode === 'DEMO' ? 'UNAVAILABLE IN DEMO' : marketFeed.book ? marketFeed.state : 'OFFLINE'], ['Options structure', isError && dataMode === 'LIVE' ? 'UNAVAILABLE' : data.dataMode], ['Jev', 'NO FRONTEND CONTRACT']].map(([label, value]) => <div key={label} className="flex items-start justify-between gap-3 border-b border-[#263346] py-2 text-[9px]"><span className="text-zinc-500">{label}</span><span className="break-all text-right font-mono text-zinc-300">{value}</span></div>)}</Tabs.Content>
     </Tabs.Root>;
 }
@@ -185,6 +220,16 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const [activeTool, setActiveTool] = useState<ChartTool>('cursor');
     const [keepDrawing, setKeepDrawing] = useState(false);
+    const [selectedDrawing, setSelectedDrawing] = useState<DrawingObject | null>(null);
+    const positionUpdateRef = useRef<((prices: PositionPrices) => void) | null>(null);
+
+    const handleRegisterPositionUpdater = useCallback((updater: ((prices: PositionPrices) => void) | null) => {
+        positionUpdateRef.current = updater;
+    }, []);
+
+    const handleUpdatePositionPrices = useCallback((prices: PositionPrices) => {
+        positionUpdateRef.current?.(prices);
+    }, []);
     const [timeframe, setTimeframe] = useState<ChartTimeframe>('1H');
     const [replayActive, setReplayActive] = useState(false);
     const [utcNow, setUtcNow] = useState('--:--:--');
@@ -381,12 +426,15 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                                     timeframe={timeframe}
                                     replayActive={replayActive}
                                     onActiveToolChange={setActiveTool}
+                                    selectedDrawing={selectedDrawing}
+                                    onSelectedDrawingChange={setSelectedDrawing}
+                                    onRegisterPositionUpdater={handleRegisterPositionUpdater}
                                 />
                             </div>
                         </div>
                     </div>
                 </Panel>
-                {inspectorOpen && isDesktop && <><Separator aria-label="Resize options inspector" aria-valuemin={58} aria-valuemax={90} aria-valuenow={78} className="group relative w-1 bg-[#111a25] outline-none hover:bg-cyan-400/40 focus-visible:bg-cyan-400/60"><span className="absolute inset-y-0 -left-1 -right-1" /></Separator><Panel id="inspector" minSize="320px" maxSize="34%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size"><aside className="h-full overflow-y-auto border-l border-[#263346] bg-[#080d14]"><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setInspectorOpen(false)} /></aside></Panel></>}
+                {inspectorOpen && isDesktop && <><Separator aria-label="Resize options inspector" aria-valuemin={58} aria-valuemax={90} aria-valuenow={78} className="group relative w-1 bg-[#111a25] outline-none hover:bg-cyan-400/40 focus-visible:bg-cyan-400/60"><span className="absolute inset-y-0 -left-1 -right-1" /></Separator><Panel id="inspector" minSize="320px" maxSize="34%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size"><aside className="h-full overflow-y-auto border-l border-[#263346] bg-[#080d14]"><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} /></aside></Panel></>}
             </Group>
         </main>
 
@@ -394,6 +442,6 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
 
         <Dialog.Root open={paletteOpen} onOpenChange={setPaletteOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60" /><Dialog.Content aria-describedby={undefined} className="fixed left-1/2 top-[18%] z-50 w-[min(92vw,620px)] -translate-x-1/2 overflow-hidden rounded-xl border border-[#33445a] bg-[#0b111a] shadow-2xl"><Dialog.Title className="sr-only">Terminal command palette</Dialog.Title><Command className="bg-transparent text-zinc-100"><div className="flex items-center border-b border-[#263346] px-3"><CommandIcon className="size-4 text-zinc-500" /><Command.Input autoFocus placeholder="Search workspaces and actions…" className="h-12 w-full bg-transparent px-3 text-sm outline-none placeholder:text-zinc-600" /></div><Command.List className="max-h-[360px] overflow-y-auto p-2"><Command.Empty className="p-6 text-center text-xs text-zinc-500">No command found.</Command.Empty><Command.Group heading="Workspaces" className="text-[9px] text-zinc-600">{WORKSPACES.map(({ id, label, icon: Icon }) => <Command.Item key={id} value={label} onSelect={() => { setActiveWorkspace(id); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10 data-[selected=true]:text-cyan-200"><Icon className="size-4" />{label}</Command.Item>)}</Command.Group><Command.Group heading="Actions" className="mt-2 text-[9px] text-zinc-600"><Command.Item onSelect={() => { setInspectorOpen(true); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><PanelRightOpen className="size-4" />Open Options Metrics</Command.Item><Command.Item onSelect={() => { resetWorkspaceUi(); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2.5 text-xs text-zinc-300 data-[selected=true]:bg-cyan-400/10"><RotateCcw className="size-4" />Reset Market Structure layout</Command.Item></Command.Group></Command.List></Command></Dialog.Content></Dialog.Portal></Dialog.Root>
 
-        <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" /><Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#33445a] bg-[#080d14] pb-[env(safe-area-inset-bottom)] md:hidden"><Dialog.Title className="sr-only">Options Metrics</Dialog.Title><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setMobileInspectorOpen(false)} /></Dialog.Content></Dialog.Portal></Dialog.Root>
+        <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}><Dialog.Portal><Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" /><Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#33445a] bg-[#080d14] pb-[env(safe-area-inset-bottom)] md:hidden"><Dialog.Title className="sr-only">Options Metrics</Dialog.Title><Inspector metrics={metrics} data={data} marketFeed={marketFeed} isError={isError} onClose={() => setMobileInspectorOpen(false)} selectedDrawing={selectedDrawing} onUpdatePositionPrices={handleUpdatePositionPrices} onSelectDrawingType={(type) => setActiveTool(type)} /></Dialog.Content></Dialog.Portal></Dialog.Root>
     </div></Tooltip.Provider>;
 }

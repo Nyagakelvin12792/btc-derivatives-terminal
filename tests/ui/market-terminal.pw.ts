@@ -170,10 +170,10 @@ test('renders the chart-first terminal, single drawing rail, and mobile dock col
     const upperToolbar = page.getByRole('toolbar', { name: 'Chart navigation and workspace actions' });
     await expect(drawingRail).toBeVisible();
     await expect(upperToolbar).toBeVisible();
-    for (const label of ['Cursor', 'Trend line', 'Horizontal line', 'Vertical line', 'Rectangle', 'Long position', 'Short position', 'Text note']) {
+    for (const label of ['Cursor', 'Trend line', 'Horizontal line', 'Vertical line', 'Rectangle', 'Fibonacci retracement', 'Long position', 'Short position', 'Text note']) {
         await expect(drawingRail.getByRole('button', { name: label, exact: true })).toBeVisible();
     }
-    for (const duplicateLabel of ['Cursor', 'Draw', 'Horizontal', 'Vertical', 'Long', 'Short']) {
+    for (const duplicateLabel of ['Cursor', 'Draw', 'Horizontal', 'Vertical', 'Fibonacci', 'Long', 'Short']) {
         await expect(upperToolbar.getByRole('button', { name: duplicateLabel, exact: true })).toHaveCount(0);
     }
 
@@ -540,4 +540,157 @@ test('renders responsive Liquidity panel without dock overlap or clipping at 136
         path: '.artifacts/ui-overhaul/ux15-0-pane-collapsed-1366x768.png',
         animations: 'disabled',
     });
+});
+
+test('creates, configures, and manipulates Fibonacci retracement with levels popover and undo', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop Fibonacci interaction check');
+
+    const chart = page.getByRole('group', { name: 'Demo BTC price chart with options structure overlays' });
+    const drawingRail = page.getByRole('navigation', { name: 'Chart drawing tools' });
+    const chartBox = await chart.boundingBox();
+    expect(chartBox).not.toBeNull();
+
+    // 1. Arm Fibonacci tool in the left rail and complete a two-point drawing
+    await drawingRail.getByRole('button', { name: 'Fibonacci retracement', exact: true }).click();
+    await page.mouse.click(chartBox!.x + 220, chartBox!.y + 160);
+    await page.mouse.move(chartBox!.x + 420, chartBox!.y + 260);
+    await page.mouse.click(chartBox!.x + 420, chartBox!.y + 260);
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+
+    // Completing a drawing returns tool to Cursor and does NOT leave the floating toolbar visible
+    await expect(drawingRail.getByRole('button', { name: 'Cursor', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(page.getByRole('toolbar', { name: 'Drawing controls' })).toHaveCount(0);
+
+    // 2. Explicitly click the Fibonacci drawing to select it and show contextual toolbar
+    const fibDrawing = chart.locator('[data-drawing-type="fibonacci"]').first();
+    await expect(fibDrawing).toBeVisible();
+    const fibBox = await fibDrawing.boundingBox();
+    expect(fibBox).not.toBeNull();
+
+    await page.mouse.click(fibBox!.x + fibBox!.width / 2, fibBox!.y + fibBox!.height / 2);
+    const toolbar = page.getByRole('toolbar', { name: 'Drawing controls' });
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar).toContainText('fibonacci');
+
+    // 3. Open Fibonacci settings popover
+    await toolbar.getByRole('button', { name: 'Fibonacci settings', exact: true }).click();
+    await expect(page.getByText('Fibonacci Retracement')).toBeVisible();
+    await expect(page.getByText('Linear Price Space')).toBeVisible();
+    await expect(page.getByText('Fibonacci levels are computed linearly in price space.')).toBeVisible();
+
+    // Toggle Reverse setting
+    const reverseCheckbox = page.getByLabel('Reverse');
+    await expect(reverseCheckbox).not.toBeChecked();
+    await reverseCheckbox.check();
+    await expect(reverseCheckbox).toBeChecked();
+
+    // Close popover with Escape
+    await page.keyboard.press('Escape');
+    await expect(page.getByText('Linear Price Space')).toHaveCount(0);
+
+    // 4. Re-select and delete via keyboard, then restore via Ctrl+Z
+    await page.mouse.click(fibBox!.x + fibBox!.width / 2, fibBox!.y + fibBox!.height / 2);
+    await expect(toolbar).toBeVisible();
+    await page.keyboard.press('Delete');
+    await expect(chart).toHaveAttribute('data-drawing-count', '0');
+    await expect(toolbar).toHaveCount(0);
+
+    await page.keyboard.press('Control+z');
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+});
+
+test('creates Long/Short position objects with interactive risk HUD and synchronizes with Risk Terminal', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop position risk interaction check');
+
+    const chart = page.getByRole('group', { name: 'Demo BTC price chart with options structure overlays' });
+    const drawingRail = page.getByRole('navigation', { name: 'Chart drawing tools' });
+    const chartBox = await chart.boundingBox();
+    expect(chartBox).not.toBeNull();
+
+    // 1. Arm Long position tool from left rail and place with 1 click
+    await drawingRail.getByRole('button', { name: 'Long position', exact: true }).click();
+    await page.mouse.click(chartBox!.x + 280, chartBox!.y + 190);
+    await expect(chart).toHaveAttribute('data-drawing-count', '1');
+    await expect(drawingRail.getByRole('button', { name: 'Cursor', exact: true })).toHaveAttribute('aria-pressed', 'true');
+
+    // 2. Select the Long position object
+    const longDrawing = chart.locator('[data-drawing-type="long-position"]').first();
+    await expect(longDrawing).toBeVisible();
+    await expect(longDrawing).toHaveAttribute('data-position-status', 'ready');
+
+    const longBox = await longDrawing.boundingBox();
+    expect(longBox).not.toBeNull();
+    await page.mouse.click(longBox!.x + longBox!.width / 2, longBox!.y + longBox!.height / 2);
+
+    const toolbar = page.getByRole('toolbar', { name: 'Drawing controls' });
+    await expect(toolbar).toBeVisible();
+    await expect(toolbar).toContainText('long position');
+    await expect(toolbar).toContainText('READY');
+
+    // Verify Chart HUD Badge
+    await expect(page.getByTestId('position-hud-status').first()).toContainText('LONG');
+    await expect(page.getByTestId('position-hud-status').first()).toContainText('READY');
+
+    // 3. Open Inspector RISK Tab and verify two-way synchronization
+    await page.getByRole('tab', { name: 'RISK', exact: true }).click();
+    await expect(page.getByTestId('risk-metrics-card')).toBeVisible();
+
+    const entryInput = page.getByTestId('risk-input-entry');
+    const stopInput = page.getByTestId('risk-input-stop');
+    const targetInput = page.getByTestId('risk-input-target');
+
+    await expect(entryInput).toBeVisible();
+    await expect(stopInput).toBeVisible();
+    await expect(targetInput).toBeVisible();
+
+    const entryPrice = Number(await entryInput.inputValue());
+    const stopPrice = Number(await stopInput.inputValue());
+    const targetPrice = Number(await targetInput.inputValue());
+
+    expect(entryPrice).toBeGreaterThan(stopPrice);
+    expect(targetPrice).toBeGreaterThan(entryPrice);
+
+    // Verify Sizing outputs
+    await expect(page.getByTestId('risk-metric-quantity')).toBeVisible();
+    await expect(page.getByTestId('risk-metric-rrr')).toBeVisible();
+    await expect(page.getByTestId('risk-metric-loss')).toBeVisible();
+    await expect(page.getByTestId('risk-metric-profit')).toBeVisible();
+
+    // 4. Invert geometry by setting Stop above Entry -> assert INVALID status and error banner
+    await stopInput.fill(String(entryPrice + 500));
+    await expect(longDrawing).toHaveAttribute('data-position-status', 'invalid');
+    await expect(page.getByTestId('risk-error-INVALID_LONG_GEOMETRY')).toBeVisible();
+    await expect(page.getByTestId('position-hud-status').first()).toContainText('INVALID');
+
+    // Restore valid geometry
+    await stopInput.fill(String(stopPrice));
+    await expect(longDrawing).toHaveAttribute('data-position-status', 'ready');
+    await expect(page.getByTestId('risk-error-INVALID_LONG_GEOMETRY')).toHaveCount(0);
+
+    // 5. Create Short position object and verify Short geometry constraints
+    await drawingRail.getByRole('button', { name: 'Short position', exact: true }).click();
+    await page.mouse.click(chartBox!.x + 480, chartBox!.y + 190);
+    await expect(chart).toHaveAttribute('data-drawing-count', '2');
+
+    const shortDrawing = chart.locator('[data-drawing-type="short-position"]').first();
+    await expect(shortDrawing).toBeVisible();
+    await expect(shortDrawing).toHaveAttribute('data-position-status', 'ready');
+
+    const shortBox = await shortDrawing.boundingBox();
+    expect(shortBox).not.toBeNull();
+    await page.mouse.click(shortBox!.x + shortBox!.width / 2, shortBox!.y + shortBox!.height / 2);
+
+    await expect(page.getByTestId('position-hud-status').nth(1)).toContainText('SHORT');
+    await expect(page.getByTestId('position-hud-status').nth(1)).toContainText('READY');
+    const shortEntry = Number(await entryInput.inputValue());
+    const shortStop = Number(await stopInput.inputValue());
+    const shortTarget = Number(await targetInput.inputValue());
+
+    expect(shortStop).toBeGreaterThan(shortEntry);
+    expect(shortEntry).toBeGreaterThan(shortTarget);
+
+    // 6. Automated accessibility check on the active Risk Terminal & chart
+    const results = await new AxeBuilder({ page }).disableRules(['color-contrast']).analyze();
+    const severe = results.violations.filter((violation) => ['serious', 'critical'].includes(violation.impact || ''));
+    expect(severe).toEqual([]);
 });

@@ -6,6 +6,7 @@ export type ChartTool =
     | 'long-position'
     | 'short-position'
     | 'rectangle'
+    | 'fibonacci'
     | 'text';
 
 export type ChartTimeframe = '1m' | '5m' | '15m' | '1H' | '4H' | '1D';

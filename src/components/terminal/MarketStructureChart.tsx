@@ -15,7 +15,7 @@ import {
     type ISeriesApi,
     type LogicalRange,
 } from 'lightweight-charts';
-import { Eye, GripVertical, Lock, Move, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
+import { Eye, EyeOff, GripVertical, Lock, Move, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
@@ -31,12 +31,41 @@ import {
     type DemoMarketBar,
 } from '../../lib/ui/market-fixtures';
 import { TIMEFRAME_SECONDS, type ChartTimeframe, type ChartTool } from './types';
-import ChartDrawingLayer, {
-    type ChartDrawingObject,
-    type ChartDrawingPoint,
-    type ChartDrawingView,
+import ChartDrawingLayer from './ChartDrawingLayer';
+import {
+    applyDrawingDrag,
+    cloneDrawing,
+    createDrawing,
+    createPositionDrawing,
+    drawingLabel,
+    drawingsEqual,
+    EMPTY_HISTORY,
+    isPositionType,
+    nudgeDrawing,
+    projectDrawing,
+    pushHistory,
+    redoHistory,
+    sanitizePersistedDrawings,
+    undoHistory,
+    POSITION_DEFAULT_EXTENT_BARS,
+    type ChartProjector,
     type DrawingDragTarget,
-} from './ChartDrawingLayer';
+    type DrawingHistory,
+    type DrawingLineStyle,
+    type DrawingObject,
+    type DrawingPoint,
+    type DrawingType,
+    type DrawingView,
+    type FibonacciLevelSetting,
+    type FibonacciSettings,
+    type PositionPrices,
+} from './drawing-model';
+import {
+    evaluatePositionRiskForDrawing,
+    readPersistedRiskSettings,
+    type PositionRiskSettings,
+} from './RiskTerminal';
+import type { PositionRiskResult } from '../../lib/quant/position-risk';
 import LowerStudyDock from './LowerStudyDock';
 import LowerStudyPane, {
     clampStudyPaneHeight,
@@ -75,6 +104,9 @@ interface MarketStructureChartProps {
     timeframe: ChartTimeframe;
     replayActive: boolean;
     onActiveToolChange: (tool: ChartTool) => void;
+    selectedDrawing?: DrawingObject | null;
+    onSelectedDrawingChange?: (drawing: DrawingObject | null) => void;
+    onRegisterPositionUpdater?: (updater: ((prices: PositionPrices) => void) | null) => void;
 }
 
 interface OverlayLevel {
@@ -103,9 +135,9 @@ interface OverlayLayout {
 interface DrawingDragState {
     drawingId: string;
     target: DrawingDragTarget;
-    startPoint: ChartDrawingPoint;
+    startPoint: DrawingPoint;
     startIndex: number;
-    original: ChartDrawingObject;
+    original: DrawingObject;
 }
 
 export function constrainToolbarPosition(
@@ -188,6 +220,8 @@ export default function MarketStructureChart({
     timeframe,
     replayActive,
     onActiveToolChange,
+    onSelectedDrawingChange,
+    onRegisterPositionUpdater,
 }: MarketStructureChartProps) {
     const workspaceContainerRef = useRef<HTMLDivElement>(null);
     const chartHostRef = useRef<HTMLDivElement>(null);
@@ -242,15 +276,105 @@ export default function MarketStructureChart({
     const [objectLocked, setObjectLocked] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [dragTarget, setDragTarget] = useState<'range-start' | 'range-end' | 'range-body' | 'anchor' | null>(null);
-    const [drawings, setDrawings] = useState<ChartDrawingObject[]>([]);
-    const [drawingViews, setDrawingViews] = useState<ChartDrawingView[]>([]);
-    const [drawingDraft, setDrawingDraft] = useState<ChartDrawingObject | null>(null);
+    const [drawings, setDrawings] = useState<DrawingObject[]>(() => {
+        if (typeof window === 'undefined') return [];
+        try {
+            const raw = window.localStorage.getItem('btc-terminal-drawings-v1');
+            return raw ? sanitizePersistedDrawings(JSON.parse(raw)) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [history, setHistory] = useState<DrawingHistory>(EMPTY_HISTORY);
+    const [drawingViews, setDrawingViews] = useState<DrawingView[]>([]);
+    const [drawingDraft, setDrawingDraft] = useState<DrawingObject | null>(null);
     const [selectedDrawingId, setSelectedDrawingId] = useState<string | null>(null);
     const [drawingDrag, setDrawingDrag] = useState<DrawingDragState | null>(null);
-    const [lastDeletedDrawing, setLastDeletedDrawing] = useState<ChartDrawingObject | null>(null);
+    const [lastDeletedDrawing, setLastDeletedDrawing] = useState<DrawingObject | null>(null);
+    const [fibSettingsOpen, setFibSettingsOpen] = useState(false);
     const [hoverBar, setHoverBar] = useState<DemoMarketBar | null>(null);
     const [drawingStatus, setDrawingStatus] = useState('');
     const dragOriginRef = useRef<{ logical: number; start: number; end: number } | null>(null);
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        try {
+            window.localStorage.setItem('btc-terminal-drawings-v1', JSON.stringify(drawings));
+        } catch {
+            // ignore
+        }
+    }, [drawings]);
+
+    useEffect(() => {
+        const found = drawings.find((d) => d.id === selectedDrawingId) ?? null;
+        onSelectedDrawingChange?.(found);
+    }, [drawings, onSelectedDrawingChange, selectedDrawingId]);
+
+    useEffect(() => {
+        if (!onRegisterPositionUpdater) return;
+        onRegisterPositionUpdater((prices: PositionPrices) => {
+            setDrawings((current) => {
+                const next = current.map((d) => {
+                    if (d.id !== selectedDrawingId || !isPositionType(d.type) || !d.position) return d;
+                    const nextPoints = d.points.map((pt) => ({ ...pt, price: prices.entry }));
+                    return {
+                        ...d,
+                        points: nextPoints,
+                        position: { ...prices },
+                    };
+                });
+                if (!drawingsEqual(current, next)) {
+                    setHistory((h) => pushHistory(h, current));
+                }
+                return next;
+            });
+        });
+        return () => onRegisterPositionUpdater(null);
+    }, [onRegisterPositionUpdater, selectedDrawingId]);
+
+    const riskSettings = useMemo<PositionRiskSettings>(() => readPersistedRiskSettings(), []);
+    const riskResults = useMemo<Record<string, PositionRiskResult | null>>(() => {
+        const map: Record<string, PositionRiskResult | null> = {};
+        for (const drawing of drawings) {
+            if (isPositionType(drawing.type)) {
+                map[drawing.id] = evaluatePositionRiskForDrawing(drawing, riskSettings);
+            }
+        }
+        return map;
+    }, [drawings, riskSettings]);
+
+    const updateFibonacciSettings = useCallback((drawingId: string, patch: Partial<FibonacciSettings>) => {
+        setDrawings((current) => {
+            const next = current.map((d) => {
+                if (d.id !== drawingId || !d.fibonacci) return d;
+                return {
+                    ...d,
+                    fibonacci: { ...d.fibonacci, ...patch },
+                };
+            });
+            if (!drawingsEqual(current, next)) {
+                setHistory((h) => pushHistory(h, current));
+            }
+            return next;
+        });
+    }, []);
+
+    const updateFibonacciLevel = useCallback((drawingId: string, levelIndex: number, patch: Partial<FibonacciLevelSetting>) => {
+        setDrawings((current) => {
+            const next = current.map((d) => {
+                if (d.id !== drawingId || !d.fibonacci) return d;
+                const nextLevels = d.fibonacci.levels.map((lvl, idx) => idx === levelIndex ? { ...lvl, ...patch } : lvl);
+                return {
+                    ...d,
+                    fibonacci: { ...d.fibonacci, levels: nextLevels },
+                };
+            });
+            if (!drawingsEqual(current, next)) {
+                setHistory((h) => pushHistory(h, current));
+            }
+            return next;
+        });
+    }, []);
 
     const {
         activeWorkspace,
@@ -560,18 +684,22 @@ export default function MarketStructureChart({
                 pocY: profileLevels ? coordinate(profileLevels.poc) : null,
                 valY: profileLevels ? coordinate(profileLevels.val) : null,
             });
+            const projector: ChartProjector = {
+                timeToX: (time: number) => {
+                    const coord = chart.timeScale().timeToCoordinate(time as DemoMarketBar['time']);
+                    return coord === null ? null : Number(coord);
+                },
+                priceToY: (price: number) => {
+                    const coord = candles.priceToCoordinate(price);
+                    return coord === null ? null : Number(coord);
+                },
+                width: hostWidth,
+                height: hostHeight,
+            };
             const drawingSource = drawingDraft ? [...drawings, drawingDraft] : drawings;
             setDrawingViews(drawingSource.flatMap((drawing) => {
-                const points = drawing.points.map((point) => ({
-                    x: chart.timeScale().timeToCoordinate(point.time as DemoMarketBar['time']),
-                    y: candles.priceToCoordinate(point.price),
-                }));
-                if (points.some((point) => point.x === null || point.y === null)) return [];
-                return [{
-                    drawing,
-                    points: points.map((point) => ({ x: Number(point.x), y: Number(point.y) })),
-                    preview: drawing.id === 'drawing-preview',
-                }];
+                const view = projectDrawing(drawing, projector, drawing.id === 'drawing-preview');
+                return view ? [view] : [];
             }));
         };
         let nestedFrame: number | null = null;
@@ -795,7 +923,7 @@ export default function MarketStructureChart({
         requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
     }
 
-    const drawingPointFromClient = useCallback((clientX: number, clientY: number): ChartDrawingPoint | null => {
+    const drawingPointFromClient = useCallback((clientX: number, clientY: number): DrawingPoint | null => {
         const host = chartHostRef.current;
         const chart = priceChartRef.current;
         const candles = priceSeriesRef.current;
@@ -821,32 +949,65 @@ export default function MarketStructureChart({
         if (activeTool === 'cursor') return;
         const point = drawingPointFromClient(event.clientX, event.clientY);
         if (!point) return;
-        const drawingType = activeTool as ChartDrawingObject['type'];
-        const oneClickTool = activeTool === 'horizontal' || activeTool === 'vertical' || activeTool === 'text';
-        if (oneClickTool) {
-            const drawing: ChartDrawingObject = { id: crypto.randomUUID(), type: drawingType, points: [point], locked: false };
-            setDrawings((current) => [...current, drawing]);
+        const tool = activeTool as DrawingType;
+
+        if (isPositionType(tool)) {
+            const startIndex = nearestBarIndex(bars, point.time);
+            const extentIndex = Math.min(bars.length - 1, startIndex + POSITION_DEFAULT_EXTENT_BARS);
+            const rightTime = Number(bars[extentIndex]?.time ?? (point.time + 3600 * 24));
+            const newDrawing = createPositionDrawing(crypto.randomUUID(), tool, point, rightTime);
+            setDrawings((current) => {
+                const next = [...current, newDrawing];
+                setHistory((h) => pushHistory(h, current));
+                return next;
+            });
             setSelectedDrawingId(null);
             setSelectedObject(null);
             setLastDeletedDrawing(null);
-            setDrawingStatus(`${activeTool} added`);
+            setDrawingStatus(`${drawingLabel(tool)} added`);
             if (!keepDrawing) onActiveToolChange('cursor');
             return;
         }
-        if (!drawingDraft || drawingDraft.type !== drawingType) {
-            setDrawingDraft({ id: 'drawing-preview', type: drawingType, points: [point, point], locked: false });
+
+        if (tool === 'horizontal' || tool === 'vertical' || tool === 'text') {
+            const newDrawing = createDrawing(crypto.randomUUID(), tool, [point]);
+            setDrawings((current) => {
+                const next = [...current, newDrawing];
+                setHistory((h) => pushHistory(h, current));
+                return next;
+            });
+            setSelectedDrawingId(null);
+            setSelectedObject(null);
+            setLastDeletedDrawing(null);
+            setDrawingStatus(`${drawingLabel(tool)} added`);
+            if (!keepDrawing) onActiveToolChange('cursor');
+            return;
+        }
+
+        if (!drawingDraft || drawingDraft.type !== tool) {
+            const draft = createDrawing('drawing-preview', tool, [point, point]);
+            setDrawingDraft(draft);
             setSelectedDrawingId(null);
             setSelectedObject(null);
             setDrawingStatus('Select the second point');
             return;
         }
-        const drawing: ChartDrawingObject = { ...drawingDraft, id: crypto.randomUUID(), points: [drawingDraft.points[0], point] };
-        setDrawings((current) => [...current, drawing]);
+
+        const newDrawing: DrawingObject = {
+            ...drawingDraft,
+            id: crypto.randomUUID(),
+            points: [drawingDraft.points[0], point],
+        };
+        setDrawings((current) => {
+            const next = [...current, newDrawing];
+            setHistory((h) => pushHistory(h, current));
+            return next;
+        });
         setDrawingDraft(null);
         setSelectedDrawingId(null);
         setSelectedObject(null);
         setLastDeletedDrawing(null);
-        setDrawingStatus(`${activeTool} added`);
+        setDrawingStatus(`${drawingLabel(tool)} added`);
         if (!keepDrawing) onActiveToolChange('cursor');
     }
 
@@ -866,27 +1027,36 @@ export default function MarketStructureChart({
         if (!original || original.locked || event.button !== 0) return;
         const startPoint = drawingPointFromClient(event.clientX, event.clientY);
         if (!startPoint) return;
+        setHistory((h) => pushHistory(h, drawings));
         setDrawingDrag({
             drawingId,
             target,
             startPoint,
             startIndex: nearestBarIndex(bars, startPoint.time),
-            original: { ...original, points: original.points.map((point) => ({ ...point })) },
+            original: cloneDrawing(original),
         });
     }
 
-    function removeDrawing(drawingId: string) {
+    const removeDrawing = useCallback((drawingId: string) => {
         const drawing = drawings.find((candidate) => candidate.id === drawingId);
         if (!drawing || drawing.locked) return;
-        setDrawings((current) => current.filter((candidate) => candidate.id !== drawingId));
+        setDrawings((current) => {
+            const next = current.filter((candidate) => candidate.id !== drawingId);
+            setHistory((h) => pushHistory(h, current));
+            return next;
+        });
         setLastDeletedDrawing(drawing);
         setSelectedDrawingId(null);
-        setDrawingStatus(`${drawing.type} removed. Undo is available.`);
-    }
+        setDrawingStatus(`${drawingLabel(drawing.type)} removed. Undo is available.`);
+    }, [drawings]);
 
     function restoreLastDeletedDrawing() {
         if (!lastDeletedDrawing) return;
-        setDrawings((current) => [...current.filter((drawing) => drawing.id !== lastDeletedDrawing.id), lastDeletedDrawing]);
+        setDrawings((current) => {
+            const next = [...current.filter((drawing) => drawing.id !== lastDeletedDrawing.id), lastDeletedDrawing];
+            setHistory((h) => pushHistory(h, current));
+            return next;
+        });
         setSelectedDrawingId(null);
         setLastDeletedDrawing(null);
         setDrawingStatus('Drawing restored');
@@ -896,6 +1066,7 @@ export default function MarketStructureChart({
         if (selectedDrawingId !== null) setSelectedDrawingId(null);
         if (selectedObject !== null) setSelectedObject(null);
         if (settingsOpen) setSettingsOpen(false);
+        if (fibSettingsOpen) setFibSettingsOpen(false);
     }
 
     useEffect(() => {
@@ -903,26 +1074,19 @@ export default function MarketStructureChart({
         const move = (event: PointerEvent) => {
             const point = drawingPointFromClient(event.clientX, event.clientY);
             if (!point) return;
-            setDrawings((current) => current.map((drawing) => {
-                if (drawing.id !== drawingDrag.drawingId) return drawing;
-                if (drawingDrag.target.kind === 'anchor') {
-                    const pointIndex = drawingDrag.target.pointIndex;
-                    return {
-                        ...drawing,
-                        points: drawingDrag.original.points.map((originalPoint, index) => index === pointIndex ? point : originalPoint),
-                    };
-                }
-                const indexDelta = nearestBarIndex(bars, point.time) - drawingDrag.startIndex;
-                const priceDelta = point.price - drawingDrag.startPoint.price;
-                return {
-                    ...drawing,
-                    points: drawingDrag.original.points.map((originalPoint) => {
-                        const originalIndex = nearestBarIndex(bars, originalPoint.time);
-                        const nextIndex = Math.max(0, Math.min(bars.length - 1, originalIndex + indexDelta));
-                        return { time: Number(bars[nextIndex].time), price: originalPoint.price + priceDelta };
-                    }),
-                };
-            }));
+            const indexDelta = nearestBarIndex(bars, point.time) - drawingDrag.startIndex;
+            const priceDelta = point.price - drawingDrag.startPoint.price;
+            const shiftTime = (time: number) => {
+                const idx = nearestBarIndex(bars, time);
+                const nextIdx = Math.max(0, Math.min(bars.length - 1, idx + indexDelta));
+                return Number(bars[nextIdx].time);
+            };
+            const updatedDrawing = applyDrawingDrag(drawingDrag.original, drawingDrag.target, {
+                current: point,
+                priceDelta,
+                shiftTime,
+            });
+            setDrawings((current) => current.map((d) => d.id === drawingDrag.drawingId ? updatedDrawing : d));
         };
         const up = () => {
             setDrawingDrag(null);
@@ -945,6 +1109,7 @@ export default function MarketStructureChart({
                 setSelectedDrawingId(null);
                 setSelectedObject(null);
                 setSettingsOpen(false);
+                setFibSettingsOpen(false);
                 setDrawingStatus('Selection cleared');
                 return;
             }
@@ -952,23 +1117,56 @@ export default function MarketStructureChart({
                 const selected = drawings.find((drawing) => drawing.id === selectedDrawingId);
                 if (!selected || selected.locked) return;
                 event.preventDefault();
-                setDrawings((current) => current.filter((drawing) => drawing.id !== selectedDrawingId));
-                setLastDeletedDrawing(selected);
-                setSelectedDrawingId(null);
-                setDrawingStatus(`${selected.type} removed. Undo is available.`);
+                removeDrawing(selectedDrawingId);
                 return;
             }
-            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && lastDeletedDrawing) {
+            if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && !event.shiftKey) {
                 event.preventDefault();
-                setDrawings((current) => [...current.filter((drawing) => drawing.id !== lastDeletedDrawing.id), lastDeletedDrawing]);
-                setSelectedDrawingId(null);
-                setLastDeletedDrawing(null);
-                setDrawingStatus('Drawing restored');
+                const result = undoHistory(history, drawings);
+                if (result) {
+                    setHistory(result.history);
+                    setDrawings(result.drawings);
+                    setSelectedDrawingId(null);
+                    setDrawingStatus('Undo');
+                }
+                return;
+            }
+            if (((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') ||
+                ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z' && event.shiftKey)) {
+                event.preventDefault();
+                const result = redoHistory(history, drawings);
+                if (result) {
+                    setHistory(result.history);
+                    setDrawings(result.drawings);
+                    setSelectedDrawingId(null);
+                    setDrawingStatus('Redo');
+                }
+                return;
+            }
+            if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key) && selectedDrawingId) {
+                const selected = drawings.find((d) => d.id === selectedDrawingId);
+                if (!selected || selected.locked) return;
+                event.preventDefault();
+                const mult = event.shiftKey ? 10 : 1;
+                const barStep = (event.key === 'ArrowRight' ? 1 : event.key === 'ArrowLeft' ? -1 : 0) * mult;
+                const priceStep = (event.key === 'ArrowUp' ? 5 : event.key === 'ArrowDown' ? -5 : 0) * mult;
+                const shiftTime = (time: number) => {
+                    const idx = nearestBarIndex(bars, time);
+                    const nextIdx = Math.max(0, Math.min(bars.length - 1, idx + barStep));
+                    return Number(bars[nextIdx].time);
+                };
+                const next = nudgeDrawing(selected, priceStep, shiftTime);
+                setDrawings((curr) => {
+                    const updated = curr.map((d) => d.id === selected.id ? next : d);
+                    setHistory((h) => pushHistory(h, curr));
+                    return updated;
+                });
+                return;
             }
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [drawings, lastDeletedDrawing, selectedDrawingId]);
+    }, [bars, drawings, history, lastDeletedDrawing, removeDrawing, selectedDrawingId]);
 
     useEffect(() => {
         if (activeTool === 'cursor') {
@@ -1136,6 +1334,7 @@ export default function MarketStructureChart({
                     selectedId={selectedDrawingId}
                     onSelect={(drawingId) => { setSelectedDrawingId(drawingId); setSelectedObject(null); }}
                     onStartDrag={beginDrawingDrag}
+                    riskResults={riskResults}
                 />
                 {selectedDrawing && selectedDrawingView && <div
                     className="absolute z-50 flex -translate-x-1/2 items-center gap-1 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg"
@@ -1146,11 +1345,156 @@ export default function MarketStructureChart({
                     onClick={(event) => event.stopPropagation()}
                 >
                     <span className="px-1.5 text-[9px] font-semibold capitalize text-zinc-300">{selectedDrawing.type.replace('-', ' ')}</span>
+                    {isPositionType(selectedDrawing.type) && riskResults[selectedDrawing.id] && (
+                        <span
+                            className={cn(
+                                'rounded px-1.5 py-0.5 font-mono text-[8px] font-bold',
+                                riskResults[selectedDrawing.id]?.status === 'ready'
+                                    ? 'bg-emerald-500/20 text-emerald-300'
+                                    : riskResults[selectedDrawing.id]?.status === 'invalid'
+                                    ? 'bg-rose-500/20 text-rose-300'
+                                    : 'bg-amber-500/20 text-amber-300',
+                            )}
+                        >
+                            {riskResults[selectedDrawing.id]?.status.toUpperCase()}
+                        </span>
+                    )}
+                    {selectedDrawing.type === 'fibonacci' && selectedDrawing.fibonacci && (
+                        <Popover.Root open={fibSettingsOpen} onOpenChange={setFibSettingsOpen}>
+                            <Popover.Trigger asChild>
+                                <button
+                                    type="button"
+                                    aria-label="Fibonacci settings"
+                                    title="Fibonacci settings"
+                                    className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+                                >
+                                    <Settings className="size-3.5" />
+                                </button>
+                            </Popover.Trigger>
+                            <Popover.Portal>
+                                <Popover.Content
+                                    side="bottom"
+                                    align="center"
+                                    sideOffset={8}
+                                    className="z-50 w-72 rounded-md border border-[#33445a] bg-[#0b121c] p-3 text-[10px] text-zinc-300 shadow-xl"
+                                    onPointerDown={(e) => e.stopPropagation()}
+                                >
+                                    <div className="flex items-center justify-between border-b border-[#263346] pb-2 font-semibold text-zinc-100">
+                                        <span>Fibonacci Retracement</span>
+                                        <span className="font-mono text-[9px] text-zinc-500">Linear Price Space</span>
+                                    </div>
+                                    <div className="mt-2 space-y-1.5">
+                                        <div className="text-[9px] font-semibold text-zinc-400">Levels</div>
+                                        <div className="grid grid-cols-2 gap-x-2 gap-y-1">
+                                            {selectedDrawing.fibonacci.levels.map((lvl, index) => (
+                                                <label key={lvl.value} className="flex items-center justify-between gap-1 rounded px-1 py-0.5 hover:bg-white/5">
+                                                    <span className="flex items-center gap-1.5">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={lvl.enabled}
+                                                            onChange={(e) => updateFibonacciLevel(selectedDrawing.id, index, { enabled: e.target.checked })}
+                                                            className="size-3 accent-cyan-400"
+                                                        />
+                                                        <span className="font-mono text-zinc-200">{lvl.value}</span>
+                                                    </span>
+                                                    <span className="size-2 rounded-full" style={{ backgroundColor: lvl.color }} />
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div className="mt-2 space-y-1.5 border-t border-[#263346] pt-2">
+                                        <label className="flex items-center justify-between">
+                                            <span>Reverse</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDrawing.fibonacci.reverse}
+                                                onChange={(e) => updateFibonacciSettings(selectedDrawing.id, { reverse: e.target.checked })}
+                                                className="size-3.5 accent-cyan-400"
+                                            />
+                                        </label>
+                                        <label className="flex items-center justify-between">
+                                            <span>Extend Left</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDrawing.fibonacci.extendLeft}
+                                                onChange={(e) => updateFibonacciSettings(selectedDrawing.id, { extendLeft: e.target.checked })}
+                                                className="size-3.5 accent-cyan-400"
+                                            />
+                                        </label>
+                                        <label className="flex items-center justify-between">
+                                            <span>Extend Right</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDrawing.fibonacci.extendRight}
+                                                onChange={(e) => updateFibonacciSettings(selectedDrawing.id, { extendRight: e.target.checked })}
+                                                className="size-3.5 accent-cyan-400"
+                                            />
+                                        </label>
+                                        <label className="flex items-center justify-between">
+                                            <span>Show Labels</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDrawing.fibonacci.showLabels}
+                                                onChange={(e) => updateFibonacciSettings(selectedDrawing.id, { showLabels: e.target.checked })}
+                                                className="size-3.5 accent-cyan-400"
+                                            />
+                                        </label>
+                                        <label className="flex items-center justify-between">
+                                            <span>Show Prices</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedDrawing.fibonacci.showPrices}
+                                                onChange={(e) => updateFibonacciSettings(selectedDrawing.id, { showPrices: e.target.checked })}
+                                                className="size-3.5 accent-cyan-400"
+                                            />
+                                        </label>
+                                        <label className="flex items-center justify-between">
+                                            <span>Line Style</span>
+                                            <select
+                                                value={selectedDrawing.fibonacci.lineStyle}
+                                                onChange={(e) => updateFibonacciSettings(selectedDrawing.id, { lineStyle: e.target.value as DrawingLineStyle })}
+                                                className="h-6 rounded border border-[#33445a] bg-[#080d14] px-1 text-[9px]"
+                                            >
+                                                <option value="solid">Solid</option>
+                                                <option value="dashed">Dashed</option>
+                                                <option value="dotted">Dotted</option>
+                                            </select>
+                                        </label>
+                                    </div>
+                                    <div className="mt-2 rounded border border-amber-500/30 bg-amber-500/10 p-1.5 text-[8.5px] leading-relaxed text-amber-200">
+                                        Fibonacci levels are computed linearly in price space.
+                                    </div>
+                                    <Popover.Arrow className="fill-[#33445a]" />
+                                </Popover.Content>
+                            </Popover.Portal>
+                        </Popover.Root>
+                    )}
+                    <button
+                        type="button"
+                        aria-label={selectedDrawing.hidden ? 'Show selected drawing' : 'Hide selected drawing'}
+                        aria-pressed={selectedDrawing.hidden}
+                        onClick={() => {
+                            setDrawings((current) => {
+                                const next = current.map((drawing) => drawing.id === selectedDrawing.id ? { ...drawing, hidden: !drawing.hidden } : drawing);
+                                setHistory((h) => pushHistory(h, current));
+                                return next;
+                            });
+                        }}
+                        className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
+                    >
+                        {selectedDrawing.hidden ? <EyeOff className="size-3.5 text-zinc-500" /> : <Eye className="size-3.5" />}
+                    </button>
                     <button
                         type="button"
                         aria-label={selectedDrawing.locked ? 'Unlock selected drawing' : 'Lock selected drawing'}
                         aria-pressed={selectedDrawing.locked}
-                        onClick={() => setDrawings((current) => current.map((drawing) => drawing.id === selectedDrawing.id ? { ...drawing, locked: !drawing.locked } : drawing))}
+                        onClick={() => {
+                            setDrawings((current) => {
+                                const next = current.map((drawing) => drawing.id === selectedDrawing.id ? { ...drawing, locked: !drawing.locked } : drawing);
+                                setHistory((h) => pushHistory(h, current));
+                                return next;
+                            });
+                        }}
                         className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"
                     >
                         {selectedDrawing.locked ? <Lock className="size-3.5 text-amber-300" /> : <Unlock className="size-3.5" />}
