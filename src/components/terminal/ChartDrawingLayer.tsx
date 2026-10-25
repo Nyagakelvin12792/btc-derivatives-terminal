@@ -48,6 +48,8 @@ function lineDrawing(
             data-drawing-type={view.drawing.type}
             data-start-time={view.drawing.points[0]?.time}
             data-start-price={view.drawing.points[0]?.price}
+            data-end-time={view.drawing.points[1]?.time}
+            data-end-price={view.drawing.points[1]?.price}
             data-locked={view.drawing.locked}
             onClick={(event) => {
                 if (view.preview) return;
@@ -307,6 +309,11 @@ function positionDrawing(
             data-drawing-type={view.drawing.type}
             data-start-time={view.drawing.points[0]?.time}
             data-start-price={view.drawing.points[0]?.price}
+            data-end-time={view.drawing.points[1]?.time}
+            data-end-price={view.drawing.points[1]?.price}
+            data-position-entry={view.drawing.position?.entry}
+            data-position-stop={view.drawing.position?.stop}
+            data-position-target={view.drawing.position?.target}
             data-position-status={riskResult?.status ?? 'evaluating'}
             data-position-quantity={riskResult?.metrics ? riskResult.metrics.quantity.toFixed(riskResult.metrics.quantityPrecision) : undefined}
             data-position-loss={riskResult?.metrics ? riskResult.metrics.lossAtStopUsd.toFixed(2) : undefined}

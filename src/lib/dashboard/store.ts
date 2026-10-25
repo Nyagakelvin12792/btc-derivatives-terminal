@@ -68,6 +68,7 @@ export interface TerminalState {
         gammaRegime: boolean;
         gammaFlip: boolean;
         maxPain: boolean;
+        liquidityHeatmap: boolean;
         volumeProfile: boolean;
         avwap: boolean;
     };
@@ -81,6 +82,7 @@ const defaultChartLayers = {
     gammaRegime: true,
     gammaFlip: true,
     maxPain: true,
+    liquidityHeatmap: true,
     volumeProfile: true,
     avwap: true,
 };
@@ -147,7 +149,11 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     setOptionsDisplay: (display) => set({ optionsDisplay: display }),
     chartLayers: defaultChartLayers,
     toggleChartLayer: (layer) => set((state) => ({
-        chartLayers: { ...state.chartLayers, [layer]: !state.chartLayers[layer] },
+        chartLayers: {
+            ...defaultChartLayers,
+            ...state.chartLayers,
+            [layer]: !(state.chartLayers[layer] ?? defaultChartLayers[layer]),
+        },
     })),
     resetWorkspaceUi: () => set({
         inspectorOpen: true,

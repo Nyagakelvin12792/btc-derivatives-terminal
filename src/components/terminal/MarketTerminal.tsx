@@ -49,12 +49,16 @@ import type { WorkspaceTab } from '../../lib/dashboard/types';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
 import { useBinanceMarketFeed, type BinanceMarketFeed } from '../../lib/binance/use-market-feed';
+import { useBinanceLiquidityHeatmap } from '../../lib/binance/use-liquidity-heatmap';
 import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
 import RiskTerminal, {
+    DEFAULT_RISK_SETTINGS,
     type PositionRiskSettings,
     readPersistedRiskSettings,
+    subscribePersistedRiskSettings,
+    writePersistedRiskSettings,
 } from './RiskTerminal';
 import type { DrawingObject, PositionDrawingType, PositionPrices } from './drawing-model';
 
@@ -242,14 +246,29 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
     const [timeframe, setTimeframe] = useState<ChartTimeframe>('1H');
     const [replayActive, setReplayActive] = useState(false);
     const [utcNow, setUtcNow] = useState('--:--:--');
-    const [riskSettings, setRiskSettings] = useState<PositionRiskSettings>(readPersistedRiskSettings);
+    const riskSettings = useSyncExternalStore(
+        subscribePersistedRiskSettings,
+        readPersistedRiskSettings,
+        () => DEFAULT_RISK_SETTINGS,
+    );
 
     const handleRiskSettingsChange = useCallback((next: PositionRiskSettings) => {
-        setRiskSettings(next);
+        writePersistedRiskSettings(next);
     }, []);
     const isDesktop = useSyncExternalStore(subscribeDesktop, getDesktopSnapshot, () => false);
     const { setActiveWorkspace, dataMode, setDataMode, inspectorOpen, setInspectorOpen, setStudyPaneOpen, activeOrderFlowStudy, setActiveOrderFlowStudy, dteFilter, setDteFilter, chartLayers, toggleChartLayer, resetWorkspaceUi } = useTerminalStore();
     const marketFeed = useBinanceMarketFeed(BINANCE_INTERVALS[timeframe], dataMode === 'LIVE');
+    const liquidityFeed = useBinanceLiquidityHeatmap(dataMode === 'LIVE', {
+        heatmap: {
+            tickSize: 10,
+            visibleDepthBps: 100,
+            minNotionalUsd: 0,
+            maxFrames: 1_800,
+            bucketMs: 500,
+            maxLevelsPerSide: 400,
+        },
+        maxClientFrames: 1_800,
+    });
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -318,7 +337,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
             data-testid="chart-upper-toolbar"
         >
             <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Activity className="size-3.5" />Indicators</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-56 rounded-md border border-[#33445a] bg-[#0b121c] p-2 shadow-lg"><div className="px-2 py-1 text-[9px] font-bold text-zinc-500">ORDER FLOW</div>{ORDER_FLOW_TABS.map((study) => { const state = dataMode === 'DEMO' ? (study === 'CVD' ? 'DEMO' : 'UNAVAILABLE') : marketFeed.state; return <button key={study} type="button" onClick={() => { setStudyPaneOpen(true); setActiveOrderFlowStudy(study); }} className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-[10px] text-zinc-300 hover:bg-white/5"><span>{study}</span><span className={state === 'LIVE' ? 'text-emerald-300' : state === 'DEMO' || state === 'CONNECTING' ? 'text-amber-300' : 'text-zinc-500'}>{state}</span></button>; })}</Popover.Content></Popover.Portal></Popover.Root>
-            <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Layers3 className="size-3.5" />Layers</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-64 rounded-md border border-[#33445a] bg-[#0b121c] p-3 shadow-lg"><div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-bold text-zinc-400">CHART LAYERS</span><button type="button" aria-label="Reset layers" onClick={resetWorkspaceUi}><RotateCcw className="size-3.5 text-zinc-500" /></button></div><LayerToggle label="Primary walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle label="Secondary walls" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /><LayerToggle label="Gamma regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} /><LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} /></Popover.Content></Popover.Portal></Popover.Root>
+            <Popover.Root><Popover.Trigger asChild><button type="button" className="flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5"><Layers3 className="size-3.5" />Layers</button></Popover.Trigger><Popover.Portal><Popover.Content sideOffset={6} className="z-50 w-64 rounded-md border border-[#33445a] bg-[#0b121c] p-3 shadow-lg"><div className="mb-2 flex items-center justify-between"><span className="text-[9px] font-bold text-zinc-400">CHART LAYERS</span><button type="button" aria-label="Reset layers" onClick={resetWorkspaceUi}><RotateCcw className="size-3.5 text-zinc-500" /></button></div><LayerToggle label="Primary walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle label="Secondary walls" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /><LayerToggle label="Gamma regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle label="Liquidity heatmap" checked={chartLayers.liquidityHeatmap !== false} onCheckedChange={() => toggleChartLayer('liquidityHeatmap')} /><LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} /><LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} /></Popover.Content></Popover.Portal></Popover.Root>
             <button type="button" aria-pressed={replayActive} onClick={() => setReplayActive((active) => !active)} className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-zinc-300 hover:bg-white/5', replayActive && 'bg-amber-400/10 text-amber-300')}>{replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Replay</button>
             <div className="ml-auto flex items-center gap-1"><button type="button" onClick={() => isDesktop ? setInspectorOpen(!inspectorOpen) : setMobileInspectorOpen(true)} aria-label="OPTIONS METRICS" className={cn('flex h-8 shrink-0 items-center gap-1.5 rounded border border-cyan-400/55 px-3 text-[10px] font-bold text-cyan-300', inspectorOpen && 'bg-cyan-400/10')}><SlidersHorizontal className="size-3.5" />OPTIONS METRICS</button>{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} className={cn('h-8 min-w-11 shrink-0 rounded border px-2 text-[9px] font-bold', dteFilter === filter ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#263346] text-zinc-500')}>{filter}</button>)}</div>
         </div>
@@ -334,6 +353,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                             <StudyChip label="AVWAP · Swing Low" visible={chartLayers.avwap} onToggle={() => toggleChartLayer('avwap')} description="Anchored VWAP with draggable candle anchor and one-standard-deviation bands." />
                             <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
                             <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />
+                            <StudyChip label="Liquidity Heatmap" visible={chartLayers.liquidityHeatmap !== false} onToggle={() => toggleChartLayer('liquidityHeatmap')} description="Sequence-validated Binance Spot depth history. Session-local only; no synthetic liquidity." />
                         </div>
                         <div className="flex min-h-0 flex-1">
                             <nav
@@ -435,6 +455,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                                 <MarketStructureChart
                                     data={data}
                                     marketFeed={marketFeed}
+                                    liquidityFeed={liquidityFeed}
                                     activeTool={activeTool}
                                     keepDrawing={keepDrawing}
                                     timeframe={timeframe}

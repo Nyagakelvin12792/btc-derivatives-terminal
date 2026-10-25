@@ -697,6 +697,7 @@ test('creates Long/Short position objects with interactive risk HUD and synchron
 
 test('UX15.1/UX15.2 verifies independent position line and extent dragging, locked immutability, and live risk synchronization', async ({ page }, testInfo) => {
     test.skip(testInfo.project.name === 'mobile', 'Desktop position risk interaction check');
+    test.setTimeout(240_000);
 
     const chart = page.locator('[role="group"][aria-label*="BTC price chart"]');
     await expect(chart).toBeVisible();
@@ -776,27 +777,107 @@ test('UX15.1/UX15.2 verifies independent position line and extent dragging, lock
     expect(afterEntryPrice).toBe(draggedEntryPrice);
     expect(afterStopPrice).toBe(draggedStopPrice);
 
-    // 3. Test Left and Right extent drag handles
+    // 3. Drag Entry independently; Stop and Target must remain unchanged.
+    const entryHit = longDrawing.locator('[data-testid="position-hit-entry"]');
+    await expect(entryHit).toBeAttached();
+    const entryBox = await entryHit.boundingBox();
+    expect(entryBox).not.toBeNull();
+    await page.mouse.move(entryBox!.x + entryBox!.width / 2, entryBox!.y + entryBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(entryBox!.x + entryBox!.width / 2, entryBox!.y + entryBox!.height / 2 + 8);
+    await page.mouse.up();
+
+    const afterEntryDragPrice = Number(await entryInput.inputValue());
+    expect(afterEntryDragPrice).toBeLessThan(afterEntryPrice);
+    expect(Number(await stopInput.inputValue())).toBe(afterStopPrice);
+    expect(Number(await targetInput.inputValue())).toBe(afterTargetPrice);
+
+    // 4. Test Left and Right extent drag handles independently.
     const leftHandle = longDrawing.locator('[data-testid="position-handle-left"]');
     const rightHandle = longDrawing.locator('[data-testid="position-handle-right"]');
     await expect(leftHandle).toBeVisible();
     await expect(rightHandle).toBeVisible();
 
-    const rightHandleBox = await rightHandle.boundingBox();
-    expect(rightHandleBox).not.toBeNull();
-
-    // Drag right handle to the right by 40px
-    await page.mouse.move(rightHandleBox!.x + rightHandleBox!.width / 2, rightHandleBox!.y + rightHandleBox!.height / 2);
+    const beforeLeftStart = Number(await longDrawing.getAttribute('data-start-time'));
+    const beforeLeftEnd = Number(await longDrawing.getAttribute('data-end-time'));
+    const leftHandleBox = await leftHandle.boundingBox();
+    expect(leftHandleBox).not.toBeNull();
+    await page.mouse.move(leftHandleBox!.x + leftHandleBox!.width / 2, leftHandleBox!.y + leftHandleBox!.height / 2);
     await page.mouse.down();
-    await page.mouse.move(rightHandleBox!.x + rightHandleBox!.width / 2 + 40, rightHandleBox!.y + rightHandleBox!.height / 2);
+    await page.mouse.move(leftHandleBox!.x + leftHandleBox!.width / 2 - 30, leftHandleBox!.y + leftHandleBox!.height / 2);
     await page.mouse.up();
 
-    // All prices must be strictly preserved after extent drag
-    expect(Number(await entryInput.inputValue())).toBe(afterEntryPrice);
+    expect(Number(await longDrawing.getAttribute('data-start-time'))).not.toBe(beforeLeftStart);
+    expect(Number(await longDrawing.getAttribute('data-end-time'))).toBe(beforeLeftEnd);
+    expect(Number(await entryInput.inputValue())).toBe(afterEntryDragPrice);
     expect(Number(await stopInput.inputValue())).toBe(afterStopPrice);
     expect(Number(await targetInput.inputValue())).toBe(afterTargetPrice);
 
-    // 4. Change risk settings in Risk Terminal and assert live updates on both terminal and chart HUD
+    const rightHandleBox = await rightHandle.boundingBox();
+    expect(rightHandleBox).not.toBeNull();
+    const beforeRightStart = Number(await longDrawing.getAttribute('data-start-time'));
+    const beforeRightEnd = Number(await longDrawing.getAttribute('data-end-time'));
+
+    // Move inward so the chart's right-edge time clamp cannot absorb the drag.
+    await page.mouse.move(rightHandleBox!.x + rightHandleBox!.width / 2, rightHandleBox!.y + rightHandleBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(rightHandleBox!.x + rightHandleBox!.width / 2 - 40, rightHandleBox!.y + rightHandleBox!.height / 2);
+    await page.mouse.up();
+
+    // All prices must be strictly preserved after extent drag
+    expect(Number(await longDrawing.getAttribute('data-start-time'))).toBe(beforeRightStart);
+    expect(Number(await longDrawing.getAttribute('data-end-time'))).not.toBe(beforeRightEnd);
+    expect(Number(await entryInput.inputValue())).toBe(afterEntryDragPrice);
+    expect(Number(await stopInput.inputValue())).toBe(afterStopPrice);
+    expect(Number(await targetInput.inputValue())).toBe(afterTargetPrice);
+
+    // 5. Drag the body while preserving stop/target distances and horizontal duration.
+    const bodyHit = longDrawing.locator('[data-testid="position-hit-body"]');
+    const bodyBox = await bodyHit.boundingBox();
+    const currentEntryBox = await entryHit.boundingBox();
+    const currentTargetBox = await targetHit.boundingBox();
+    expect(bodyBox).not.toBeNull();
+    expect(currentEntryBox).not.toBeNull();
+    expect(currentTargetBox).not.toBeNull();
+    const safeBodyY = ((currentEntryBox!.y + currentEntryBox!.height / 2) + (currentTargetBox!.y + currentTargetBox!.height / 2)) / 2;
+    const safeBodyX = bodyBox!.x + bodyBox!.width * 0.35;
+    const beforeBodyEntry = Number(await entryInput.inputValue());
+    const beforeBodyStop = Number(await stopInput.inputValue());
+    const beforeBodyTarget = Number(await targetInput.inputValue());
+    const beforeBodyStart = Number(await longDrawing.getAttribute('data-start-time'));
+    const beforeBodyEnd = Number(await longDrawing.getAttribute('data-end-time'));
+    await page.mouse.move(safeBodyX, safeBodyY);
+    await page.mouse.down();
+    await page.mouse.move(safeBodyX + 24, safeBodyY + 12);
+    await page.mouse.up();
+
+    const afterBodyEntry = Number(await entryInput.inputValue());
+    const afterBodyStop = Number(await stopInput.inputValue());
+    const afterBodyTarget = Number(await targetInput.inputValue());
+    const afterBodyStart = Number(await longDrawing.getAttribute('data-start-time'));
+    const afterBodyEnd = Number(await longDrawing.getAttribute('data-end-time'));
+    expect(afterBodyEntry).not.toBe(beforeBodyEntry);
+    expect(afterBodyEntry - afterBodyStop).toBeCloseTo(beforeBodyEntry - beforeBodyStop, 5);
+    expect(afterBodyTarget - afterBodyEntry).toBeCloseTo(beforeBodyTarget - beforeBodyEntry, 5);
+    expect(afterBodyEnd - afterBodyStart).toBe(beforeBodyEnd - beforeBodyStart);
+
+    // 6. Use an actual Stop-line pointer drag to create and report invalid Long geometry.
+    const currentStopBox = await stopHit.boundingBox();
+    const movedEntryBox = await entryHit.boundingBox();
+    expect(currentStopBox).not.toBeNull();
+    expect(movedEntryBox).not.toBeNull();
+    await page.mouse.move(currentStopBox!.x + currentStopBox!.width / 2, currentStopBox!.y + currentStopBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(currentStopBox!.x + currentStopBox!.width / 2, movedEntryBox!.y - 24);
+    await page.mouse.up();
+    await expect(longDrawing).toHaveAttribute('data-position-status', 'invalid');
+    await expect(page.getByTestId('risk-error-INVALID_LONG_GEOMETRY')).toBeVisible();
+
+    const currentEntry = Number(await entryInput.inputValue());
+    await stopInput.fill(String(currentEntry - 500));
+    await expect(longDrawing).toHaveAttribute('data-position-status', 'ready');
+
+    // 7. Change risk settings in Risk Terminal and assert live updates on both terminal and chart HUD
     const beforeSettingsChartQty = await longDrawing.getAttribute('data-position-quantity');
     const equityInput = page.getByTestId('risk-input-equity');
     await equityInput.fill('200000');
@@ -818,11 +899,115 @@ test('UX15.1/UX15.2 verifies independent position line and extent dragging, lock
         expect(resetChartQty).toBe(beforeSettingsChartQty);
     }).toPass();
 
-    // 5. Test locking prevents modifications
+    // 8. Locking removes controls and a pointer drag at the former Stop location cannot mutate the object.
+    const lockedEntry = Number(await longDrawing.getAttribute('data-position-entry'));
+    const lockedStop = Number(await longDrawing.getAttribute('data-position-stop'));
+    const lockedTarget = Number(await longDrawing.getAttribute('data-position-target'));
+    const formerStopBox = await stopHit.boundingBox();
+    expect(formerStopBox).not.toBeNull();
     const toolbar = page.getByRole('toolbar', { name: 'Drawing controls' });
     const lockBtn = toolbar.getByRole('button', { name: 'Lock selected drawing' });
     await lockBtn.click();
     await expect(longDrawing).toHaveAttribute('data-locked', 'true');
     // When locked, the draggable hit area elements are unmounted to prevent interaction
     await expect(longDrawing.locator('[data-testid="position-hit-stop"]')).toHaveCount(0);
+    await page.mouse.move(formerStopBox!.x + formerStopBox!.width / 2, formerStopBox!.y + formerStopBox!.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(formerStopBox!.x + formerStopBox!.width / 2, formerStopBox!.y - 40);
+    await page.mouse.up();
+    expect(Number(await longDrawing.getAttribute('data-position-entry'))).toBe(lockedEntry);
+    expect(Number(await longDrawing.getAttribute('data-position-stop'))).toBe(lockedStop);
+    expect(Number(await longDrawing.getAttribute('data-position-target'))).toBe(lockedTarget);
+});
+
+test('renders sequence-validated liquidity frames as a toggleable chart heatmap', async ({ page }, testInfo) => {
+    test.skip(testInfo.project.name === 'mobile', 'Desktop heatmap layer check');
+    test.setTimeout(180_000);
+    await mountLiveMarketRoutes(page);
+    await page.addInitScript(() => {
+        localStorage.setItem(
+            'btc-terminal-ui-v1',
+            JSON.stringify({ state: { dataMode: 'LIVE', activeWorkspace: 'MARKET STRUCTURE' }, version: 1 }),
+        );
+
+        class FakeLiquidityWorker {
+            onmessage: ((event: MessageEvent) => void) | null = null;
+            onerror: ((event: ErrorEvent) => void) | null = null;
+
+            postMessage(message: { type?: string }) {
+                if (message.type !== 'START') return;
+                window.setTimeout(() => {
+                    const coverage = {
+                        startedAt: 1_740_000_000_000,
+                        endedAt: 1_740_000_000_500,
+                        frameCount: 2,
+                        frameCapacity: 1_800,
+                        warmupPercent: 2 / 18,
+                    };
+                    this.onmessage?.(new MessageEvent('message', {
+                        data: {
+                            type: 'STATUS',
+                            connected: true,
+                            paused: false,
+                            reconnectAttempt: 0,
+                            resyncRequired: false,
+                            sequence: {
+                                state: 'LIVE',
+                                lastUpdateId: 90_123_458,
+                                lastEventTime: 1_740_000_000_500,
+                                bufferedEventCount: 0,
+                                gapCount: 0,
+                                successfulBootstrapCount: 1,
+                            },
+                            coverage,
+                        },
+                    }));
+                    for (const [index, capturedAt] of [1_740_000_000_000, 1_740_000_000_500].entries()) {
+                        this.onmessage?.(new MessageEvent('message', {
+                            data: {
+                                type: 'FRAME',
+                                coverage,
+                                frame: {
+                                    schemaVersion: 1,
+                                    source: 'BINANCE_SPOT',
+                                    symbol: 'BTCUSDT',
+                                    venue: 'BINANCE_SPOT',
+                                    capturedAt,
+                                    eventTime: capturedAt - 10,
+                                    lastUpdateId: 90_123_457 + index,
+                                    bestBid: 68_410,
+                                    bestAsk: 68_430,
+                                    midPrice: 68_420,
+                                    levels: [
+                                        { side: 'BID', price: 68_380, quantity: 8 + index, notionalUsd: 547_040 + index * 68_380 },
+                                        { side: 'ASK', price: 68_460, quantity: 7 + index, notionalUsd: 479_220 + index * 68_460 },
+                                    ],
+                                },
+                            },
+                        }));
+                    }
+                }, 0);
+            }
+
+            terminate() {}
+        }
+
+        Object.defineProperty(window, 'Worker', { configurable: true, value: FakeLiquidityWorker });
+    });
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await expect(page.getByLabel('Live BTC price chart with options structure overlays')).toBeVisible({ timeout: 30_000 });
+
+    const heatmap = page.getByTestId('liquidity-heatmap');
+    await expect(heatmap).toBeVisible({ timeout: 20_000 });
+    await expect(heatmap).toHaveAttribute('data-state', 'LIVE');
+    await expect(heatmap).toHaveAttribute('data-frame-count', '2');
+    await expect.poll(async () => Number(await heatmap.getAttribute('data-cell-count'))).toBeGreaterThan(0);
+
+    await page.getByRole('button', { name: 'Layers', exact: true }).click();
+    const heatmapSwitch = page.getByRole('switch', { name: 'Liquidity heatmap' });
+    await expect(heatmapSwitch).toHaveAttribute('data-state', 'checked');
+    await heatmapSwitch.click();
+    await expect(heatmap).toHaveCount(0);
+    await heatmapSwitch.click();
+    await expect(page.getByTestId('liquidity-heatmap')).toBeVisible();
 });

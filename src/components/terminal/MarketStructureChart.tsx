@@ -19,6 +19,7 @@ import { Eye, EyeOff, GripVertical, Lock, Move, Settings, Trash2, Undo2, Unlock 
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
+import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
 import { useBinanceVolumeProfile } from '../../lib/binance/use-volume-profile';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
@@ -32,6 +33,10 @@ import {
 } from '../../lib/ui/market-fixtures';
 import { TIMEFRAME_SECONDS, type ChartTimeframe, type ChartTool } from './types';
 import ChartDrawingLayer from './ChartDrawingLayer';
+import LiquidityHeatmapOverlay, {
+    projectLiquidityHeatmapFrames,
+    type LiquidityHeatmapCell,
+} from './LiquidityHeatmapOverlay';
 import {
     applyDrawingDrag,
     cloneDrawing,
@@ -99,6 +104,7 @@ interface ProfileRange {
 interface MarketStructureChartProps {
     data: TerrainDataContractV2;
     marketFeed: BinanceMarketFeed;
+    liquidityFeed: BinanceLiquidityHeatmapFeed;
     activeTool: ChartTool;
     keepDrawing?: boolean;
     timeframe: ChartTimeframe;
@@ -131,6 +137,7 @@ interface OverlayLayout {
     vahY: number | null;
     pocY: number | null;
     valY: number | null;
+    heatmapCells: LiquidityHeatmapCell[];
 }
 
 interface DrawingDragState {
@@ -216,6 +223,7 @@ function levelStrike(value: unknown): number | undefined {
 export default function MarketStructureChart({
     data,
     marketFeed,
+    liquidityFeed,
     activeTool,
     keepDrawing = false,
     timeframe,
@@ -259,7 +267,7 @@ export default function MarketStructureChart({
     const [overlayLayout, setOverlayLayout] = useState<OverlayLayout>({
         width: 800, height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorX: null, anchorY: null,
         profileLeftX: null, profileRightX: null,
-        profileRows: [], secondaryRows: [], vahY: null, pocY: null, valY: null,
+        profileRows: [], secondaryRows: [], vahY: null, pocY: null, valY: null, heatmapCells: [],
     });
     const [studyPaneHeight, setStudyPaneHeight] = useState<number>(() => readPersistedStudyPaneHeight());
     const [range, setRange] = useState<ProfileRange | null>(null);
@@ -685,6 +693,13 @@ export default function MarketStructureChart({
                 vahY: profileLevels ? coordinate(profileLevels.vah) : null,
                 pocY: profileLevels ? coordinate(profileLevels.poc) : null,
                 valY: profileLevels ? coordinate(profileLevels.val) : null,
+                heatmapCells: chartLayers.liquidityHeatmap !== false
+                    ? projectLiquidityHeatmapFrames(liquidityFeed.frames, {
+                        width: hostWidth,
+                        height: hostHeight,
+                        priceToY: coordinate,
+                    })
+                    : [],
             });
             const projector: ChartProjector = {
                 timeToX: (time: number) => {
@@ -712,7 +727,7 @@ export default function MarketStructureChart({
             cancelAnimationFrame(frame);
             if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
         };
-    }, [anchorIndex, bars, callWall, drawingDraft, drawings, gammaFlip, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels]);
+    }, [anchorIndex, bars, callWall, chartLayers.liquidityHeatmap, drawingDraft, drawings, gammaFlip, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels]);
 
     useEffect(() => {
         if (!studyPaneOpen || !hasChartData) return;
@@ -1250,6 +1265,20 @@ export default function MarketStructureChart({
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
                 </div>}
+
+                {chartLayers.liquidityHeatmap !== false && (
+                    <LiquidityHeatmapOverlay
+                        cells={overlayLayout.heatmapCells}
+                        width={overlayLayout.width}
+                        height={overlayLayout.height}
+                        state={liquidityFeed.sequence.state}
+                        connected={liquidityFeed.connected}
+                        paused={liquidityFeed.paused}
+                        frameCount={liquidityFeed.coverage.frameCount}
+                        warmupPercent={liquidityFeed.coverage.warmupPercent}
+                        errorMessage={liquidityFeed.error?.message}
+                    />
+                )}
 
                 {chartLayers.gammaRegime && <div className="pointer-events-none absolute inset-0 z-10">
                     <div className={cn('absolute inset-x-0 top-0 border-b border-emerald-400/25 bg-emerald-400/[0.045]', positiveGamma && 'bg-emerald-400/[0.075]')} style={{ height: Math.max(0, overlayLayout.flipY) }}><span className="absolute left-3 top-10 rounded border border-emerald-400/20 bg-[#07120f]/90 px-2 py-1 text-[10px] font-bold text-emerald-300">POSITIVE GAMMA · MEAN-REVERSION</span></div>

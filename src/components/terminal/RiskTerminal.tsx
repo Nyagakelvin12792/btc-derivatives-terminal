@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useSyncExternalStore } from 'react';
 import {
     AlertTriangle,
     Calculator,
@@ -62,6 +62,9 @@ export const DEFAULT_RISK_SETTINGS: PositionRiskSettings = {
 };
 
 export const RISK_STORAGE_KEY = 'btc-terminal-risk-settings-v1';
+const RISK_SETTINGS_EVENT = 'btc-terminal-risk-settings-change';
+let cachedRiskSettingsRaw: string | null | undefined;
+let cachedRiskSettings: PositionRiskSettings = DEFAULT_RISK_SETTINGS;
 
 export function sanitizeRiskSettings(raw: unknown): PositionRiskSettings {
     if (!raw || typeof raw !== 'object') {
@@ -157,10 +160,13 @@ export function readPersistedRiskSettings(): PositionRiskSettings {
     if (typeof window === 'undefined') return DEFAULT_RISK_SETTINGS;
     try {
         const raw = window.localStorage.getItem(RISK_STORAGE_KEY);
-        if (!raw) return DEFAULT_RISK_SETTINGS;
-        const parsed = JSON.parse(raw);
-        return sanitizeRiskSettings(parsed);
+        if (raw === cachedRiskSettingsRaw) return cachedRiskSettings;
+        cachedRiskSettingsRaw = raw;
+        cachedRiskSettings = raw ? sanitizeRiskSettings(JSON.parse(raw)) : DEFAULT_RISK_SETTINGS;
+        return cachedRiskSettings;
     } catch {
+        cachedRiskSettingsRaw = null;
+        cachedRiskSettings = DEFAULT_RISK_SETTINGS;
         return DEFAULT_RISK_SETTINGS;
     }
 }
@@ -168,10 +174,28 @@ export function readPersistedRiskSettings(): PositionRiskSettings {
 export function writePersistedRiskSettings(settings: PositionRiskSettings): void {
     if (typeof window === 'undefined') return;
     try {
-        window.localStorage.setItem(RISK_STORAGE_KEY, JSON.stringify(settings));
+        const sanitized = sanitizeRiskSettings(settings);
+        const serialized = JSON.stringify(sanitized);
+        window.localStorage.setItem(RISK_STORAGE_KEY, serialized);
+        cachedRiskSettingsRaw = serialized;
+        cachedRiskSettings = sanitized;
+        window.dispatchEvent(new Event(RISK_SETTINGS_EVENT));
     } catch {
         // ignore quota/private mode errors
     }
+}
+
+export function subscribePersistedRiskSettings(onStoreChange: () => void): () => void {
+    if (typeof window === 'undefined') return () => undefined;
+    const handleStorage = (event: StorageEvent) => {
+        if (event.key === RISK_STORAGE_KEY) onStoreChange();
+    };
+    window.addEventListener('storage', handleStorage);
+    window.addEventListener(RISK_SETTINGS_EVENT, onStoreChange);
+    return () => {
+        window.removeEventListener('storage', handleStorage);
+        window.removeEventListener(RISK_SETTINGS_EVENT, onStoreChange);
+    };
 }
 
 export function evaluatePositionRiskForDrawing(
@@ -271,28 +295,30 @@ export default function RiskTerminal({
     riskSettings: controlledSettings,
     onSettingsChange,
 }: RiskTerminalProps) {
-    const [localSettings, setLocalSettings] = useState<PositionRiskSettings>(readPersistedRiskSettings);
+    const persistedSettings = useSyncExternalStore(
+        subscribePersistedRiskSettings,
+        readPersistedRiskSettings,
+        () => DEFAULT_RISK_SETTINGS,
+    );
     const [showAdvanced, setShowAdvanced] = useState(false);
 
-    const settings = controlledSettings ?? localSettings;
+    const settings = controlledSettings ?? persistedSettings;
 
     function handleSettingsChange<K extends keyof PositionRiskSettings>(key: K, value: PositionRiskSettings[K]) {
         const next = { ...settings, [key]: value };
         if (onSettingsChange) {
             onSettingsChange(next);
         } else {
-            setLocalSettings(next);
+            writePersistedRiskSettings(next);
         }
-        writePersistedRiskSettings(next);
     }
 
     function handleResetDefaults() {
         if (onSettingsChange) {
             onSettingsChange(DEFAULT_RISK_SETTINGS);
         } else {
-            setLocalSettings(DEFAULT_RISK_SETTINGS);
+            writePersistedRiskSettings(DEFAULT_RISK_SETTINGS);
         }
-        writePersistedRiskSettings(DEFAULT_RISK_SETTINGS);
     }
 
     const isPosition = selectedDrawing && (selectedDrawing.type === 'long-position' || selectedDrawing.type === 'short-position');
