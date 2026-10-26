@@ -1,39 +1,52 @@
-# CODEX HANDOFF REPORT — UX16.1 AGGREGATE-TRADE CAPTURE
+# CODEX HANDOFF REPORT — UX16.1 CORRECTIVE ACCEPTANCE
 
 >>> COMPLETED BY: Codex
->>> STATUS: REVIEW REQUIRED
->>> BRANCH: codex/ux16.1-aggregate-trades
->>> COMMIT: 10c74094cf28ae2bbb9e25cdba5093041890c953
->>> TESTS: PASS — Vitest 37 files/228 tests; TypeScript; scoped ESLint 0 warnings/errors; Next.js 16.4.2 webpack production build; bounded Binance live observation 20/20 valid consecutive trades; live browser smoke reached SPOT TAPE READY with explicit no-derived-CVD detail
+>>> STATUS: COMPLETE
+>>> BRANCH: codex/ux16.1-acceptance-fix
+>>> COMMIT: 68e1291
+>>> TESTS: PASS — Vitest 38 files/235 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 production build passed; production Playwright 18 passed/2 intentional desktop-only skips; post-refactor READY lane 2/2 passed on desktop and mobile
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review UX16.1 capture semantics and Antigravity visual-acceptance work before integration; authorize UX16.2 only after this checkpoint is accepted
->>> TARGET: codex/ux16.1-aggregate-trades at 10c74094cf28ae2bbb9e25cdba5093041890c953
+>>> ACTION REQUIRED: Review the integrated UX16.1 checkpoint and authorize UX16.2 trade-delta/CVD derivation only after this capture-only boundary is accepted
+>>> TARGET: UX16.1 aggregate-trade capture, integrity presentation, and deterministic browser acceptance
 
-## Delivered
+## Corrective result
 
-- Added strict Binance Spot aggregate-trade validation and buyer-maker aggressor classification.
-- Added a bounded aggregate-trade tape with deterministic duplicate, late-event, forward-gap, and reconnect policies.
-- Added versioned capture-start, reconnect, and aggregate-ID-gap boundary contracts.
-- Added a dedicated browser Web Worker and runtime that batch trades outside React, reconnect with bounded backoff, and never fabricate missing trades.
-- Added deterministic replay records, fixtures, and exact replay outcomes.
-- Added a no-store `/api/orderflow/config` capability endpoint gated by `ORDERFLOW_AGGTRADE_ENABLED`; the flag remains disabled by default.
-- Added a client capture bridge and bounded reducer.
-- Connected the calm workspace integrity strip to truthful `SPOT TAPE` status, provenance, capture count, freshness, and gap quality.
-- Kept derived tape CVD, footprint, imbalance, absorption, setup grades, Jev decisions, and execution out of UX16.1.
+- Replaced false-positive browser assertions with 16 substantive aggregate-trade
+  scenarios: eight on desktop and the same eight on mobile.
+- Added deterministic worker-protocol evidence that proves `LOADING` transitions
+  to `READY` only after two accepted trades, with a positive count and the exact
+  `capture only, no derived CVD yet` disclosure.
+- Preserved real schema/runtime validation in the aggregate-trade unit suite;
+  the browser fixture does not claim to be an upstream availability test.
+- Added separate HTTP 500, invalid JSON, and HTML capability failures and proved
+  that upstream details do not leak into the terminal.
+- Corrected the UI health mapper so SHADOW capture mode remains non-executing
+  while health still reports `LOADING`, `READY`, `PARTIAL`, `STALE`, or `ERROR`.
+- Added focused unit coverage for disabled, checking, buffering, failure, stale,
+  gap, ready, and pre-first-trade states.
+- Made integrity popovers explicitly keyboard controlled for Enter, Space, and
+  Escape, with stable controlled open state.
+- Replaced the development-server browser lane with a hermetic production-build
+  runner so HMR cannot remount controls during focus and screenshot assertions.
+- Converted legacy mobile no-op executions into explicit desktop-only skips.
+- Replaced the old checking screenshot with verified READY evidence showing two
+  captured trades and the mandatory no-derived-CVD disclosure.
 
 ## Verification evidence
 
-- `npx vitest run`: 37 files, 228 tests passed.
-- `npx tsc --noEmit`: passed.
-- `npx eslint src/lib/orderflow src/app/api/orderflow src/components/terminal/CalmMarketTerminal.tsx`: passed with zero warnings or errors.
-- `npm run build -- --webpack`: passed; `/api/orderflow/config` is emitted as a dynamic route.
-- Direct bounded upstream observation: 20 Binance `btcusdt@aggTrade` messages validated, aggregate IDs were consecutive, and both aggressor directions were observed.
-- Live browser smoke with both UX16 and aggregate-trade flags enabled reached `SPOT TAPE READY` and displayed the accepted-count detail with `no derived CVD yet`.
+- `npx vitest run`: **38 files, 235 tests passed**.
+- `npx tsc --noEmit`: **passed**.
+- Scoped ESLint over changed source, tests, config, and runner: **0 warnings, 0 errors**.
+- `npm run test:ux16`: production build passed, then **18 browser tests passed**
+  with **2 explicit desktop-only mobile skips**.
+- Focused post-refactor READY verification: **2/2 passed** across desktop and mobile.
+- Visual evidence:
+  - `.artifacts/ui-overhaul/ux16-1-safe-default-1366x768.png`
+  - `.artifacts/ui-overhaul/ux16-1-ready-enabled-1920x1080.png`
+  - `.artifacts/ui-overhaul/ux16-1-mobile-390x844.png`
 
-## Review notes and limitation
+## Boundary retained
 
-- Capture is intentionally session-local and bounded. Persistence is not part of UX16.1.
-- Any reconnect creates an explicit continuity boundary. A following aggregate-ID jump records the exact missing range without double-counting the same continuity break.
-- A full existing UX16 Playwright case did not complete because its local-storage setup requested `DEMO` but the browser remained in the repository's default `LIVE` mode. The application itself loaded and the live SPOT TAPE smoke passed. Antigravity owns the dedicated UX16.1 browser-state matrix and should correct the fixture without changing capture behavior.
-- The live observation proves reachability during the verification window only; it is not a permanent availability claim.
-- `NO LIVE EXECUTION` remains intact.
+UX16.1 remains capture-only and shadow-only. It does not derive CVD, footprint,
+imbalance, absorption, setup grades, Jev decisions, or any execution signal.
+`NO LIVE EXECUTION` remains intact.
