@@ -2,6 +2,7 @@
 
 import * as Popover from '@radix-ui/react-popover';
 import { AlertTriangle, CheckCircle2, Database, Radio, RefreshCw, ShieldAlert } from 'lucide-react';
+import { useState } from 'react';
 import type { DataIntegritySourceV1, DataIntegrityStatus } from '../../lib/orderflow/contracts';
 import { cn } from '../../lib/ui/cn';
 import { getDataIntegrityBadgeClasses, getDataIntegrityDotClasses } from './terminal-theme';
@@ -30,6 +31,8 @@ function statusIcon(status: DataIntegrityStatus) {
 }
 
 export default function DataIntegrityStrip({ domains, className }: DataIntegrityStripProps) {
+    const [openDomainKey, setOpenDomainKey] = useState<string | null>(null);
+
     return (
         <div
             className={cn(
@@ -54,12 +57,22 @@ export default function DataIntegrityStrip({ domains, className }: DataIntegrity
                         : `${domain.coverage.freshnessMs}ms`;
 
                     return (
-                        <Popover.Root key={domain.key}>
+                        <Popover.Root
+                            key={domain.key}
+                            open={openDomainKey === domain.key}
+                            onOpenChange={(open) => setOpenDomainKey(open ? domain.key : null)}
+                        >
                             <Popover.Trigger asChild>
                                 <button
                                     type="button"
                                     data-testid={`data-integrity-${domain.key.toLowerCase()}`}
                                     data-status={domain.status.toLowerCase()}
+                                    aria-label={`${domain.label} status: ${domain.status}`}
+                                    onKeyDown={(event) => {
+                                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                                        event.preventDefault();
+                                        setOpenDomainKey(domain.key);
+                                    }}
                                     className={cn(
                                         'flex h-5 shrink-0 items-center gap-1.5 rounded border px-2 text-[9px] font-semibold transition-colors duration-150 hover:border-[#263445]',
                                         badgeClasses,
@@ -75,6 +88,9 @@ export default function DataIntegrityStrip({ domains, className }: DataIntegrity
                             </Popover.Trigger>
                             <Popover.Portal>
                                 <Popover.Content
+                                    role="dialog"
+                                    aria-label={`${domain.label} integrity provenance`}
+                                    data-testid={`data-integrity-popover-${domain.key.toLowerCase()}`}
                                     side="top"
                                     sideOffset={6}
                                     className="z-50 w-72 rounded border border-[#18212C] bg-[#0C1118] p-3 text-[10px] text-[#D8DEE8] shadow-2xl focus:outline-none"
@@ -106,7 +122,10 @@ export default function DataIntegrityStrip({ domains, className }: DataIntegrity
                                         ))}
                                     </div>
                                     {domain.detail && (
-                                        <p className="mt-2.5 border-t border-[#18212C] pt-2 font-sans text-[9px] leading-relaxed text-[#8390A0]">
+                                        <p
+                                            className="mt-2.5 border-t border-[#18212C] pt-2 font-sans text-[9px] leading-relaxed text-[#8390A0]"
+                                            data-testid={`data-integrity-detail-${domain.key.toLowerCase()}`}
+                                        >
                                             {domain.detail}
                                         </p>
                                     )}

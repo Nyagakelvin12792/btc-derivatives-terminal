@@ -129,6 +129,89 @@ export const ClassifiedTradeV1Schema = z.object({
 
 export type ClassifiedTradeV1 = z.infer<typeof ClassifiedTradeV1Schema>;
 
+export const TradeCaptureBoundaryReasonSchema = z.enum([
+    'CAPTURE_START',
+    'RECONNECT',
+    'AGGREGATE_ID_GAP',
+]);
+
+export type TradeCaptureBoundaryReason = z.infer<typeof TradeCaptureBoundaryReasonSchema>;
+
+export const TradeCaptureBoundaryV1Schema = z.object({
+    schemaVersion: z.literal(ORDERFLOW_SCHEMA_VERSION),
+    boundaryId: z.string().trim().min(1).max(160),
+    reason: TradeCaptureBoundaryReasonSchema,
+    occurredAt: safeInteger,
+    previousAggregateTradeId: safeInteger.nullable(),
+    nextAggregateTradeId: safeInteger.nullable(),
+    missingAggregateTradeCount: safeInteger.nullable(),
+}).strict().superRefine((value, context) => {
+    if (value.reason === 'CAPTURE_START' && value.previousAggregateTradeId !== null) {
+        context.addIssue({
+            code: 'custom',
+            message: 'Capture start cannot have a previous aggregate trade ID',
+            path: ['previousAggregateTradeId'],
+        });
+    }
+    if (value.reason === 'AGGREGATE_ID_GAP') {
+        if (value.previousAggregateTradeId === null || value.nextAggregateTradeId === null) {
+            context.addIssue({
+                code: 'custom',
+                message: 'Aggregate-ID gaps require both boundary IDs',
+                path: ['nextAggregateTradeId'],
+            });
+            return;
+        }
+        const expectedMissing = value.nextAggregateTradeId - value.previousAggregateTradeId - 1;
+        if (expectedMissing <= 0 || value.missingAggregateTradeCount !== expectedMissing) {
+            context.addIssue({
+                code: 'custom',
+                message: 'Aggregate-ID gap count must exactly match the missing ID range',
+                path: ['missingAggregateTradeCount'],
+            });
+        }
+    } else if (value.missingAggregateTradeCount !== null) {
+        context.addIssue({
+            code: 'custom',
+            message: 'Only aggregate-ID gaps may declare missing trades',
+            path: ['missingAggregateTradeCount'],
+        });
+    }
+});
+
+export type TradeCaptureBoundaryV1 = z.infer<typeof TradeCaptureBoundaryV1Schema>;
+
+export const AggregateTradeCaptureStatsV1Schema = z.object({
+    acceptedCount: safeInteger,
+    duplicateCount: safeInteger,
+    outOfOrderCount: safeInteger,
+    invalidCount: safeInteger,
+    reconnectCount: safeInteger,
+}).strict();
+
+export type AggregateTradeCaptureStatsV1 = z.infer<typeof AggregateTradeCaptureStatsV1Schema>;
+
+export const AggregateTradeCaptureSnapshotV1Schema = z.object({
+    schemaVersion: z.literal(ORDERFLOW_SCHEMA_VERSION),
+    trades: z.array(ClassifiedTradeV1Schema).max(100_000),
+    boundaries: z.array(TradeCaptureBoundaryV1Schema).max(10_000),
+    coverage: CaptureCoverageV1Schema,
+    stats: AggregateTradeCaptureStatsV1Schema,
+    lastAggregateTradeId: safeInteger.nullable(),
+}).strict();
+
+export type AggregateTradeCaptureSnapshotV1 = z.infer<typeof AggregateTradeCaptureSnapshotV1Schema>;
+
+export const AggregateTradeCapabilityV1Schema = z.object({
+    schemaVersion: z.literal(ORDERFLOW_SCHEMA_VERSION),
+    enabled: z.boolean(),
+    dataMode: z.literal('SHADOW'),
+    source: z.literal('BINANCE_SPOT'),
+    symbol: z.literal('BTCUSDT'),
+}).strict();
+
+export type AggregateTradeCapabilityV1 = z.infer<typeof AggregateTradeCapabilityV1Schema>;
+
 export const FootprintCellV1Schema = z.object({
     priceLow: positiveFinite,
     priceHigh: positiveFinite,

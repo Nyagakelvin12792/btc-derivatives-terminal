@@ -1,65 +1,52 @@
-# CODEX HANDOFF REPORT — UX16.0 REVIEWED INTEGRATION
+# CODEX HANDOFF REPORT — UX16.1 CORRECTIVE ACCEPTANCE
 
 >>> COMPLETED BY: Codex
->>> STATUS: REVIEW REQUIRED
->>> BRANCH: codex/ux16-integration
->>> COMMIT: f6dd380
->>> TESTS: PASS — Vitest 31 files/209 tests; TypeScript; scoped ESLint 0 warnings/errors; default and UX16-enabled production builds; UX16 Playwright 2/2; terminal regression Playwright 13 passed/9 intentional mobile skips; legacy fallback smoke 1/1
+>>> STATUS: COMPLETE
+>>> BRANCH: codex/ux16.1-acceptance-fix
+>>> COMMIT: 68e1291
+>>> TESTS: PASS — Vitest 38 files/235 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 production build passed; production Playwright 18 passed/2 intentional desktop-only skips; post-refactor READY lane 2/2 passed on desktop and mobile
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review the assembled UX16.0 checkpoint, approve the truthful opt-in shell, and decide whether to merge to main
->>> TARGET: codex/ux16-integration at f6dd380
+>>> ACTION REQUIRED: Review the integrated UX16.1 checkpoint and authorize UX16.2 trade-delta/CVD derivation only after this capture-only boundary is accepted
+>>> TARGET: UX16.1 aggregate-trade capture, integrity presentation, and deterministic browser acceptance
 
-## Integrated lineage
+## Corrective result
 
-- Baseline: `49fad756`.
-- Codex UX16.0 contract foundation: `6185e1f`, integrated as `d7a4afe`.
-- Antigravity shell: `7fc5363`, integrated as `2ac4ada`.
-- Antigravity handoff update: `ca50b74`, integrated as `8bae8eb`.
-- Codex combined review and corrections: `f6dd380`.
-
-## Review result
-
-Antigravity's shell was not accepted unchanged. The first combined review found hard-coded values that visually claimed observed trade-based CVD, absorption, replenishment, and a `WATCH_LONG` setup even though UX16.1–UX16.5 were not implemented. The browser-test claim in the supplied transcript also did not provide reliable completion evidence. Those blockers are corrected in `f6dd380`.
-
-## Delivered corrections
-
-- Added `CalmMarketTerminal` and `LegacyMarketTerminal` behind `NEXT_PUBLIC_UX16_CALM_WORKSPACE`.
-- Kept every UX16 public feature flag off by default.
-- Restored legacy inspector/heatmap defaults when the calm-workspace flag is absent.
-- Kept the raw liquidity heatmap hidden by default in the calm Context workspace.
-- Replaced UI-local integrity types with the versioned `src/lib/orderflow` contracts.
-- Replaced hard-coded freshness and feed claims with source-derived or explicitly unavailable provenance.
-- Marked demo candles/options as `REPLAY`, demo depth/tape as `UNAVAILABLE`, and Jev as disabled `SHADOW`.
-- Removed fabricated CVD, absorption, replenishment, setup zone, trigger, invalidation, evidence, conflicts, and passing gates.
-- UX16.0 Flow now shows zero accepted events and explains that aggregate-trade capture begins in UX16.1.
-- UX16.0 Setup now renders `INSUFFICIENT_DATA`, grade `NONE`, and missing gates.
-- Removed the duplicated workspace-mode selector from the Decision Dock; the header is the single mode switcher.
-- Kept existing chart, drawing, fixed-range VP, AVWAP, lower-pane, risk, history, and heatmap-toggle behavior working.
-- Updated visual artifacts at 1366x768, 1664x936, and 1920x1080.
-- Updated the Deribit route handler to the non-optional Next.js 16 request signature and updated its tests.
+- Replaced false-positive browser assertions with 16 substantive aggregate-trade
+  scenarios: eight on desktop and the same eight on mobile.
+- Added deterministic worker-protocol evidence that proves `LOADING` transitions
+  to `READY` only after two accepted trades, with a positive count and the exact
+  `capture only, no derived CVD yet` disclosure.
+- Preserved real schema/runtime validation in the aggregate-trade unit suite;
+  the browser fixture does not claim to be an upstream availability test.
+- Added separate HTTP 500, invalid JSON, and HTML capability failures and proved
+  that upstream details do not leak into the terminal.
+- Corrected the UI health mapper so SHADOW capture mode remains non-executing
+  while health still reports `LOADING`, `READY`, `PARTIAL`, `STALE`, or `ERROR`.
+- Added focused unit coverage for disabled, checking, buffering, failure, stale,
+  gap, ready, and pre-first-trade states.
+- Made integrity popovers explicitly keyboard controlled for Enter, Space, and
+  Escape, with stable controlled open state.
+- Replaced the development-server browser lane with a hermetic production-build
+  runner so HMR cannot remount controls during focus and screenshot assertions.
+- Converted legacy mobile no-op executions into explicit desktop-only skips.
+- Replaced the old checking screenshot with verified READY evidence showing two
+  captured trades and the mandatory no-derived-CVD disclosure.
 
 ## Verification evidence
 
-- `npx vitest run`: PASS — 31 files, 209 tests.
-- `npx tsc --noEmit`: PASS.
-- Scoped ESLint across all UX16 integration files, order-flow contracts, Deribit route, and browser tests: PASS — 0 warnings, 0 errors.
-- Default-off production build: PASS.
-- UX16-enabled production build: PASS.
-- Default-off legacy browser smoke: PASS — 1/1.
-- `tests/ui/ux16-calm-workspace.pw.ts`: PASS — 2/2 projects.
-- `tests/ui/market-terminal.pw.ts`: PASS — 13 applicable scenarios; 9 mobile skips are declared desktop-only interactions.
-- Accessibility scenario: PASS with no serious or critical automated violations.
-- `git diff --cached --check`: PASS before the correction commit.
+- `npx vitest run`: **38 files, 235 tests passed**.
+- `npx tsc --noEmit`: **passed**.
+- Scoped ESLint over changed source, tests, config, and runner: **0 warnings, 0 errors**.
+- `npm run test:ux16`: production build passed, then **18 browser tests passed**
+  with **2 explicit desktop-only mobile skips**.
+- Focused post-refactor READY verification: **2/2 passed** across desktop and mobile.
+- Visual evidence:
+  - `.artifacts/ui-overhaul/ux16-1-safe-default-1366x768.png`
+  - `.artifacts/ui-overhaul/ux16-1-ready-enabled-1920x1080.png`
+  - `.artifacts/ui-overhaul/ux16-1-mobile-390x844.png`
 
-## Known repository-wide lint debt
+## Boundary retained
 
-`npx eslint .` still reports four pre-existing errors outside the UX16 integration files in legacy dashboard/3D/adapters code. They are not introduced by this checkpoint. The scoped UX16 lint gate is clean.
-
-## Safe boundaries preserved
-
-- No aggregate-trade WebSocket or live tape was added; that remains UX16.1.
-- No true CVD, footprint, or trade-volume-profile engine was added; that remains UX16.2.
-- No imbalance, absorption, acceptance, divergence, or setup-signal calculation was added.
-- No Jev request or response path was enabled.
-- No live execution path was introduced.
-- Fixtures and demo data are never labelled live.
+UX16.1 remains capture-only and shadow-only. It does not derive CVD, footprint,
+imbalance, absorption, setup grades, Jev decisions, or any execution signal.
+`NO LIVE EXECUTION` remains intact.

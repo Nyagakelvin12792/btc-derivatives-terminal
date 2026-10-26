@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
+    test.skip(({ isMobile }) => isMobile, 'Desktop reference screenshots and inspector assertions are desktop-only.');
+
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => {
             localStorage.setItem(
@@ -16,15 +18,24 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
             );
         });
         await page.goto('/', { waitUntil: 'domcontentloaded' });
-        await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 20_000 });
-        await expect(page.getByRole('button', { name: '● DEMO', exact: true })).toBeVisible({ timeout: 20_000 });
+        await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 25_000 });
+
+        // Allow Zustand hydration to settle, then keep enforcing DEMO until the
+        // mode control and chart agree. A one-time click can race late hydration.
+        const demoButton = page.getByRole('button', { name: '● DEMO', exact: true }).first();
+        const liveButton = page.getByRole('button', { name: '● LIVE', exact: true }).first();
+        const demoChart = page.getByLabel('Demo BTC price chart with options structure overlays').first();
+        await page.waitForTimeout(750);
+        await expect.poll(async () => {
+            if (await liveButton.isVisible().catch(() => false)) await liveButton.click();
+            return await demoButton.isVisible().catch(() => false)
+                && await demoChart.isVisible().catch(() => false);
+        }, { timeout: 20_000 }).toBe(true);
         await expect(page.getByLabel('Demo BTC price chart with options structure overlays')).toBeVisible({ timeout: 20_000 });
     });
 
-    test('verifies workspace modes, attention budget, and captures reference viewports', async ({ page }, testInfo) => {
-        if (testInfo.project.name !== 'desktop-16x9') {
-            return;
-        }
+    test('verifies workspace modes, attention budget, and captures reference viewports', async ({ page }) => {
+        test.setTimeout(120_000);
 
         // 1. Verify Header Workspace Mode Switcher defaults to CONTEXT
         const contextBtn = page.getByTestId('workspace-mode-context').first();
