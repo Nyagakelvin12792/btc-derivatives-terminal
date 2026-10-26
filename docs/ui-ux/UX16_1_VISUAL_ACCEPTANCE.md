@@ -55,16 +55,16 @@ The `SPOT TAPE` status badge resides in the bottom Data Integrity Strip (`data-t
 | :--- | :--- | :--- | :--- | :--- |
 | **`UNAVAILABLE`** | Text: `#5C697A`<br>Dot: `bg-[#5C697A]` | `#18212C` | `#070A0F` | Flag disabled, DEMO data mode, or server offline |
 | **`LOADING`** | Text: `#8390A0`<br>Dot: `bg-[#8390A0]` | `#263445` | `#0C1118` | Checking capability (`GET /api/orderflow/config`) or stream buffering prior to first accepted trade |
-| **`READY`** | Text: `#2CC7A0`<br>Dot: `bg-[#2CC7A0]` | `#18212C` | `#0C1118` | Live connection active AND $\ge 1$ validated accepted trades captured |
+| **`READY`** | Text: `#D8DEE8`<br>Dot: `bg-[#2CC7A0]` | `#18212C` | `#0C1118` | Live connection active AND $\ge 1$ validated accepted trades captured |
 | **`PARTIAL`** | Text: `#E6B450`<br>Dot: `bg-[#E6B450]` | `#18212C` | `#0C1118` | Continuity gap detected in trade sequence; capture is incomplete |
 | **`STALE`** | Text: `#8E98A6`<br>Dot: `bg-[#8E98A6]` | `#8E98A6`/40 | `#8E98A6`/10 | Stream connected but no trade received for $> 15,000\text{ms}$ |
 | **`ERROR`** | Text: `#E06379`<br>Dot: `bg-[#E06379]` | `#18212C` | `#0C1118` | Network disconnect, malformed payload, or worker crash |
 | **`REPLAY`** | Text: `#39A9F5`<br>Dot: `bg-[#39A9F5]` | `#18212C` | `#0C1118` | Replaying deterministic recorded fixture session |
 
 ### Visual Discipline Rules
-- Green (`#2CC7A0`) is permitted **only** when capture is verifiably live and receiving accepted trades (`READY`).
+- A green status dot (`#2CC7A0`) is permitted **only** when capture is verifiably live and receiving accepted trades (`READY`); badge text remains neutral for visual calm.
 - Saturated red is reserved **strictly** for fatal capture/worker errors (`ERROR`).
-- Yellow/Amber (`#E6B450`) indicates degraded continuity (`PARTIAL`) or stale feeds (`STALE`).
+- Yellow/Amber (`#E6B450`) indicates degraded continuity (`PARTIAL`); muted slate (`#8E98A6`) indicates stale feeds (`STALE`).
 - Muted neutral slate (`#5C697A` / `#8390A0`) is used for disabled or in-flight discovery states.
 - No glowing borders, animations, or pulsing effects.
 
@@ -146,9 +146,9 @@ Clicking or keyboard-activating (`Enter` / `Space`) the `SPOT TAPE` badge reveal
 | :--- | :--- | :--- |
 | `ux16-aggregate-trade-capture.pw.ts` | Safe default (`enabled: false`) | `SPOT TAPE` shows `UNAVAILABLE`, detail notes disabled flag |
 | `ux16-aggregate-trade-capture.pw.ts` | Delayed config response | `SPOT TAPE` shows `LOADING`, no fake counts |
-| `ux16-aggregate-trade-capture.pw.ts` | Malformed config response | Terminal does not crash, shows `ERROR` or `UNAVAILABLE` |
-| `ux16-aggregate-trade-capture.pw.ts` | Enabled stream | `READY` only after $\ge 1$ trades, shows `"capture only, no derived CVD yet"` |
+| `ux16-aggregate-trade-capture.pw.ts` | HTTP 500, invalid JSON, and HTML config responses | Terminal does not crash, fails closed to `ERROR`, and leaks no upstream detail |
+| `aggregate-trade-runtime.test.ts` + `ux16-aggregate-trade-capture.pw.ts` | Schema-valid Binance messages through runtime, followed by a deterministic worker-protocol browser fixture | `READY` only after $\ge 1$ accepted trades and shows `"capture only, no derived CVD yet"` |
 | `ux16-aggregate-trade-capture.pw.ts` | Responsive viewports | 1366×768, 1920×1080, and 390×844 render cleanly without overflow |
-| `ux16-aggregate-trade-capture.pw.ts` | Keyboard accessibility | Tab to badge, Enter/Space opens Popover, Escape dismisses |
+| `ux16-aggregate-trade-capture.pw.ts` | Keyboard accessibility | Focus badge, Enter and Space each open Popover, Escape dismisses |
 | `ux16-calm-workspace.pw.ts` | Shell & modes regression | Context, Flow, and Setup modes render correctly |
 | `market-terminal.pw.ts` | UX15 fallback & legacy parity | Full terminal drawing and structure regression passes |

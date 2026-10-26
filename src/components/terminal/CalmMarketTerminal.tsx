@@ -62,8 +62,9 @@ import {
 import type { DrawingObject, PositionPrices } from './drawing-model';
 import DecisionDock from './DecisionDock';
 import DataIntegrityStrip from './DataIntegrityStrip';
+import { getAggregateTradeIntegrityStatus } from './trade-integrity-status';
 import { ORDERFLOW_SCHEMA_VERSION, type DataIntegritySourceV1 } from '../../lib/orderflow/contracts';
-import { createCaptureCoverageV1, dataIntegrityStatusFromCoverage } from '../../lib/orderflow/provenance';
+import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
 
 interface MarketTerminalProps {
     data: TerrainDataContractV2;
@@ -382,11 +383,12 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
         const tradeCoverage = dataMode === 'DEMO'
             ? offlineCoverage('BINANCE_SPOT', 'TRADE')
             : aggregateTradeFeed.coverage;
-        const tradeStatus = dataMode === 'DEMO' || aggregateTradeFeed.capability === 'DISABLED'
-            ? 'UNAVAILABLE'
-            : aggregateTradeFeed.capability === 'CHECKING' ? 'LOADING'
-                : aggregateTradeFeed.capability === 'ERROR' || aggregateTradeFeed.error ? 'ERROR'
-                    : dataIntegrityStatusFromCoverage(tradeCoverage);
+        const tradeStatus = getAggregateTradeIntegrityStatus({
+            capability: aggregateTradeFeed.capability,
+            coverage: aggregateTradeFeed.coverage,
+            error: aggregateTradeFeed.error,
+            stats: { acceptedCount: aggregateTradeFeed.stats.acceptedCount },
+        }, dataMode);
         const tradeDetail = dataMode === 'DEMO'
             ? 'No replay tape is presented as observed live data.'
             : aggregateTradeFeed.capability === 'DISABLED'

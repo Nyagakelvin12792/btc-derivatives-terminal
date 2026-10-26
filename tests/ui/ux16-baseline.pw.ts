@@ -1,6 +1,8 @@
 import { expect, test } from '@playwright/test';
 
 test.describe('UX16 Baseline Screenshot Capture', () => {
+    test.skip(({ isMobile }) => isMobile, 'Reference screenshot matrix is desktop-only.');
+
     test.beforeEach(async ({ page }) => {
         await page.addInitScript(() => {
             localStorage.setItem(
@@ -14,12 +16,7 @@ test.describe('UX16 Baseline Screenshot Capture', () => {
         await expect(page.getByLabel('Demo BTC price chart with options structure overlays')).toBeVisible({ timeout: 20_000 });
     });
 
-    test('captures terminal baseline at reference viewports', async ({ page }, testInfo) => {
-        // Run only for desktop project to avoid running twice
-        if (testInfo.project.name !== 'desktop-16x9') {
-            return;
-        }
-
+    test('captures terminal baseline at reference viewports', async ({ page }) => {
         const viewports = [
             { width: 1366, height: 768, filename: '.artifacts/ui-overhaul/ux16-baseline-1366x768.png' },
             { width: 1664, height: 936, filename: '.artifacts/ui-overhaul/ux16-baseline-1664x936.png' },

@@ -2,6 +2,7 @@
 
 import * as Popover from '@radix-ui/react-popover';
 import { AlertTriangle, CheckCircle2, Database, Radio, RefreshCw, ShieldAlert } from 'lucide-react';
+import { useState } from 'react';
 import type { DataIntegritySourceV1, DataIntegrityStatus } from '../../lib/orderflow/contracts';
 import { cn } from '../../lib/ui/cn';
 import { getDataIntegrityBadgeClasses, getDataIntegrityDotClasses } from './terminal-theme';
@@ -30,6 +31,8 @@ function statusIcon(status: DataIntegrityStatus) {
 }
 
 export default function DataIntegrityStrip({ domains, className }: DataIntegrityStripProps) {
+    const [openDomainKey, setOpenDomainKey] = useState<string | null>(null);
+
     return (
         <div
             className={cn(
@@ -54,13 +57,22 @@ export default function DataIntegrityStrip({ domains, className }: DataIntegrity
                         : `${domain.coverage.freshnessMs}ms`;
 
                     return (
-                        <Popover.Root key={domain.key}>
+                        <Popover.Root
+                            key={domain.key}
+                            open={openDomainKey === domain.key}
+                            onOpenChange={(open) => setOpenDomainKey(open ? domain.key : null)}
+                        >
                             <Popover.Trigger asChild>
                                 <button
                                     type="button"
                                     data-testid={`data-integrity-${domain.key.toLowerCase()}`}
                                     data-status={domain.status.toLowerCase()}
                                     aria-label={`${domain.label} status: ${domain.status}`}
+                                    onKeyDown={(event) => {
+                                        if (event.key !== 'Enter' && event.key !== ' ') return;
+                                        event.preventDefault();
+                                        setOpenDomainKey(domain.key);
+                                    }}
                                     className={cn(
                                         'flex h-5 shrink-0 items-center gap-1.5 rounded border px-2 text-[9px] font-semibold transition-colors duration-150 hover:border-[#263445]',
                                         badgeClasses,
