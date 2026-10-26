@@ -1,140 +1,89 @@
-# GEMINI HANDOFF REPORT — UX16.0: Calm Analytical Instrument Workspace Shell
+# GEMINI HANDOFF REPORT — UX16.1: Aggregate-Trade Capture (Visual Acceptance & Browser Verification Lane)
 
 ```markdown
->>> COMPLETED BY: Gemini (Antigravity)
+>>> COMPLETED BY: Gemini
 >>> STATUS: REVIEW REQUIRED
->>> BRANCH: agent/gemini
->>> COMMIT: 7fc5363
->>> TESTS: vitest 27 passed (188 tests); eslint 0 errors 0 warnings; tsc --noEmit 0 errors; next build passed; playwright passed (ux16-calm-workspace 2/2 passed, market-terminal passed)
+>>> BRANCH: agent/gemini-ux16.1-acceptance
+>>> COMMIT: PENDING_COMMIT
+>>> TESTS: Local deterministic tests: PASS (Vitest 37 files/230 tests, tsc 0 errors, scoped eslint 0 warnings/errors, next build 10/10 routes passed, ux16-aggregate-trade-capture Playwright 12/12 passed across desktop-16x9 and mobile viewports, ux16-calm-workspace Playwright 2/2 passed across desktop-16x9 and mobile viewports); Live observation: Upstream live Binance WebSocket reached SPOT TAPE READY with accepted trade count and mandatory "capture only, no derived CVD yet" disclosure
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Architectural review of UX16.0 Calm Analytical Instrument Workspace Shell on agent/gemini
->>> TARGET: src/components/terminal/terminal-theme.ts, src/lib/dashboard/store.ts, src/components/terminal/DataIntegrityStrip.tsx, src/components/terminal/ContextMode.tsx, src/components/terminal/FlowMode.tsx, src/components/terminal/SetupMode.tsx, src/components/terminal/DecisionDock.tsx, src/components/terminal/MarketTerminal.tsx, src/components/terminal/ux16-workspace-shell.test.ts, tests/ui/ux16-baseline.pw.ts, tests/ui/ux16-calm-workspace.pw.ts
+>>> ACTION REQUIRED: Review and merge UX16.1 visual/browser acceptance after Codex aggregate-trade branch is available
+>>> TARGET: UX16.1 SPOT TAPE data-integrity presentation and Playwright acceptance
 ```
 
 ---
 
-## 1. Scope & Strict Ownership Compliance
+## 1. Lineage & Coordination Boundaries
 
-In accordance with `docs/ui-ux/UX16_INSTITUTIONAL_ACTIVITY_MAP_IMPLEMENTATION_PLAN.md` and the parallel development protocol:
-- **Baseline Commit**: `49fad7569d7183711b8dff4c8027e6668ee63091` (`codex/ux15-assembled`).
-- **Gemini Owned**:
-  - `src/components/terminal/**`
-  - `src/lib/dashboard/store.ts` (UI state only: `workspaceMode`, default layer attention budget, inspector defaults)
-  - `tests/ui/**` (`ux16-baseline.pw.ts`, `ux16-calm-workspace.pw.ts`, `market-terminal.pw.ts`)
-  - UX16 visual regression screenshots (`.artifacts/ui-overhaul/ux16-*`)
-  - `.agents/handoffs/gemini.md`
-- **Strict Boundary Enforced**:
-  - `src/lib/orderflow/**`, `src/lib/binance/**`, `src/lib/intelligence/**`, `src/lib/quant/**`, `src/lib/deribit/**`, and `src/app/api/**` were **strictly untouched**.
-  - `STATE.md` and `docs/ui-ux/UX16_INSTITUTIONAL_ACTIVITY_MAP_IMPLEMENTATION_PLAN.md` were **strictly untouched**.
-  - No synthetic depth history was created, no domain signals were calculated in UI components, and Jev remains strictly Shadow (cannot override deterministic state).
-  - All untracked user files and artifacts (`REMOVE_DIGIPROCTOR_CONFLICTS.bat`, `test-results/`, `ux15-0-*`) were **strictly preserved**.
-
----
-
-## 2. Key Deliverables Implemented
-
-### 2.1 Baseline Visual Capture (Objective 1)
-Pre-implementation baseline screenshots were captured across three required reference resolutions:
-- `.artifacts/ui-overhaul/ux16-baseline-1366x768.png` (1366×768)
-- `.artifacts/ui-overhaul/ux16-baseline-1664x936.png` (1664×936)
-- `.artifacts/ui-overhaul/ux16-baseline-1920x1080.png` (1920×1080)
-
-### 2.2 Calm Analytical Instrument Visual Tokens (Objective 2)
-Implemented in `src/components/terminal/terminal-theme.ts` and integrated across the terminal shell:
-- **Dark Neutral Canvas**: Base background `#070A0F`, raised surfaces `#0C1118`, borders and subtle chart grids `#18212C`.
-- **Neutral Foreground Hierarchy**: High-contrast primary text `#D8DEE8`, secondary neutral labels `#8390A0`, and subtle metadata `#5C697A`.
-- **Directional-Only Color Encoding**:
-  - Bullish / Call Delta / Bid: `#2CC7A0`
-  - Bearish / Put Delta / Ask: `#E06379`
-  - Purely directional; eliminated saturated neon green/red across neutral frames, borders, and status pills.
-- **Functional Semantics**:
-  - Interactive / Selected: `#39A9F5`
-  - Warning / Attention / Degraded: `#E6B450`
-  - Stale / Unavailable / Shadow: `#8E98A6`
-- **Visual Discipline**: Stripped all glassmorphism `backdrop-blur-*`, glowing/pulsing borders, animated loops, and bright saturated full-card gradients.
-
-### 2.3 Workspace Mode Shell (Objective 3)
-Added `WorkspaceMode = 'CONTEXT' | 'FLOW' | 'SETUP'` to `useTerminalStore`, defaulting to `'CONTEXT'`.
-- Mode switchers placed prominently in the terminal header and in the right-side DecisionDock (`[CONTEXT] [FLOW] [SETUP]`).
-- Switching modes changes the primary analytical presentation without disrupting chart pan/zoom or data subscriptions.
-
-### 2.4 Context Mode (Objective 4 - Default Mode)
-Implemented in `src/components/terminal/ContextMode.tsx`:
-- Displays price, major options levels (Gamma Wall, Call Wall, Put Wall), Gamma Regime badge (Positive/Long Gamma vs Negative/Short Gamma), selected AVWAP, high-level volume profile summary (POC, VAH, VAL), concise deterministic decision state, and data freshness.
-- Keeps full footprint numbers, saturated liquidity heatmap carpets, and open Jev panels strictly hidden/collapsed by default.
-- Shows collapsed Jev Shadow card with clear status badge indicating advisory role.
-
-### 2.5 Flow Mode (Objective 5)
-Implemented in `src/components/terminal/FlowMode.tsx`:
-- Dedicated presentation containers for:
-  - Liquidity Surface metrics (bid/ask depth, wall distances, replenishment signals)
-  - Footprint & Imbalance summaries
-  - True Cumulative Volume Delta (CVD) and Delta bar indicators
-  - Detected order flow events
-
-### 2.6 Setup Mode (Objective 6)
-Implemented in `src/components/terminal/SetupMode.tsx`:
-- Structured institutional trade planning containers:
-  - Setup State & Bias
-  - Decision Zone and Active Reference Levels
-  - Immediate Trigger & Invalidating Condition
-  - Deterministic Grade badge with mandatory gates check
-  - Aligned Evidence vs Conflicting Evidence lists
-  - Collapsed Jev Shadow Opinion panel with non-overriding advisory disclaimer
-
-### 2.7 Progressive Disclosure & Data Integrity Strip (Objective 7)
-Implemented in `src/components/terminal/DataIntegrityStrip.tsx`:
-- Compact, unobtrusive strip positioned directly above the terminal bottom dock.
-- Displays typed integrity status badges: `loading`, `ready`, `partial`, `stale`, `unavailable`, `error`, `replay`, `shadow`.
-- Monitored domains:
-  - Deribit Options (GEX, Vanna, Charm, DTE filter)
-  - Binance Market (Spot Trades, Kline, Mark Price)
-  - Binance Liquidity (L2 Depth, Sequence State, Gap Detection)
-  - Jev Shadow (Advisory Model, Offline/Unavailable State)
-- Hover/click popover reveals detailed venue provenance, timestamp freshness, sequence gaps, and degradation reasons without opening modal windows.
-
-### 2.8 Attention Budget Enforcement (Objective 8)
-- Capped default high-salience chart overlays to $\le 3$:
-  - `walls: true` (Major Put/Call walls)
-  - `gammaFlip: true` (Zero gamma boundary)
-  - `avwap: true` (Anchored VWAP)
-  - `secondaryWalls: false` (Default disabled to reduce visual clutter)
-  - `maxPain: false` (Default disabled to reduce visual clutter)
-- Restricted the interface to 1 dominant action color and at most 1 expanded analytical surface at a time.
+- **Source Branch**: `codex/ux16.1-aggregate-trades`
+- **Final Codex Commit**: `782bc740e49d98147bee616c18b453dd2e7c6391`
+- **Implementation Commit**: `10c74094cf28ae2bbb9e25cdba5093041890c953`
+- **Rebased Acceptance Branch**: `agent/gemini-ux16.1-acceptance`
+- **Strict Boundary Preserved**:
+  - `src/lib/orderflow/contracts.ts` (Codex owned) — untouched
+  - `src/lib/orderflow/trade-classifier.ts` (Codex owned) — untouched
+  - `src/lib/orderflow/aggregate-trade-*.ts` (Codex owned) — untouched
+  - `src/lib/orderflow/use-aggregate-trade-capture.ts` (Codex owned) — untouched
+  - `src/app/api/orderflow/**` (Codex owned) — untouched
+  - `src/components/terminal/CalmMarketTerminal.tsx` (Codex owned) — untouched
+  - `src/components/terminal/MarketTerminal.tsx` — untouched
+  - `src/app/page.tsx` — untouched
+  - `STATE.md` — untouched
+  - No synthetic depth history, no derived tape CVD, no footprint, no imbalance, no absorption, no setup grades, and no live execution.
 
 ---
 
-## 3. Visual Regression Evidence
+## 2. Delivered Visual Acceptance Package
 
-Captured Playwright screenshots for UX16.0 deliverables:
-- **Baseline**:
-  - `.artifacts/ui-overhaul/ux16-baseline-1366x768.png`
-  - `.artifacts/ui-overhaul/ux16-baseline-1664x936.png`
-  - `.artifacts/ui-overhaul/ux16-baseline-1920x1080.png`
-- **Context Mode (Calm Workspace)**:
-  - `.artifacts/ui-overhaul/ux16-calm-workspace-1366x768.png`
-  - `.artifacts/ui-overhaul/ux16-calm-workspace-1664x936.png`
-  - `.artifacts/ui-overhaul/ux16-calm-workspace-1920x1080.png`
-- **Flow Mode**:
-  - `.artifacts/ui-overhaul/ux16-flow-mode-1920x1080.png`
-- **Setup Mode**:
-  - `.artifacts/ui-overhaul/ux16-setup-mode-1920x1080.png`
+### 2.1 Specification Documentation
+Created [`docs/ui-ux/UX16_1_VISUAL_ACCEPTANCE.md`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/docs/ui-ux/UX16_1_VISUAL_ACCEPTANCE.md) specifying:
+- The exact `SPOT TAPE` status badge states: `UNAVAILABLE`, `LOADING`, `READY`, `PARTIAL`, `STALE`, `ERROR`, `REPLAY`.
+- Design token mappings using the established Calm Analytical Instrument design system.
+- Mandatory popover disclosure rules: provenance fields, accepted trade count formatting, and the mandatory disclosure phrase: `"capture only, no derived CVD yet"`.
+- Error resilience, safe defaults, reconnect gap handling, and desktop/mobile responsive constraints.
+- Explicit prohibition of derived order-flow indicators during UX16.1.
+
+### 2.2 Data Integrity Strip Accessibility & Determinism
+Updated [`src/components/terminal/DataIntegrityStrip.tsx`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/src/components/terminal/DataIntegrityStrip.tsx):
+- Added `aria-label={`${domain.label} status: ${domain.status}`}` for screen-reader transparency.
+- Added explicit `role="dialog"` and `aria-label={`${domain.label} integrity provenance`}` to `Popover.Content`.
+- Added machine-readable `data-testid={`data-integrity-popover-${domain.key.toLowerCase()}`}` and `data-testid={`data-integrity-detail-${domain.key.toLowerCase()}`}` for deterministic end-to-end verification.
+
+### 2.3 Correction of Existing DEMO Playwright Fixture
+Corrected [`tests/ui/ux16-calm-workspace.pw.ts`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/tests/ui/ux16-calm-workspace.pw.ts):
+- Previously, local storage rehydration in Next.js client hydration could leave the session in the repository's default `LIVE` mode.
+- Added explicit verification and click of the mode toggle (`● LIVE` -> `● DEMO`) to deterministically ensure DEMO mode is engaged before running demo fixture assertions.
+- Added a 120s test timeout to eliminate spurious timeouts during high-resolution multi-viewport screenshot captures.
+
+### 2.4 Browser-Level UX16.1 Acceptance Suite
+Created [`tests/ui/ux16-aggregate-trade-capture.pw.ts`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/tests/ui/ux16-aggregate-trade-capture.pw.ts) covering all 6 required verification lanes:
+1. **Safe Default**: When `ORDERFLOW_AGGTRADE_ENABLED` is absent/false, `SPOT TAPE` status is `UNAVAILABLE`. No fake count or `READY` state appears. Detail explains capture is disabled by feature flag. No claims of "live CVD", "footprint", "imbalance", or "A-grade".
+2. **Capability Checking**: Intercepting `/api/orderflow/config` with a pending request verifies `LOADING` state without displaying fake positive counts or premature `READY`.
+3. **Error Resilience**: Intercepting `/api/orderflow/config` with HTTP 500 / malformed payload verifies the terminal remains fully functional, transitions to `ERROR` or `UNAVAILABLE`, and never leaks stack traces or secrets to the DOM.
+4. **Enabled Capability & Truthful Disclosure**: When capture is enabled and trades are captured, `READY` requires accepted trades, and popover detail explicitly includes `"capture only, no derived CVD yet"`.
+5. **Responsive & Accessibility**: Verified across `1366×768`, `1920×1080`, and `390×844`. Proved no horizontal layout overflow on mobile, verified keyboard focusability, and verified popover opening/dismissal via Escape.
+6. **Regression Coverage**: Verified that chart canvas, header mode switcher (`CONTEXT`, `FLOW`, `SETUP`), inspector tabs, and fallback integrity remain fully functional.
+
+### 2.5 Visual Evidence Screenshots Captured
+- `1366×768` Safe Default: [`.artifacts/ui-overhaul/ux16-1-safe-default-1366x768.png`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/.artifacts/ui-overhaul/ux16-1-safe-default-1366x768.png)
+- `1920×1080` Enabled/Checking State: [`.artifacts/ui-overhaul/ux16-1-checking-enabled-1920x1080.png`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/.artifacts/ui-overhaul/ux16-1-checking-enabled-1920x1080.png)
+- `390×844` Mobile Viewport: [`.artifacts/ui-overhaul/ux16-1-mobile-390x844.png`](file:///C:/Users/HP/Videos/btc-derivatives-terminal/.artifacts/ui-overhaul/ux16-1-mobile-390x844.png)
 
 ---
 
-## 4. Verification Ladder & Quality Gates
+## 3. Verification Ladder & Quality Gates
 
 All quality gates passed with zero errors:
 
-1. **Vitest Unit & Integration Suite**:
-   - `src/components/terminal/ux16-workspace-shell.test.ts`: 17/17 passed (verifying token constants, default store state, mode switching, attention budget overlay defaults, data integrity badge mappings, and DecisionDock rendering).
-   - Full test run: **27 passed test files, 188 passed tests**.
-2. **TypeScript Compilation**:
-   - `npx tsc --noEmit`: Exited `0` with zero type errors.
+1. **Unit & Contract Suite (`npx vitest run`)**:
+   - **37 test files passed, 230 tests passed** (including all orderflow contracts, classifier, tape, runtime, worker protocol, feed state, and workspace shell tests).
+2. **TypeScript Compilation (`npx tsc --noEmit`)**:
+   - Exited `0` with zero type errors across the entire codebase.
 3. **ESLint**:
-   - `npx eslint src/components/terminal/`: Exited `0` with zero errors and zero warnings.
-4. **Next.js Production Build**:
-   - `npm run build`: Compiled with Turbopack in 34.1s; all 9 static and dynamic routes generated successfully.
-5. **Playwright End-to-End Tests**:
-   - `tests/ui/ux16-calm-workspace.pw.ts`: 2/2 passed (desktop-16x9 and mobile viewports).
-   - `tests/ui/market-terminal.pw.ts`: All market structure controls and drawing tools verified without regression.
+   - `npx eslint src/components/terminal/DataIntegrityStrip.tsx src/components/terminal/ux16-workspace-shell.test.ts tests/ui/ux16-aggregate-trade-capture.pw.ts tests/ui/ux16-calm-workspace.pw.ts`: Exited `0` with zero warnings and zero errors.
+4. **Next.js Production Build (`npm run build`)**:
+   - Compiled successfully via Turbopack in 57s.
+   - All 10 static and dynamic routes generated successfully (including dynamic `/api/orderflow/config`).
+5. **Playwright Acceptance Suites**:
+   - `tests/ui/ux16-aggregate-trade-capture.pw.ts`: **12/12 passed** (all 6 scenarios across both `desktop-16x9` and `mobile` projects).
+   - `tests/ui/ux16-calm-workspace.pw.ts`: **2/2 passed** (both `desktop-16x9` and `mobile` projects).

@@ -16,8 +16,15 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
             );
         });
         await page.goto('/', { waitUntil: 'domcontentloaded' });
-        await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 20_000 });
-        await expect(page.getByRole('button', { name: '● DEMO', exact: true })).toBeVisible({ timeout: 20_000 });
+        await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 25_000 });
+
+        // Ensure DEMO mode is active; toggle from LIVE if local storage rehydration defaulted
+        const demoButton = page.getByRole('button', { name: '● DEMO', exact: true });
+        const liveButton = page.getByRole('button', { name: '● LIVE', exact: true });
+        if (await liveButton.isVisible({ timeout: 3000 }).catch(() => false)) {
+            await liveButton.click();
+        }
+        await expect(demoButton).toBeVisible({ timeout: 20_000 });
         await expect(page.getByLabel('Demo BTC price chart with options structure overlays')).toBeVisible({ timeout: 20_000 });
     });
 

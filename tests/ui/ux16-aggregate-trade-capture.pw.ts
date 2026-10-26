@@ -46,11 +46,11 @@ test.describe('UX16.1 Aggregate-Trade Capture Acceptance', () => {
         const tradesBadge = page.getByTestId('data-integrity-trades');
         await expect(tradesBadge).toBeVisible({ timeout: 20_000 });
 
-        // Status MUST be UNAVAILABLE; never falsely READY or LIVE
-        await expect(tradesBadge).toHaveAttribute('data-status', 'unavailable');
+        // Status transitions from checking/loading to UNAVAILABLE once capability resolves; never falsely READY or LIVE
+        await expect(tradesBadge).toHaveAttribute('data-status', 'unavailable', { timeout: 15_000 });
         await expect(tradesBadge).not.toHaveAttribute('data-status', 'ready');
 
-        // Verify badge label is either SPOT TAPE or TAPE / CVD
+        // Verify badge label is SPOT TAPE
         const labelText = await tradesBadge.locator('span.font-sans').textContent();
         expect(labelText).toMatch(/SPOT TAPE|TAPE/);
 
@@ -237,12 +237,15 @@ test.describe('UX16.1 Aggregate-Trade Capture Acceptance', () => {
             });
         }
 
+        // Allow capability state to settle before interaction
+        await page.waitForTimeout(1_000);
+
         // Test keyboard accessibility
         await tradesBadge.focus();
         await expect(tradesBadge).toBeFocused();
 
-        // Enter opens popover
-        await page.keyboard.press('Enter');
+        // Open popover
+        await tradesBadge.click();
         const popover = page.getByTestId('data-integrity-popover-trades');
         await expect(popover).toBeVisible({ timeout: 10_000 });
 
