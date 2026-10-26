@@ -4,7 +4,7 @@
 >>> COMPLETED BY: Gemini
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: agent/gemini-ux16.1-acceptance
->>> COMMIT: PENDING_COMMIT
+>>> COMMIT: 6dee031be47c5bab7c546e65c0db47b84889fba5
 >>> TESTS: Local deterministic tests: PASS (Vitest 37 files/230 tests, tsc 0 errors, scoped eslint 0 warnings/errors, next build 10/10 routes passed, ux16-aggregate-trade-capture Playwright 12/12 passed across desktop-16x9 and mobile viewports, ux16-calm-workspace Playwright 2/2 passed across desktop-16x9 and mobile viewports); Live observation: Upstream live Binance WebSocket reached SPOT TAPE READY with accepted trade count and mandatory "capture only, no derived CVD yet" disclosure
 >>> NEXT AGENT: Architect
 >>> ACTION REQUIRED: Review and merge UX16.1 visual/browser acceptance after Codex aggregate-trade branch is available
