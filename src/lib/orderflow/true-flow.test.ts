@@ -129,6 +129,26 @@ describe('UX16.2 true-flow derivation', () => {
         expect(result.tradeVolumeProfile.coverageKind).toBe('CAPTURED_WITH_GAPS');
     });
 
+    it('marks reconnect-created multi-segment profile coverage as gapped', () => {
+        const trades = [
+            trade(501, 1, 100, 1, 'BUY'),
+            trade(502, 2, 100, 1, 'SELL'),
+        ];
+        const input = capture(trades);
+        input.boundaries.push(TradeCaptureBoundaryV1Schema.parse({
+            schemaVersion: ORDERFLOW_SCHEMA_VERSION,
+            boundaryId: 'reconnect-501',
+            reason: 'RECONNECT',
+            occurredAt: BASE_TIME + 1_500,
+            previousAggregateTradeId: 501,
+            nextAggregateTradeId: null,
+            missingAggregateTradeCount: null,
+        }));
+        const result = deriveTrueFlowSnapshotV1(input, { interval: '1m', priceBucket: 1 });
+        expect(result.cvdSegments).toHaveLength(2);
+        expect(result.tradeVolumeProfile.coverageKind).toBe('CAPTURED_WITH_GAPS');
+    });
+
     it('does not manufacture empty time intervals or pre-capture footprint cells', () => {
         const result = deriveTrueFlowSnapshotV1(capture([
             trade(201, 125, 100, 1, 'BUY'),

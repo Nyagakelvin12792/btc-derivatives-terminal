@@ -1,7 +1,9 @@
 import {
+    ClassifiedTradeV1Schema,
     FootprintBarV1Schema,
     FootprintCellV1Schema,
     ORDERFLOW_SCHEMA_VERSION,
+    TradeCaptureBoundaryV1Schema,
     type CaptureCoverageV1,
     type ClassifiedTradeV1,
     type TradeCaptureBoundaryV1,
@@ -180,34 +182,41 @@ export class TrueFlowSessionAccumulator {
     }
 
     recordBoundary(boundary: TradeCaptureBoundaryV1): void {
-        this.pendingBoundaries.push(boundary);
+        if (this.pendingBoundaries.length >= 8) throw new RangeError('True-flow pending boundary limit reached');
+        this.pendingBoundaries.push(TradeCaptureBoundaryV1Schema.parse(boundary));
     }
 
-    ingest(trade: ClassifiedTradeV1): void {
+    ingest(input: ClassifiedTradeV1): void {
+        const trade = ClassifiedTradeV1Schema.parse(input);
         if (this.lastAggregateTradeId !== null && trade.aggregateTradeId <= this.lastAggregateTradeId) {
             throw new RangeError('True-flow session requires strictly increasing accepted aggregate trade IDs');
         }
         const requiresNewSegment = this.currentSegment === null
             || this.pendingBoundaries.some((boundary) => boundary.reason !== 'CAPTURE_START');
-        if (requiresNewSegment) this.startSegment(trade);
-        if (!this.currentSegment) throw new Error('True-flow segment was not initialized');
-
         const intervalMs = INTERVAL_MS[this.options.interval];
         const openTime = Math.floor(trade.tradeTime / intervalMs) * intervalMs;
-        let bar = this.currentSegment.bars.get(openTime);
-        if (!bar && this.totalBars >= this.options.maxBars) {
+        const index = bucketIndex(trade.price, this.options.priceBucket);
+        const prospectiveSegment = requiresNewSegment ? null : this.currentSegment;
+        const prospectiveBar = prospectiveSegment?.bars.get(openTime);
+        const existingProfile = this.profileRows.get(index);
+
+        if (requiresNewSegment && this.segments.length >= this.options.maxSegments) {
+            throw new RangeError('True-flow segment limit reached');
+        }
+        if (!prospectiveBar && this.totalBars >= this.options.maxBars) {
             throw new RangeError('True-flow derived bar limit reached');
         }
-        const index = bucketIndex(trade.price, this.options.priceBucket);
-        const existingCell = bar?.cells.get(index);
-        if (bar && !existingCell && bar.cells.size >= this.options.maxCellsPerBar) {
+        const existingCell = prospectiveBar?.cells.get(index);
+        if (prospectiveBar && !existingCell && prospectiveBar.cells.size >= this.options.maxCellsPerBar) {
             throw new RangeError('True-flow footprint cell limit reached');
         }
-        const existingProfile = this.profileRows.get(index);
         if (!existingProfile && this.profileRows.size >= this.options.maxProfileRows) {
             throw new RangeError('True-flow profile row limit reached');
         }
 
+        if (requiresNewSegment) this.startSegment(trade);
+        if (!this.currentSegment) throw new Error('True-flow segment was not initialized');
+        let bar = this.currentSegment.bars.get(openTime);
         if (!bar) {
             bar = {
                 ...emptyTotals(),
@@ -371,7 +380,9 @@ export class TrueFlowSessionAccumulator {
         const tradeVolumeProfile = TradeVolumeProfileV1Schema.parse({
             schemaVersion: ORDERFLOW_SCHEMA_VERSION,
             priceBucket: this.options.priceBucket,
-            coverageKind: baseCoverage.gapCount > 0 ? 'CAPTURED_WITH_GAPS' : 'CAPTURED_EXACT',
+            coverageKind: baseCoverage.gapCount > 0 || this.segments.length > 1
+                ? 'CAPTURED_WITH_GAPS'
+                : 'CAPTURED_EXACT',
             rows,
             totals: sessionTotals,
             pocPrice: poc?.priceMid ?? null,

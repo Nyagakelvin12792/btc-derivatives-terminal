@@ -284,6 +284,7 @@ function buildTradeVolumeProfile(
     priceBucket: number,
     valueAreaFraction: number,
     coverage: CaptureCoverageV1,
+    hasContinuityBreak: boolean,
 ) {
     const groups = new Map<number, ClassifiedTradeV1[]>();
     const totals = emptyTotals();
@@ -330,7 +331,7 @@ function buildTradeVolumeProfile(
     return TradeVolumeProfileV1Schema.parse({
         schemaVersion: ORDERFLOW_SCHEMA_VERSION,
         priceBucket,
-        coverageKind: coverage.gapCount > 0 ? 'CAPTURED_WITH_GAPS' : 'CAPTURED_EXACT',
+        coverageKind: coverage.gapCount > 0 || hasContinuityBreak ? 'CAPTURED_WITH_GAPS' : 'CAPTURED_EXACT',
         rows,
         totals: finalizeTotals(totals),
         pocPrice: poc?.priceMid ?? null,
@@ -370,7 +371,13 @@ export function deriveTrueFlowSnapshotV1(
         priceBucket: options.priceBucket,
         cvdSegments: buildCvdSegments(segments, interval, coverage),
         footprintBars: buildFootprintBars(segments, interval, options.priceBucket, coverage),
-        tradeVolumeProfile: buildTradeVolumeProfile(trades, options.priceBucket, valueAreaFraction, coverage),
+        tradeVolumeProfile: buildTradeVolumeProfile(
+            trades,
+            options.priceBucket,
+            valueAreaFraction,
+            coverage,
+            segments.length > 1,
+        ),
         totals: finalizeTotals(totals),
         coverage,
     });

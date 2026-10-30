@@ -70,6 +70,18 @@ describe('TrueFlowSessionAccumulator', () => {
         expect(snapshot.cvdSegments.map((segment) => segment.finalCumulativeDeltaNotionalUsd)).toEqual([100, -100, 200]);
         expect(snapshot.cvdSegments[1].startReasons).toEqual(['RECONNECT']);
         expect(snapshot.cvdSegments[2].startReasons).toEqual(['AGGREGATE_ID_GAP']);
+        expect(snapshot.tradeVolumeProfile.coverageKind).toBe('CAPTURED_WITH_GAPS');
+    });
+
+    it('labels reconnect-split profile coverage as gapped even when supplied gapCount is zero', () => {
+        const session = new TrueFlowSessionAccumulator({ interval: '1m', priceBucket: 1 });
+        session.recordBoundary(boundary('CAPTURE_START', null, 20));
+        session.ingest(trade(20, 1, 100, 1, 'BUY'));
+        session.recordBoundary(boundary('RECONNECT', 20, null));
+        session.ingest(trade(21, 2, 100, 1, 'SELL'));
+        const snapshot = session.snapshot(coverage(BASE_TIME + 2_000, 0));
+        expect(snapshot.cvdSegments).toHaveLength(2);
+        expect(snapshot.tradeVolumeProfile.coverageKind).toBe('CAPTURED_WITH_GAPS');
     });
 
     it('fails closed at configured derived-state limits', () => {
@@ -77,6 +89,9 @@ describe('TrueFlowSessionAccumulator', () => {
         session.recordBoundary(boundary('CAPTURE_START', null, 1));
         session.ingest(trade(1, 1, 100, 1, 'BUY'));
         expect(() => session.ingest(trade(2, 2, 101, 1, 'BUY'))).toThrow('profile row limit');
+        const snapshot = session.snapshot(coverage(BASE_TIME + 1_000));
+        expect(snapshot.totals.tradeCount).toBe(1);
+        expect(snapshot.footprintBars[0].footprint.cells).toHaveLength(1);
     });
 
     it('rejects duplicate or late accepted IDs defensively', () => {
