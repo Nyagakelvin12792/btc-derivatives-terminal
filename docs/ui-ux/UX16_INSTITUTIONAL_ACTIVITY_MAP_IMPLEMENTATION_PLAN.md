@@ -1480,6 +1480,86 @@ Acceptance:
 - Known failure cases are documented.
 - Architect signs off the final promotion.
 
+## 27A. Institutional Context Extension Order
+
+The following sequence is now part of the approved post-capture implementation
+program. It does not replace UX16.2–UX16.8 or permit institutional-context work
+to bypass the true-flow, replay, provenance, and calibration gates.
+
+1. Define venue-neutral `TradeEventV1`, `BookEventV1`, and
+   `InstitutionalContextSnapshotV1` contracts.
+2. Correct the SVAF unit, freshness, provenance, health-state, and fallback
+   problems before importing any SVAF-derived feature.
+3. Add Coinbase through its direct public WebSocket in shadow mode.
+4. Add IBIT and other ETF issuer data through server-side daily adapters with
+   explicit publication timestamps and stale states.
+5. Add Treasury Fiscal Data, FRED/ALFRED, and CFTC snapshots using their actual
+   release schedules rather than presenting them as intraday feeds.
+6. Add CME through Databento behind a disabled-by-default server feature flag.
+7. Build deterministic cross-venue features and 1H/4H confluence matrices.
+8. At UX16.7, send only the accepted, versioned feature packet to Jev.
+9. Calibrate Jev/Minara agreement, disagreement, and abstention rates before an
+   AI opinion receives prominent presentation.
+
+All additions remain decision support only. Missing or stale institutional data
+must abstain; it must never be silently converted to zero or a neutral value.
+
+## 27B. Project Control and Usage-Spend Dashboard
+
+UX16 delivery must expose a read-only project-control snapshot and dashboard.
+The dashboard is not allowed to infer progress from prose, branch names, or an
+agent's claim of completion.
+
+Required progress dimensions:
+
+- milestone, feature, and task hierarchy;
+- owner and supporting agents;
+- `NOT_STARTED`, `IN_PROGRESS`, `BLOCKED`, `REVIEW_REQUIRED`, `COMPLETE`, and
+  `DEFERRED` states;
+- branch, commit, handoff, test evidence, blockers, and next action;
+- separate implemented, tested, and Architect-accepted percentages derived
+  from task weights and evidence status;
+- no arbitrary partial percentages for an unfinished task.
+
+Required usage and spend dimensions:
+
+- agent, provider, model, milestone, feature, and task;
+- reported input, cached-input, output, and reasoning tokens when available;
+- provider-reported cost separated from calculated cost;
+- dated pricing snapshots for any calculated cost;
+- billing mode: API metered, subscription, free tier, local, or unknown;
+- `UNREPORTED` and `UNKNOWN` must remain visible and must never be rendered as
+  confirmed zero-cost usage;
+- budgets are optional and remain absent until explicitly entered.
+
+Canonical implementation boundary:
+
+- Codex owns `src/lib/project-control/**`, the read-only validated API, usage
+  normalization, calculations, and unit tests.
+- Antigravity owns the project-control page, dashboard components,
+  accessibility, responsive presentation, and browser tests.
+- Every external agent writes only its own `.agents/usage/<agent>.json` record.
+- The API returns `Cache-Control: no-store` and never exposes keys, environment
+  values, prompts, or raw provider billing payloads.
+
+## 27C. UX16.2 Parallel-Agent Work Allocation
+
+UX16.2 may use parallel swarms only after a Codex contract checkpoint commit.
+Each swarm has one supervisor and narrowly scoped child agents, with one active
+writer per file.
+
+| Lane | Owner | Exclusive responsibility |
+| --- | --- | --- |
+| Canonical calculations | Codex | True-flow contracts, bucketing, CVD segmentation, footprint, trade VP, incremental worker/runtime integration, reconciliation, API validation |
+| Presentation | Antigravity | True CVD/footprint/profile rendering, semantic zoom, project-control dashboard UI, accessibility, browser evidence |
+| Independent validation | DeepSeek | Hand-calculated oracle fixtures, reconciliation tests, gap/reconnect adversarial tests, validation matrix; no production edits |
+| Adversarial review | GLM-5, optional | Read-only schema, provenance, security, and acceptance audit after integration |
+| Performance review | Qwen, optional | Read-only worker memory, output bounds, render cadence, and worst-case snapshot analysis |
+
+Agents must use isolated worktrees and branches based on the exact Codex
+checkpoint SHA. They must not merge or deploy. Codex performs final diff review,
+integration, and full-suite verification; the Architect performs acceptance.
+
 ## 28. Feature Flags
 
 Suggested flags:

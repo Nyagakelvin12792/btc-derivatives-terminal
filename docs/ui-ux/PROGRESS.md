@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.4
-Last updated: 2026-10-23
-Overall status: APPROVED-STYLE UI PARITY + LIVE MARKET WORKSPACE + HISTORY/FLOW REPAIR IMPLEMENTED — INDEPENDENT RELEASE REVIEW REQUIRED
-Current checkpoint: UX0–UX8 and UX10–UX14 COMPLETE; UX15 PLANNED; UX9 and completed branch work await Architect acceptance
+Version: 3.5
+Last updated: 2026-10-30
+Overall status: UX16.2 TRUE-FLOW IMPLEMENTATION IN PROGRESS — UX16.1 INTEGRATED AND REVIEW EVIDENCE RETAINED
+Current checkpoint: UX16.2 canonical contracts/calculations and project-control telemetry started on `codex/ux16.2-true-flow`
 
 ## Scope Statement
 
@@ -239,3 +239,12 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Connected the calm workspace integrity strip to truthful `SPOT TAPE` health, provenance, accepted count, and gap state while explicitly withholding derived CVD until UX16.2.
 - Verified a bounded live Binance observation of 20 consecutive aggregate trades. This confirms the public upstream stream was reachable during verification; it is not a claim of permanent availability.
 - Preserved `NO LIVE EXECUTION`; no footprint, imbalance, absorption, setup-grade, or AI decision output was added.
+
+### 2026-10-30 — UX16.2 true-flow batch 1 started
+
+- Started gap-safe, trade-derived CVD segments, footprint cells, and captured-trade volume profile calculations from the validated UX16.1 tape.
+- Added deterministic reconciliation totals and POC/VA calculation contracts while keeping UX16.4 imbalance fields disabled.
+- Added a schema-validated, read-only project-control backend for implemented/tested/accepted progress and truthful agent usage/spend reporting.
+- Recorded `UNREPORTED` usage explicitly; no subscription or unknown provider usage is represented as confirmed zero cost.
+- Added the institutional-context extension order covering venue-neutral contracts, SVAF hardening, Coinbase, ETF/Treasury/CFTC, CME, cross-venue confluence, Jev, and calibration.
+- Reserved Antigravity for presentation/dashboard UI and DeepSeek for independent oracle fixtures/tests after the Codex checkpoint SHA is committed.
