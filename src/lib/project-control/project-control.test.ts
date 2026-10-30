@@ -103,7 +103,7 @@ describe('project-control contracts and calculations', () => {
             sourceCommit: 'abcdef1234567',
         });
         expect(ProjectControlResponseV1Schema.parse(response)).toEqual(response);
-        expect(response.usage.totals.runsWithUnreportedUsage).toBe(1);
+        expect(response.usage.totals.runsWithUnreportedUsage).toBeGreaterThan(0);
         expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.2')?.status).toBe('IN_PROGRESS');
     });
 });

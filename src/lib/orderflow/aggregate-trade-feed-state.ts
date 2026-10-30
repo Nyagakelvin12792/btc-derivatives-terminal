@@ -6,6 +6,7 @@ import type {
     TradeCaptureBoundaryV1,
 } from './contracts';
 import type { AggregateTradeWorkerErrorCode, AggregateTradeWorkerEvent } from './aggregate-trade-worker-protocol';
+import type { TrueFlowSnapshotV1 } from './true-flow-contracts';
 
 export type AggregateTradeCapabilityState = 'CHECKING' | 'DISABLED' | 'ENABLED' | 'ERROR';
 
@@ -28,6 +29,7 @@ export interface AggregateTradeFeedState {
     maxClientTrades: number;
     maxClientBoundaries: number;
     error: AggregateTradeFeedError | null;
+    trueFlow: TrueFlowSnapshotV1 | null;
 }
 
 function offlineCoverage(): CaptureCoverageV1 {
@@ -64,6 +66,7 @@ export function createInitialAggregateTradeFeedState(
         maxClientTrades,
         maxClientBoundaries,
         error: null,
+        trueFlow: null,
     };
 }
 
@@ -81,6 +84,11 @@ export function reduceAggregateTradeFeedEvent(
             return {
                 ...state,
                 boundaries: [...state.boundaries, event.boundary].slice(-state.maxClientBoundaries),
+            };
+        case 'TRUE_FLOW_SNAPSHOT':
+            return {
+                ...state,
+                trueFlow: event.snapshot,
             };
         case 'STATUS':
             return {

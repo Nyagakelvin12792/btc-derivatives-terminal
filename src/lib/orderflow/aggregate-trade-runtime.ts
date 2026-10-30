@@ -5,6 +5,7 @@ import type {
     AggregateTradeWorkerEvent,
 } from './aggregate-trade-worker-protocol';
 import type { ClassifiedTradeV1 } from './contracts';
+import { TrueFlowSessionAccumulator } from './true-flow-session';
 
 type TimeoutHandle = ReturnType<typeof setTimeout>;
 type IntervalHandle = ReturnType<typeof setInterval>;
@@ -54,6 +55,8 @@ export class BinanceAggregateTradeRuntime {
     private connected = false;
     private reconnectAttempt = 0;
     private continuityBreakPending = false;
+    private trueFlow: TrueFlowSessionAccumulator | null = null;
+    private derivationAvailable = false;
 
     constructor(dependencies: AggregateTradeRuntimeDependencies) {
         this.dependencies = dependencies;
@@ -63,6 +66,16 @@ export class BinanceAggregateTradeRuntime {
         this.stop(false);
         this.config = config;
         this.tape = new AggregateTradeTape(config);
+        this.trueFlow = new TrueFlowSessionAccumulator({
+            interval: config.trueFlowInterval,
+            priceBucket: config.trueFlowPriceBucket,
+            valueAreaFraction: config.trueFlowValueAreaFraction,
+            maxSegments: config.maxDerivedSegments,
+            maxBars: config.maxDerivedBars,
+            maxCellsPerBar: config.maxFootprintCellsPerBar,
+            maxProfileRows: config.maxTradeProfileRows,
+        });
+        this.derivationAvailable = true;
         this.running = true;
         this.connected = false;
         this.reconnectAttempt = 0;
@@ -77,6 +90,8 @@ export class BinanceAggregateTradeRuntime {
         if (!this.tape) return;
         this.pendingBatch = [];
         this.tape.clear();
+        this.trueFlow?.clear();
+        this.derivationAvailable = true;
         this.dependencies.emit({ type: 'RESET' });
         this.emitStatus();
     }
@@ -136,7 +151,18 @@ export class BinanceAggregateTradeRuntime {
             if (result.status !== 'ACCEPTED') return;
             this.continuityBreakPending = false;
             this.pendingBatch.push(result.trade);
-            if (result.boundary) this.dependencies.emit({ type: 'BOUNDARY', boundary: result.boundary });
+            if (result.boundary) {
+                this.trueFlow?.recordBoundary(result.boundary);
+                this.dependencies.emit({ type: 'BOUNDARY', boundary: result.boundary });
+            }
+            if (this.trueFlow && this.derivationAvailable) {
+                try {
+                    this.trueFlow.ingest(result.trade);
+                } catch {
+                    this.derivationAvailable = false;
+                    this.emitError('DERIVATION_LIMIT', 'True-flow derivation reached a configured safety limit.');
+                }
+            }
         };
         socket.onerror = () => {
             if (!this.isCurrent(generation, socket)) return;
@@ -149,6 +175,7 @@ export class BinanceAggregateTradeRuntime {
             this.connected = false;
             if (!this.continuityBreakPending) {
                 const boundary = this.tape.markReconnect(this.dependencies.now());
+                this.trueFlow?.recordBoundary(boundary);
                 this.dependencies.emit({ type: 'BOUNDARY', boundary });
                 this.continuityBreakPending = true;
             }
@@ -174,6 +201,10 @@ export class BinanceAggregateTradeRuntime {
         const trades = this.pendingBatch;
         this.pendingBatch = [];
         this.dependencies.emit({ type: 'TRADE_BATCH', trades });
+        if (this.trueFlow && this.tape && this.derivationAvailable) {
+            const telemetry = this.tape.telemetry(this.dependencies.now());
+            this.dependencies.emit({ type: 'TRUE_FLOW_SNAPSHOT', snapshot: this.trueFlow.snapshot(telemetry.coverage) });
+        }
         this.emitStatus();
     }
 

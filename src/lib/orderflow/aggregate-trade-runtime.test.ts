@@ -61,6 +61,42 @@ describe('BinanceAggregateTradeRuntime', () => {
                 expect.objectContaining({ aggregateTradeId: 101, aggressor: 'SELL' }),
             ],
         }));
+        const trueFlow = events.findLast((event) => event.type === 'TRUE_FLOW_SNAPSHOT');
+        expect(trueFlow).toEqual(expect.objectContaining({
+            snapshot: expect.objectContaining({
+                totals: expect.objectContaining({ tradeCount: 2, deltaNotionalUsd: 0 }),
+            }),
+        }));
+    });
+
+    it('preserves session aggregates after the raw tape evicts older trades', async () => {
+        const socket = new FakeSocket();
+        const events: AggregateTradeWorkerEvent[] = [];
+        let now = BASE_TIME + 100;
+        const runtime = new BinanceAggregateTradeRuntime({
+            createSocket: () => socket,
+            emit: (event) => events.push(event),
+            now: () => now,
+            setTimeout,
+            clearTimeout,
+            setInterval,
+            clearInterval,
+        });
+        runtime.start(createAggregateTradeWorkerConfig({ maxTrades: 1, flushIntervalMs: 100 }));
+        socket.open();
+        socket.message(trade(400));
+        now += 1;
+        socket.message(trade(401, true));
+        now += 1;
+        socket.message(trade(402));
+        await vi.advanceTimersByTimeAsync(100);
+
+        const status = events.findLast((event) => event.type === 'STATUS');
+        const trueFlow = events.findLast((event) => event.type === 'TRUE_FLOW_SNAPSHOT');
+        expect(status).toEqual(expect.objectContaining({ retainedTradeCount: 1 }));
+        expect(trueFlow).toEqual(expect.objectContaining({
+            snapshot: expect.objectContaining({ totals: expect.objectContaining({ tradeCount: 3 }) }),
+        }));
     });
 
     it('ignores malformed, duplicate, and out-of-order messages without stopping capture', async () => {

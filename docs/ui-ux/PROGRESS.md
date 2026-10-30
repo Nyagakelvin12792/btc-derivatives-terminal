@@ -248,3 +248,6 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Recorded `UNREPORTED` usage explicitly; no subscription or unknown provider usage is represented as confirmed zero cost.
 - Added the institutional-context extension order covering venue-neutral contracts, SVAF hardening, Coinbase, ETF/Treasury/CFTC, CME, cross-venue confluence, Jev, and calibration.
 - Reserved Antigravity for presentation/dashboard UI and DeepSeek for independent oracle fixtures/tests after the Codex checkpoint SHA is committed.
+- Antigravity is actively implementing its assigned true-flow presentation and project-control dashboard files on `agent/gemini-ux16.2-ui`; no commit has been reported yet.
+- DeepSeek cross-checked 16 deterministic scenarios against production and began its oracle data and validation matrix on `agent/deepseek-ux16.2-validation`; reconciliation/boundary test deliverables and a commit are still pending.
+- Codex added bounded incremental true-flow session state and worker snapshot emission; focused runtime verification proves session totals survive raw-tape eviction.
