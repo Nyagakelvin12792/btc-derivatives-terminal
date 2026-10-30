@@ -1,13 +1,13 @@
-# CODEX HANDOFF REPORT — UX16.2 CONTRACT CHECKPOINT
+# CODEX HANDOFF REPORT — UX16.2 CALCULATION AND RUNTIME CHECKPOINT
 
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ux16.2-true-flow
->>> COMMIT: 447a9d2
->>> TESTS: PASS — focused Vitest 3 files/14 tests; full Vitest 41 files/249 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 webpack production build passed. Default Turbopack build is blocked by this worktree's external node_modules junction and was not represented as a code failure.
+>>> COMMIT: 80ef5c3
+>>> TESTS: PASS — focused runtime/true-flow Vitest 5 files/20 tests; full Vitest 42 files/254 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 webpack production build passed. Default Turbopack build remains blocked by this worktree's external node_modules junction and was not represented as a code failure.
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Use this checkpoint as the exact base for Antigravity presentation and DeepSeek validation swarms while Codex continues incremental runtime aggregation
->>> TARGET: UX16.2 true-flow contracts/pure calculation, project-control API/schema, plan/progress update
+>>> ACTION REQUIRED: Review Codex calculations/runtime and integrate the pending Antigravity and DeepSeek branches after their committed handoffs
+>>> TARGET: UX16.2 true-flow contracts, pure/incremental calculations, worker/runtime snapshot emission, project-control backend
 
 ## Checkpoint result
 
@@ -20,6 +20,14 @@
 - Keeps footprint imbalance flags disabled; imbalance remains UX16.4.
 - Adds deterministic POC and 70% value-area expansion with lower-price tie
   handling.
+- Adds bounded incremental session aggregation that stores derived bars/profile
+  rows instead of raw trades.
+- Emits canonical `TRUE_FLOW_SNAPSHOT` worker events and exposes the latest
+  snapshot through aggregate-trade feed state.
+- Proves session totals remain complete when the raw tape retains only its most
+  recent event.
+- Fails closed with a sanitized derivation-limit error rather than silently
+  dropping rows, cells, bars, or segments.
 - Adds schema-validated project progress and usage/spend snapshots plus a
   read-only no-store `/api/project-control` endpoint.
 - Preserves unknown and subscription usage as `UNREPORTED`; it does not infer
@@ -29,8 +37,8 @@
 
 ## Verification evidence
 
-- `npx vitest run src/lib/orderflow/true-flow.test.ts src/lib/project-control/project-control.test.ts src/app/api/project-control/route.test.ts`: **3 files, 14 tests passed**.
-- `npx vitest run`: **41 files, 249 tests passed**.
+- Focused true-flow/runtime verification: **5 files, 20 tests passed**.
+- `npx vitest run`: **42 files, 254 tests passed**.
 - `npx tsc --noEmit`: **passed**.
 - Scoped ESLint over new orderflow, project-control, and API files: **passed with zero output**.
 - `npx next build --webpack`: **passed**, including `/api/project-control`.
@@ -38,13 +46,13 @@
   to another worktree; Turbopack's hermetic resolver rejects dependencies
   outside this workspace root.
 
-## Remaining Codex-owned UX16.2 work
+## Remaining integration work
 
-1. Split the pure calculation into incremental, bounded worker/runtime state.
-2. Prove raw-tape eviction cannot make session aggregates shrink.
-3. Emit canonical true-flow snapshots through the worker protocol.
-4. Integrate independent DeepSeek oracle findings.
-5. Run final full-suite and assembled-browser acceptance after Antigravity UI.
+1. Review and integrate independent DeepSeek oracle/boundary findings after its
+   branch produces a committed handoff.
+2. Review and integrate Antigravity presentation/dashboard work after its
+   branch produces a committed handoff.
+3. Run final full-suite and assembled-browser acceptance.
 
 ## Boundary retained
 

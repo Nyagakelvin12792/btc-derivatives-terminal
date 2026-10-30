@@ -33,7 +33,7 @@
       "model": "UNREPORTED",
       "billingMode": "SUBSCRIPTION",
       "startedAt": "2026-10-30T00:00:00.000Z",
-      "completedAt": null,
+      "completedAt": "2026-10-30T00:00:00.000Z",
       "elapsedMs": null,
       "inputTokens": null,
       "cachedInputTokens": null,
@@ -45,7 +45,7 @@
       "costStatus": "UNREPORTED",
       "pricing": null,
       "usageSource": "UNAVAILABLE",
-      "sourceReference": null,
+      "sourceReference": "git:80ef5c3",
       "notes": ["Codex desktop usage and subscription allocation were not exposed to this repository run."]
     }
   ]

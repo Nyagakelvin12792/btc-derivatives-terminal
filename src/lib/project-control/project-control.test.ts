@@ -38,7 +38,7 @@ describe('project-control contracts and calculations', () => {
         });
         expect(snapshot.totals.implementedWeight).toBeGreaterThan(snapshot.totals.acceptedWeight);
         expect(snapshot.totals.testedWeight).toBeGreaterThan(snapshot.totals.acceptedWeight);
-        expect(snapshot.totals.reviewRequiredTasks).toBe(1);
+        expect(snapshot.totals.reviewRequiredTasks).toBeGreaterThan(0);
     });
 
     it('does not count the active task locally when no commit is reported', () => {

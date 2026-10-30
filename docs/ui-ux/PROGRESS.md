@@ -250,4 +250,4 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Reserved Antigravity for presentation/dashboard UI and DeepSeek for independent oracle fixtures/tests after the Codex checkpoint SHA is committed.
 - Antigravity is actively implementing its assigned true-flow presentation and project-control dashboard files on `agent/gemini-ux16.2-ui`; no commit has been reported yet.
 - DeepSeek cross-checked 16 deterministic scenarios against production and began its oracle data and validation matrix on `agent/deepseek-ux16.2-validation`; reconciliation/boundary test deliverables and a commit are still pending.
-- Codex added bounded incremental true-flow session state and worker snapshot emission; focused runtime verification proves session totals survive raw-tape eviction.
+- Codex added bounded incremental true-flow session state and worker snapshot emission in `80ef5c3`; focused runtime verification proves session totals survive raw-tape eviction.
