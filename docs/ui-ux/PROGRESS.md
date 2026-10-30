@@ -240,7 +240,7 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Verified a bounded live Binance observation of 20 consecutive aggregate trades. This confirms the public upstream stream was reachable during verification; it is not a claim of permanent availability.
 - Preserved `NO LIVE EXECUTION`; no footprint, imbalance, absorption, setup-grade, or AI decision output was added.
 
-### 2026-10-30 — UX16.2 true-flow batch 1 started
+### 2026-10-30 — UX16.2 true-flow batch 1 checkpoint (`447a9d2`)
 
 - Started gap-safe, trade-derived CVD segments, footprint cells, and captured-trade volume profile calculations from the validated UX16.1 tape.
 - Added deterministic reconciliation totals and POC/VA calculation contracts while keeping UX16.4 imbalance fields disabled.

@@ -1,52 +1,53 @@
-# CODEX HANDOFF REPORT — UX16.1 CORRECTIVE ACCEPTANCE
+# CODEX HANDOFF REPORT — UX16.2 CONTRACT CHECKPOINT
 
 >>> COMPLETED BY: Codex
->>> STATUS: COMPLETE
->>> BRANCH: codex/ux16.1-acceptance-fix
->>> COMMIT: 68e1291
->>> TESTS: PASS — Vitest 38 files/235 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 production build passed; production Playwright 18 passed/2 intentional desktop-only skips; post-refactor READY lane 2/2 passed on desktop and mobile
+>>> STATUS: REVIEW REQUIRED
+>>> BRANCH: codex/ux16.2-true-flow
+>>> COMMIT: 447a9d2
+>>> TESTS: PASS — focused Vitest 3 files/14 tests; full Vitest 41 files/249 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 webpack production build passed. Default Turbopack build is blocked by this worktree's external node_modules junction and was not represented as a code failure.
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review the integrated UX16.1 checkpoint and authorize UX16.2 trade-delta/CVD derivation only after this capture-only boundary is accepted
->>> TARGET: UX16.1 aggregate-trade capture, integrity presentation, and deterministic browser acceptance
+>>> ACTION REQUIRED: Use this checkpoint as the exact base for Antigravity presentation and DeepSeek validation swarms while Codex continues incremental runtime aggregation
+>>> TARGET: UX16.2 true-flow contracts/pure calculation, project-control API/schema, plan/progress update
 
-## Corrective result
+## Checkpoint result
 
-- Replaced false-positive browser assertions with 16 substantive aggregate-trade
-  scenarios: eight on desktop and the same eight on mobile.
-- Added deterministic worker-protocol evidence that proves `LOADING` transitions
-  to `READY` only after two accepted trades, with a positive count and the exact
-  `capture only, no derived CVD yet` disclosure.
-- Preserved real schema/runtime validation in the aggregate-trade unit suite;
-  the browser fixture does not claim to be an upstream availability test.
-- Added separate HTTP 500, invalid JSON, and HTML capability failures and proved
-  that upstream details do not leak into the terminal.
-- Corrected the UI health mapper so SHADOW capture mode remains non-executing
-  while health still reports `LOADING`, `READY`, `PARTIAL`, `STALE`, or `ERROR`.
-- Added focused unit coverage for disabled, checking, buffering, failure, stale,
-  gap, ready, and pre-first-trade states.
-- Made integrity popovers explicitly keyboard controlled for Enter, Space, and
-  Escape, with stable controlled open state.
-- Replaced the development-server browser lane with a hermetic production-build
-  runner so HMR cannot remount controls during focus and screenshot assertions.
-- Converted legacy mobile no-op executions into explicit desktop-only skips.
-- Replaced the old checking screenshot with verified READY evidence showing two
-  captured trades and the mandatory no-derived-CVD disclosure.
+- Added one canonical pure derivation path for gap-safe true CVD segments,
+  footprint cells, and captured-trade volume profile.
+- Reconciles buy/sell BTC, buy/sell notional, total notional, delta, and trade
+  count from the same accepted tape.
+- Resets CVD at aggregate-ID gaps and reconnect boundaries rather than drawing
+  through unknown history.
+- Keeps footprint imbalance flags disabled; imbalance remains UX16.4.
+- Adds deterministic POC and 70% value-area expansion with lower-price tie
+  handling.
+- Adds schema-validated project progress and usage/spend snapshots plus a
+  read-only no-store `/api/project-control` endpoint.
+- Preserves unknown and subscription usage as `UNREPORTED`; it does not infer
+  token counts or confirmed zero cost.
+- Updates the UX16 plan with the institutional-context implementation order and
+  parallel-agent ownership boundaries.
 
 ## Verification evidence
 
-- `npx vitest run`: **38 files, 235 tests passed**.
+- `npx vitest run src/lib/orderflow/true-flow.test.ts src/lib/project-control/project-control.test.ts src/app/api/project-control/route.test.ts`: **3 files, 14 tests passed**.
+- `npx vitest run`: **41 files, 249 tests passed**.
 - `npx tsc --noEmit`: **passed**.
-- Scoped ESLint over changed source, tests, config, and runner: **0 warnings, 0 errors**.
-- `npm run test:ux16`: production build passed, then **18 browser tests passed**
-  with **2 explicit desktop-only mobile skips**.
-- Focused post-refactor READY verification: **2/2 passed** across desktop and mobile.
-- Visual evidence:
-  - `.artifacts/ui-overhaul/ux16-1-safe-default-1366x768.png`
-  - `.artifacts/ui-overhaul/ux16-1-ready-enabled-1920x1080.png`
-  - `.artifacts/ui-overhaul/ux16-1-mobile-390x844.png`
+- Scoped ESLint over new orderflow, project-control, and API files: **passed with zero output**.
+- `npx next build --webpack`: **passed**, including `/api/project-control`.
+- `npm run build`: unable to use Turbopack because `node_modules` is a junction
+  to another worktree; Turbopack's hermetic resolver rejects dependencies
+  outside this workspace root.
+
+## Remaining Codex-owned UX16.2 work
+
+1. Split the pure calculation into incremental, bounded worker/runtime state.
+2. Prove raw-tape eviction cannot make session aggregates shrink.
+3. Emit canonical true-flow snapshots through the worker protocol.
+4. Integrate independent DeepSeek oracle findings.
+5. Run final full-suite and assembled-browser acceptance after Antigravity UI.
 
 ## Boundary retained
 
-UX16.1 remains capture-only and shadow-only. It does not derive CVD, footprint,
-imbalance, absorption, setup grades, Jev decisions, or any execution signal.
-`NO LIVE EXECUTION` remains intact.
+No UX16.3 liquidity surface, UX16.4 imbalance/persistence/add-pull,
+UX16.5 absorption/divergence, UX16.6 setup grading, UX16.7 AI decision, broker
+route, credential, or live execution path was added.
