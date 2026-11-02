@@ -5,8 +5,9 @@ import type {
     ClassifiedTradeV1,
     TradeCaptureBoundaryV1,
 } from './contracts';
+import type { TrueFlowInterval, TrueFlowSnapshotV1 } from './true-flow-contracts';
 
-export type AggregateTradeWorkerErrorCode = 'INVALID_CONFIG' | 'INVALID_EVENT' | 'SOCKET_UNAVAILABLE';
+export type AggregateTradeWorkerErrorCode = 'INVALID_CONFIG' | 'INVALID_EVENT' | 'SOCKET_UNAVAILABLE' | 'DERIVATION_LIMIT';
 
 export interface AggregateTradeWorkerConfig extends AggregateTradeTapeOptions {
     streamUrl: string;
@@ -14,6 +15,13 @@ export interface AggregateTradeWorkerConfig extends AggregateTradeTapeOptions {
     statusIntervalMs: number;
     reconnectBaseMs: number;
     reconnectMaxMs: number;
+    trueFlowInterval: TrueFlowInterval;
+    trueFlowPriceBucket: number;
+    trueFlowValueAreaFraction: number;
+    maxDerivedSegments: number;
+    maxDerivedBars: number;
+    maxFootprintCellsPerBar: number;
+    maxTradeProfileRows: number;
 }
 
 export type AggregateTradeWorkerConfigOverrides = Partial<AggregateTradeWorkerConfig>;
@@ -25,6 +33,7 @@ export type AggregateTradeWorkerCommand =
 
 export type AggregateTradeWorkerEvent =
     | { type: 'TRADE_BATCH'; trades: ClassifiedTradeV1[] }
+    | { type: 'TRUE_FLOW_SNAPSHOT'; snapshot: TrueFlowSnapshotV1 }
     | { type: 'BOUNDARY'; boundary: TradeCaptureBoundaryV1 }
     | {
         type: 'STATUS';
@@ -47,6 +56,13 @@ const DEFAULT_CONFIG: AggregateTradeWorkerConfig = Object.freeze({
     staleAfterMs: 5_000,
     maxTrades: 50_000,
     maxBoundaries: 1_000,
+    trueFlowInterval: '1m',
+    trueFlowPriceBucket: 10,
+    trueFlowValueAreaFraction: 0.7,
+    maxDerivedSegments: 1_000,
+    maxDerivedBars: 20_000,
+    maxFootprintCellsPerBar: 5_000,
+    maxTradeProfileRows: 20_000,
 });
 
 function positiveInteger(value: number, field: string): number {
@@ -75,6 +91,21 @@ export function createAggregateTradeWorkerConfig(
     config.staleAfterMs = positiveInteger(config.staleAfterMs, 'staleAfterMs');
     config.maxTrades = positiveInteger(config.maxTrades, 'maxTrades');
     config.maxBoundaries = positiveInteger(config.maxBoundaries, 'maxBoundaries');
+    if (!['1m', '5m', '15m', '1h', '4h', '1d'].includes(config.trueFlowInterval)) {
+        throw new RangeError('trueFlowInterval was invalid');
+    }
+    if (!Number.isFinite(config.trueFlowPriceBucket) || config.trueFlowPriceBucket <= 0) {
+        throw new RangeError('trueFlowPriceBucket must be positive');
+    }
+    if (!Number.isFinite(config.trueFlowValueAreaFraction)
+        || config.trueFlowValueAreaFraction < 0.5
+        || config.trueFlowValueAreaFraction > 0.99) {
+        throw new RangeError('trueFlowValueAreaFraction must be between 0.5 and 0.99');
+    }
+    config.maxDerivedSegments = positiveInteger(config.maxDerivedSegments, 'maxDerivedSegments');
+    config.maxDerivedBars = positiveInteger(config.maxDerivedBars, 'maxDerivedBars');
+    config.maxFootprintCellsPerBar = positiveInteger(config.maxFootprintCellsPerBar, 'maxFootprintCellsPerBar');
+    config.maxTradeProfileRows = positiveInteger(config.maxTradeProfileRows, 'maxTradeProfileRows');
     if (config.reconnectMaxMs < config.reconnectBaseMs) {
         throw new RangeError('reconnectMaxMs must be greater than or equal to reconnectBaseMs');
     }

@@ -24,6 +24,29 @@
       "usageSource": "UNAVAILABLE",
       "sourceReference": "git:447a9d2",
       "notes": ["Codex desktop usage and subscription allocation were not exposed to this repository run."]
+    },
+    {
+      "id": "ux16-2-codex-runtime-batch",
+      "taskId": "UX16.2-RUNTIME-02",
+      "agent": "CODEX",
+      "provider": "OpenAI",
+      "model": "UNREPORTED",
+      "billingMode": "SUBSCRIPTION",
+      "startedAt": "2026-10-30T00:00:00.000Z",
+      "completedAt": "2026-10-30T00:00:00.000Z",
+      "elapsedMs": null,
+      "inputTokens": null,
+      "cachedInputTokens": null,
+      "outputTokens": null,
+      "reasoningTokens": null,
+      "toolCalls": null,
+      "providerReportedCostUsd": null,
+      "calculatedCostUsd": null,
+      "costStatus": "UNREPORTED",
+      "pricing": null,
+      "usageSource": "UNAVAILABLE",
+      "sourceReference": "git:80ef5c3",
+      "notes": ["Codex desktop usage and subscription allocation were not exposed to this repository run."]
     }
   ]
 }
