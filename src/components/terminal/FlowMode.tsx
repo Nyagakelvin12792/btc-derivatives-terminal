@@ -3,6 +3,7 @@
 import React from 'react';
 import { Activity, BarChart2, Layers, Waves } from 'lucide-react';
 import type { CaptureCoverageV1, MarketEvidenceV1 } from '../../lib/orderflow/contracts';
+import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import { cn } from '../../lib/ui/cn';
 
 export interface FlowModeProps {
@@ -13,6 +14,7 @@ export interface FlowModeProps {
     currentCvdUsd: number | null;
     events: MarketEvidenceV1[];
     dataMode: CaptureCoverageV1['dataMode'];
+    trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
     className?: string;
 }
 
@@ -34,8 +36,13 @@ export default function FlowMode({
     currentCvdUsd,
     events,
     dataMode,
+    trueFlowSnapshot,
     className,
 }: FlowModeProps) {
+    const effectiveCvdStatus = trueFlowSnapshot ? 'TRADE_BASED' : cvdStatus;
+    const effectiveCvdUsd = trueFlowSnapshot ? trueFlowSnapshot.totals.deltaNotionalUsd : currentCvdUsd;
+    const effectiveFootprintStatus = trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 ? 'READY' : footprintStatus;
+
     return (
         <div className={cn('space-y-2.5 p-3 font-sans text-[#D8DEE8]', className)} data-testid="flow-mode-container">
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3">
@@ -58,19 +65,61 @@ export default function FlowMode({
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-footprint-container">
                 <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">
                     <span className="flex items-center gap-1.5"><Layers className="size-3 text-[#39A9F5]" />FOOTPRINT</span>
-                    <span>{footprintStatus}</span>
+                    <span data-testid="flow-footprint-status">{effectiveFootprintStatus}</span>
                 </div>
-                <p className="mt-2 text-[9px] leading-relaxed text-[#8390A0]">Trade-classified footprint calculation begins in UX16.2. No bar imbalance is inferred from candles.</p>
+                {trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 ? (
+                    <div className="mt-2 font-mono text-[9px] text-[#8390A0]">
+                        <div className="flex justify-between">
+                            <span>CAPTURED BARS:</span>
+                            <span className="font-bold text-[#D8DEE8]">{trueFlowSnapshot.footprintBars.length}</span>
+                        </div>
+                        <div className="flex justify-between mt-0.5">
+                            <span>TOTAL TRADES:</span>
+                            <span className="text-[#D8DEE8]">{trueFlowSnapshot.totals.tradeCount}</span>
+                        </div>
+                        <p className="mt-1 text-[8px] text-[#5C697A]">Trade-classified cells active. Diagonal imbalance disabled until UX16.4.</p>
+                    </div>
+                ) : (
+                    <p className="mt-2 text-[9px] leading-relaxed text-[#8390A0]">Trade-classified footprint calculation begins in UX16.2. No bar imbalance is inferred from candles.</p>
+                )}
             </div>
 
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-cvd-container">
                 <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">
                     <span className="flex items-center gap-1.5"><BarChart2 className="size-3 text-[#39A9F5]" />CVD COVERAGE</span>
-                    <span>{cvdStatus}</span>
+                    <span data-testid="flow-cvd-status">{effectiveCvdStatus}</span>
                 </div>
-                <div className="mt-2 font-mono text-lg font-black text-[#D8DEE8]">{compactUsd(currentCvdUsd)}</div>
-                <p className="mt-1 text-[9px] text-[#5C697A]">True trade-based CVD requires the aggregate-trade capture milestone.</p>
+                <div className="mt-2 font-mono text-lg font-black text-[#D8DEE8]" data-testid="flow-cvd-value">{compactUsd(effectiveCvdUsd)}</div>
+                {trueFlowSnapshot ? (
+                    <div className="mt-1 font-mono text-[8px] text-[#5C697A]">
+                        {trueFlowSnapshot.cvdSegments.length} isolated {trueFlowSnapshot.cvdSegments.length === 1 ? 'segment' : 'segments'} (boundaries strictly unbridged)
+                    </div>
+                ) : (
+                    <p className="mt-1 text-[9px] text-[#5C697A]">True trade-based CVD requires the aggregate-trade capture milestone.</p>
+                )}
             </div>
+
+            {/* Trade Volume Profile Summary when available */}
+            {trueFlowSnapshot && (
+                <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-trade-vp-container">
+                    <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">
+                        <span className="flex items-center gap-1.5"><BarChart2 className="size-3 text-[#39A9F5]" />TRADE VOLUME PROFILE</span>
+                        <span className="rounded bg-[#18212C] px-1 py-0.2 text-[8px] text-[#D8DEE8]">{trueFlowSnapshot.tradeVolumeProfile.coverageKind}</span>
+                    </div>
+                    <div className="mt-1.5 font-mono text-[9px] text-[#8390A0]">
+                        <div className="flex justify-between">
+                            <span>POC:</span>
+                            <span className="font-bold text-[#E5A83B]">{trueFlowSnapshot.tradeVolumeProfile.pocPrice?.toFixed(1) ?? '—'}</span>
+                        </div>
+                        <div className="flex justify-between mt-0.5">
+                            <span>VALUE AREA:</span>
+                            <span className="text-[#39A9F5]">
+                                {trueFlowSnapshot.tradeVolumeProfile.valPrice?.toFixed(1) ?? '—'} – {trueFlowSnapshot.tradeVolumeProfile.vahPrice?.toFixed(1) ?? '—'}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-events-container">
                 <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">

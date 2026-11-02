@@ -43,6 +43,7 @@ import {
     X,
 } from 'lucide-react';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
+import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import type { WorkspaceTab } from '../../lib/dashboard/types';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
@@ -69,6 +70,7 @@ import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
 interface MarketTerminalProps {
     data: TerrainDataContractV2;
     isError: boolean;
+    trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
 }
 
 interface MarketMetrics {
@@ -176,7 +178,8 @@ function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; da
     </div>;
 }
 
-export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
+export default function MarketTerminal({ data, isError, trueFlowSnapshot }: MarketTerminalProps) {
+    void trueFlowSnapshot;
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
