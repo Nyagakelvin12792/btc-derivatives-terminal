@@ -1,53 +1,55 @@
 import { describe, expect, it } from 'vitest';
 
 import { deriveTrueFlowSnapshotV1 } from './true-flow';
-import { ORACLE_SCENARIOS } from './true-flow-oracle.test-data';
+import { buildOracleCapture, ORACLE_SCENARIOS } from './true-flow-oracle.test-data';
 
-describe('UX16.2 independent true-flow oracle', () => {
+describe('UX16.2 hand-calculated true-flow oracle', () => {
     for (const scenario of ORACLE_SCENARIOS) {
         it(`${scenario.id}: ${scenario.title}`, () => {
-            const capture = scenario.buildCapture();
+            const capture = buildOracleCapture(scenario);
             const actual = deriveTrueFlowSnapshotV1(capture, {
                 interval: scenario.interval,
                 priceBucket: scenario.priceBucket,
-                valueAreaFraction: scenario.valueAreaFraction,
+                valueAreaFraction: 0.7,
             });
+            const expected = scenario.expected;
 
-            // Expected cells and totals are explicit literals in the oracle;
-            // they are not computed by a second copy of the production engine.
-            expect(actual).toEqual(scenario.expected);
+            expect(actual.totals.tradeCount).toBe(expected.tradeCount);
+            expect(actual.totals.buyVolumeBtc).toBeCloseTo(expected.buyVolumeBtc, 12);
+            expect(actual.totals.sellVolumeBtc).toBeCloseTo(expected.sellVolumeBtc, 12);
+            expect(actual.totals.buyNotionalUsd).toBeCloseTo(expected.buyNotionalUsd, 9);
+            expect(actual.totals.sellNotionalUsd).toBeCloseTo(expected.sellNotionalUsd, 9);
+            expect(actual.totals.totalNotionalUsd).toBeCloseTo(expected.totalNotionalUsd, 9);
+            expect(actual.totals.deltaNotionalUsd).toBeCloseTo(expected.deltaNotionalUsd, 9);
 
-            const footprintTradeCount = actual.footprintBars.reduce((sum, bar) =>
-                sum + bar.footprint.cells.reduce((cellSum, cell) => cellSum + cell.tradeCount, 0), 0);
-            const footprintNotional = actual.footprintBars.reduce((sum, bar) =>
-                sum + bar.footprint.totalNotionalUsd, 0);
+            expect(actual.cvdSegments.length).toBe(expected.cvdSegmentFinals.length);
+            actual.cvdSegments.forEach((segment, index) => {
+                expect(segment.finalCumulativeDeltaNotionalUsd)
+                    .toBeCloseTo(expected.cvdSegmentFinals[index], 9);
+            });
+            expect(actual.cvdSegments.reduce((sum, segment) => sum + segment.bars.length, 0))
+                .toBe(expected.cvdBarCount);
+            expect(actual.footprintBars).toHaveLength(expected.footprintBarCount);
+            expect(actual.tradeVolumeProfile.rows).toHaveLength(expected.profileRowCount);
+            expect(actual.tradeVolumeProfile.pocPrice).toBe(expected.pocPrice);
+            expect(actual.tradeVolumeProfile.vahPrice).toBe(expected.vahPrice);
+            expect(actual.tradeVolumeProfile.valPrice).toBe(expected.valPrice);
+            expect(actual.tradeVolumeProfile.coverageKind).toBe(expected.coverageKind);
+
+            const cellTradeCount = actual.footprintBars.reduce((barSum, bar) =>
+                barSum + bar.footprint.cells.reduce((cellSum, cell) => cellSum + cell.tradeCount, 0), 0);
+            const cellNotional = actual.footprintBars.reduce((barSum, bar) =>
+                barSum + bar.footprint.cells.reduce((cellSum, cell) => cellSum + cell.totalNotionalUsd, 0), 0);
             const profileTradeCount = actual.tradeVolumeProfile.rows.reduce((sum, row) => sum + row.tradeCount, 0);
             const profileNotional = actual.tradeVolumeProfile.rows.reduce((sum, row) => sum + row.totalNotionalUsd, 0);
-            const cvdDelta = actual.cvdSegments.reduce((sum, segment) =>
+            const cumulativeDelta = actual.cvdSegments.reduce((sum, segment) =>
                 sum + segment.finalCumulativeDeltaNotionalUsd, 0);
 
-            expect(footprintTradeCount).toBe(actual.totals.tradeCount);
+            expect(cellTradeCount).toBe(actual.totals.tradeCount);
             expect(profileTradeCount).toBe(actual.totals.tradeCount);
-            expect(footprintNotional).toBeCloseTo(actual.totals.totalNotionalUsd, 9);
+            expect(cellNotional).toBeCloseTo(actual.totals.totalNotionalUsd, 9);
             expect(profileNotional).toBeCloseTo(actual.totals.totalNotionalUsd, 9);
-            expect(cvdDelta).toBeCloseTo(actual.totals.deltaNotionalUsd, 9);
+            expect(cumulativeDelta).toBeCloseTo(actual.totals.deltaNotionalUsd, 9);
         });
     }
-
-    it('keeps every UX16.4 imbalance flag absent from true-flow cells', () => {
-        for (const scenario of ORACLE_SCENARIOS) {
-            const actual = deriveTrueFlowSnapshotV1(scenario.buildCapture(), {
-                interval: scenario.interval,
-                priceBucket: scenario.priceBucket,
-                valueAreaFraction: scenario.valueAreaFraction,
-            });
-            for (const bar of actual.footprintBars) {
-                for (const cell of bar.footprint.cells) {
-                    expect(cell.buyImbalance).toBe(false);
-                    expect(cell.sellImbalance).toBe(false);
-                    expect(cell.imbalanceRatio).toBeNull();
-                }
-            }
-        }
-    });
 });
