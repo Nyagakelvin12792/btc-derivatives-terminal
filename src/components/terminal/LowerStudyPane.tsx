@@ -7,6 +7,8 @@ import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import { cn } from '../../lib/ui/cn';
 import LiquidityPanel, { formatCompactUsd } from './LiquidityPanel';
 import type { OrderFlowStudy } from './LowerStudyDock';
+import TrueCvdPane from './TrueCvdPane';
+import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export type CvdAnchorOption = 'AUTO' | CvdAnchor;
 
@@ -147,6 +149,7 @@ export interface LowerStudyPaneProps {
     cvdResetMarkers: Array<{ time: number; x: number }>;
     paneHeight: number;
     maxPaneHeight: number;
+    trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
     onCvdAnchorChange: (anchor: CvdAnchorOption) => void;
     onResizeHeight: (nextHeight: number) => void;
     onResetChartAndObjects: () => void;
@@ -167,6 +170,7 @@ export default function LowerStudyPane({
     cvdResetMarkers,
     paneHeight,
     maxPaneHeight,
+    trueFlowSnapshot,
     onCvdAnchorChange,
     onResizeHeight,
     onResetChartAndObjects,
@@ -315,23 +319,27 @@ export default function LowerStudyPane({
 
             <div className="relative min-h-0 flex-1 overflow-hidden">
                 {activeStudy === 'CVD' && (
-                    <>
-                        <div
-                            ref={cvdHostRef}
-                            className="size-full"
-                            role="img"
-                            aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`}
-                        />
-                        {cvdResetMarkers.map((marker) => (
+                    trueFlowSnapshot ? (
+                        <TrueCvdPane snapshot={trueFlowSnapshot} showProvenance={false} />
+                    ) : (
+                        <>
                             <div
-                                key={marker.time}
-                                className="pointer-events-none absolute inset-y-0 z-20 border-l border-dashed border-zinc-400/55"
-                                style={{ left: marker.x }}
-                            >
-                                <span className="absolute left-1 top-2 whitespace-nowrap text-[8px] text-zinc-500">Reset</span>
-                            </div>
-                        ))}
-                    </>
+                                ref={cvdHostRef}
+                                className="size-full"
+                                role="img"
+                                aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`}
+                            />
+                            {cvdResetMarkers.map((marker) => (
+                                <div
+                                    key={marker.time}
+                                    className="pointer-events-none absolute inset-y-0 z-20 border-l border-dashed border-zinc-400/55"
+                                    style={{ left: marker.x }}
+                                >
+                                    <span className="absolute left-1 top-2 whitespace-nowrap text-[8px] text-zinc-500">Reset</span>
+                                </div>
+                            ))}
+                        </>
+                    )
                 )}
                 {activeStudy === 'DELTA' && (
                     <div
