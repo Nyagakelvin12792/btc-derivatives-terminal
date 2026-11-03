@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.11
+Version: 3.12
 Last updated: 2026-11-03
-Overall status: UX16.5 ABSORPTION AND ACCEPTANCE COMPLETE (76.7% IMPLEMENTED / 76.7% TESTED) · UX16.6 IN PROGRESS
-Current checkpoint: UX16.5 Absorption, acceptance, divergence, and zones verified with Playwright across 4 viewports; kicking off UX16.6 Setup State Machine
+Overall status: UX16.6 SETUP STATE MACHINE AND DECISION DOCK COMPLETE (85.0% IMPLEMENTED / 85.0% TESTED) · UX16.7 IN PROGRESS
+Current checkpoint: UX16.6 Setup State Machine, 7 mandatory gates, confirmation triggers, structural invalidations, and Decision Dock verified with Playwright across 4 viewports; kicking off UX16.7 Jev shadow explanation
 
 ## Scope Statement
 
@@ -60,7 +60,8 @@ Observed UI limitations:
 | UX16.3 — Liquidity Surface V2 | COMPLETE | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, neutral amber ramp, focused/full toggle, Playwright verified across 4 viewports |
 | UX16.4 — Imbalance and liquidity behavior | COMPLETE | Diagonal and stacked imbalance, order persistence, add/pull events, probable replenishment; Playwright and Vitest verified across 4 viewports |
 | UX16.5 — Absorption and acceptance | COMPLETE | Absorption, acceptance, divergence and zones; Playwright and Vitest verified across 4 viewports |
-| UX16.6 — Setup state machine | IN PROGRESS | Setup state machine, mandatory gates, triggers/invalidations, Decision Dock |
+| UX16.6 — Setup state machine | COMPLETE | Setup state machine, 7 mandatory gates, triggers/invalidations, Decision Dock; Playwright verified across 4 viewports |
+| UX16.7 — Jev shadow explanation | IN PROGRESS | Bounded AI explanation of accepted deterministic feature packet, schema-validated, kill-switched |
 
 ## UX0 Evidence
 
@@ -357,3 +358,52 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   - Accepted progress: 6.7% (4 / 60 weight)
   - Blocked tasks: 0
 - Milestone UX16.5 marked COMPLETE. Advancing immediately to UX16.6 Setup State Machine.
+
+### 2026-11-03 — UX16.6 Setup state machine and Decision Dock verified and marked COMPLETE
+
+- Implemented deterministic setup engine in `src/lib/orderflow/setup-engine.ts`:
+  - 10-State Setup Machine (Section 14.1): `NO_SETUP`, `WATCH_LONG`, `WATCH_SHORT`, `CONFIRMING_LONG`, `CONFIRMING_SHORT`, `A_GRADE_LONG`, `A_GRADE_SHORT`, `INVALIDATED`, `AVOID`, and `INSUFFICIENT_DATA`.
+  - Seven Mandatory Gates (Section 14.2):
+    1. `dataIntegrity`: sequence continuity, trade feed quality, gap absence, and minimum coverage.
+    2. `location`: price inside or testing a validated decision zone (approximate VP zones strictly FAIL mandatory gate via `canSatisfyMandatoryGate()`).
+    3. `aggression`: qualified executed imbalance or statistically unusual aggressive volume.
+    4. `response`: deterministic absorption or acceptance without contradictory signals.
+    5. `confirmation`: CVD divergence, zone boundary reclaim, or subsequent stacked imbalance.
+    6. `invalidation`: non-null structural price level and explicit condition (breach immediately triggers `INVALIDATED` state).
+    7. `riskCompatibility`: entry-to-invalidation displacement within configured risk budget and limits.
+  - Four Enhancers (Section 14.3): `optionsRegime`, `persistentLiquidity`, `cvdDivergence`, `volumeProfile` evaluated as `ALIGNED`, `CONFLICTING`, or `UNAVAILABLE`.
+  - Conflict Transparency: conflicting order-flow evidence is stored in `conflictIds` and never hidden.
+  - Grade Policy (Section 14.4):
+    - `A` grade: requires all 7 mandatory gates `PASS`, `HIGH` data quality, at least 2 enhancers `ALIGNED`, and 0 conflicts.
+    - `B` grade: location passes and core gates confirm (`CONFIRMING`).
+    - `WATCH`: location passes, awaiting execution evidence.
+    - `NONE`: no setup, invalidated, avoid, or insufficient data.
+    - Strictly validated by `SetupAssessmentV1Schema.parse()`.
+  - Replay Verification: `replaySetupStateSequence()` provides replayable deterministic transitions.
+- Upgraded Decision Dock & Setup Mode Inspector (`DecisionDock.tsx` & `SetupMode.tsx`):
+  - Answers What (state & grade), Where (decision zone bounds), Confirmation Trigger (description & trigger price), and Invalidation (description & invalidation price) directly in the dock without opening a secondary panel.
+  - Displays Mandatory Gates checklist with PASS/FAIL/MISSING badges.
+  - Displays Enhancers Matrix with alignment states.
+  - Displays Planned Risk boundaries (structural risk distance and percentage to stop).
+  - Displays Aligned Evidence and Conflicting Evidence.
+  - Displays collapsible Jev Shadow Explanation.
+  - Propagates setup state dynamically into `ContextMode`.
+- Comprehensive Unit Tests:
+  - Authored `src/lib/orderflow/setup-engine.test.ts` with 10 passing unit tests.
+  - Full vitest test suite: 51 test files, 342 tests passed with 0 errors.
+- Production Build Verification:
+  - Next.js 16.4.2 turbopack production build (`npm run build`) succeeded with zero TypeScript or route errors.
+- Cross-Viewport Playwright Acceptance Suite (`tests/ui/ux16-setup-dock.pw.ts`):
+  - 2/2 tests passed across Desktop 1920×1080, Compact 1664×936, Laptop 1366×768, and Mobile 390×844 with 0 horizontal scroll overflow.
+- Visual Acceptance Artifacts captured and mirrored to brain artifact directory:
+  - `ux16-6-setup-desktop-1920x1080.png`
+  - `ux16-6-setup-compact-1664x936.png`
+  - `ux16-6-setup-laptop-1366x768.png`
+  - `ux16-6-setup-mobile-390x844.png`
+- Updated telemetry in `src/lib/project-control/ux16-plan.ts`:
+  - Implemented progress: 85.0% (51 / 60 weight)
+  - Tested progress: 85.0% (51 / 60 weight)
+  - Accepted progress: 6.7% (4 / 60 weight)
+  - Blocked tasks: 0
+  - Review required tasks: 6
+- Milestone UX16.6 marked COMPLETE. Advancing immediately to UX16.7 (Jev Shadow Explanation).

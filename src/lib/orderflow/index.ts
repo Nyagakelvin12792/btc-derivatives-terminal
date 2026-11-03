@@ -16,3 +16,4 @@ export * from './microstructure-contracts';
 export * from './microstructure';
 export * from './evidence-contracts';
 export * from './evidence-engine';
+export * from './setup-engine';

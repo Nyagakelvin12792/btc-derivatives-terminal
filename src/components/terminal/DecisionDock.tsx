@@ -24,6 +24,7 @@ import {
     synthesizeFlowEvidence,
     detectStackedImbalances,
     trackLiquidityPersistence,
+    evaluateSetupAssessment,
     type DepthObservation,
 } from '../../lib/orderflow';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
@@ -100,9 +101,9 @@ export default function DecisionDock({
         quality: 'UNAVAILABLE',
     });
 
-    const flowEvidence = useMemo(() => {
-        if (!trueFlowSnapshot) return [];
-        const observations: DepthObservation[] = (liquidityFeed.frames || []).flatMap((frame) =>
+    const persistence = useMemo(() => {
+        if (!liquidityFeed.frames || liquidityFeed.frames.length === 0) return [];
+        const observations: DepthObservation[] = liquidityFeed.frames.flatMap((frame) =>
             (frame.levels || []).map((lvl) => ({
                 priceBucket: lvl.price,
                 side: lvl.side,
@@ -110,12 +111,11 @@ export default function DecisionDock({
                 timestamp: frame.eventTime,
             }))
         );
-        const persistence = trackLiquidityPersistence(observations);
-        const stacked = trueFlowSnapshot.footprintBars.flatMap((bar) =>
-            detectStackedImbalances(bar.footprint?.cells ?? [], bar.footprint?.openTime ?? 0)
-        );
+        return trackLiquidityPersistence(observations);
+    }, [liquidityFeed.frames]);
 
-        const decisionZones = buildDecisionZones({
+    const decisionZones = useMemo(() => {
+        return buildDecisionZones({
             spotPrice: metrics.spot,
             optionsLevels: {
                 callWall: metrics.callWall,
@@ -123,7 +123,7 @@ export default function DecisionDock({
                 gammaFlip: metrics.gammaFlip,
                 maxPain: metrics.maxPain,
             },
-            volumeProfile: trueFlowSnapshot.tradeVolumeProfile?.pocPrice
+            volumeProfile: trueFlowSnapshot?.tradeVolumeProfile?.pocPrice
                 ? {
                       poc: trueFlowSnapshot.tradeVolumeProfile.pocPrice,
                       vah: trueFlowSnapshot.tradeVolumeProfile.vahPrice,
@@ -133,6 +133,22 @@ export default function DecisionDock({
                 : undefined,
             persistentWalls: persistence,
         });
+    }, [
+        metrics.spot,
+        metrics.callWall,
+        metrics.putWall,
+        metrics.gammaFlip,
+        metrics.maxPain,
+        trueFlowSnapshot?.tradeVolumeProfile,
+        persistence,
+    ]);
+
+    const flowEvidence = useMemo(() => {
+        if (!trueFlowSnapshot) return [];
+
+        const stacked = trueFlowSnapshot.footprintBars.flatMap((bar) =>
+            detectStackedImbalances(bar.footprint?.cells ?? [], bar.footprint?.openTime ?? 0)
+        );
 
         const footprintBars = trueFlowSnapshot.footprintBars.map((b) => b.footprint);
         const rawAbsorptions = detectAbsorption({
@@ -184,44 +200,80 @@ export default function DecisionDock({
         });
     }, [
         trueFlowSnapshot,
-        liquidityFeed.frames,
-        metrics.spot,
-        metrics.callWall,
-        metrics.putWall,
-        metrics.gammaFlip,
-        metrics.maxPain,
+        decisionZones,
+        persistence,
         orderflowMode,
     ]);
 
-    const setupAssessment: SetupAssessmentV1 = {
-        schemaVersion: ORDERFLOW_SCHEMA_VERSION,
-        state: 'INSUFFICIENT_DATA',
+    const setupAssessment = useMemo(() => {
+        const coverage = trueFlowSnapshot ? trueFlowSnapshot.coverage : unavailableCoverage;
+        const seqState = dataMode === 'DEMO' ? 'OFFLINE' : (liquidityFeed.sequence.state as any);
+
+        return evaluateSetupAssessment({
+            asOf,
+            spotPrice: metrics.spot,
+            zones: decisionZones,
+            evidence: flowEvidence,
+            coverage,
+            sequenceState: seqState,
+            riskSettings: {
+                accountEquityUsd: riskSettings?.equityUsd,
+                maxRiskPct: riskSettings?.riskMode === 'percent' ? riskSettings.riskValue : undefined,
+                maxRiskPerTradeUsd: riskSettings?.riskMode === 'amount' ? riskSettings.riskValue : undefined,
+                leverage: riskSettings?.leverage,
+            },
+        });
+    }, [
         asOf,
-        symbol: 'BTCUSDT',
-        contextTimeframes: ['4h', '1h'],
-        triggerTimeframe: '5m',
-        zone: null,
-        trigger: null,
-        invalidation: null,
-        mandatoryGates: {
-            dataIntegrity: 'MISSING',
-            location: 'MISSING',
-            aggression: 'MISSING',
-            response: 'MISSING',
-            confirmation: 'MISSING',
-            invalidation: 'MISSING',
-            riskCompatibility: 'MISSING',
-        },
-        enhancers: {
-            persistentLiquidity: 'UNAVAILABLE',
-            optionsStructure: 'UNAVAILABLE',
-        },
-        evidenceIds: flowEvidence.slice(0, 5).map((e) => e.id),
-        conflictIds: [],
-        grade: 'NONE',
-        dataQuality: trueFlowSnapshot ? trueFlowSnapshot.coverage : unavailableCoverage,
-        deterministicVersion: 'ux16.5-flow-evidence',
-    };
+        metrics.spot,
+        decisionZones,
+        flowEvidence,
+        trueFlowSnapshot,
+        unavailableCoverage,
+        dataMode,
+        liquidityFeed.sequence.state,
+        riskSettings,
+    ]);
+
+    const contextDecisionState = useMemo(() => {
+        if (
+            setupAssessment.state === 'A_GRADE_LONG' ||
+            setupAssessment.state === 'A_GRADE_SHORT' ||
+            setupAssessment.state === 'CONFIRMING_LONG' ||
+            setupAssessment.state === 'CONFIRMING_SHORT'
+        ) {
+            return 'CONFIRMING';
+        }
+        if (setupAssessment.state === 'WATCH_LONG' || setupAssessment.state === 'WATCH_SHORT') {
+            return 'WATCH';
+        }
+        if (setupAssessment.state === 'INSUFFICIENT_DATA') {
+            return 'INSUFFICIENT_DATA';
+        }
+        return 'NO_SETUP';
+    }, [setupAssessment.state]);
+
+    const contextDecisionReason = useMemo(() => {
+        if (setupAssessment.state === 'A_GRADE_LONG' || setupAssessment.state === 'A_GRADE_SHORT') {
+            return `Deterministic A-grade setup active in zone: ${setupAssessment.zone?.label ?? 'Decision Zone'}.`;
+        }
+        if (setupAssessment.state === 'CONFIRMING_LONG' || setupAssessment.state === 'CONFIRMING_SHORT') {
+            return `Setup confirming in zone: ${setupAssessment.zone?.label ?? 'Decision Zone'}. Awaiting confirmation trigger.`;
+        }
+        if (setupAssessment.state === 'WATCH_LONG' || setupAssessment.state === 'WATCH_SHORT') {
+            return `Price inside decision zone: ${setupAssessment.zone?.label ?? 'Decision Zone'}. Monitoring execution flow.`;
+        }
+        if (setupAssessment.state === 'INSUFFICIENT_DATA') {
+            return 'Live order-flow stream unavailable or offline. Reconnect or review replay capture.';
+        }
+        if (setupAssessment.state === 'AVOID') {
+            return 'Contradictory order flow signals or sequence gap detected. Setup state: AVOID.';
+        }
+        if (setupAssessment.state === 'INVALIDATED') {
+            return 'Structural invalidation price breached. Setup invalidated.';
+        }
+        return 'Price is outside active structural decision zones.';
+    }, [setupAssessment]);
 
     const activeOverlayCount = Object.values(chartLayers).filter(Boolean).length;
 
@@ -275,8 +327,8 @@ export default function DecisionDock({
                                     putWall={metrics.putWall}
                                     gammaFlip={metrics.gammaFlip}
                                     gammaRegime={metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}
-                                    decisionState="INSUFFICIENT_DATA"
-                                    decisionReason="UX16.0 provides structural context only. Setup classification is not enabled."
+                                    decisionState={contextDecisionState}
+                                    decisionReason={contextDecisionReason}
                                     dataFreshnessMs={dataMode === 'DEMO' ? null : marketFeed.latencyMs}
                                     activeOverlayCount={activeOverlayCount}
                                 />
