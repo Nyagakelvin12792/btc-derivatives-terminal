@@ -15,11 +15,17 @@ import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidit
 import { ORDERFLOW_SCHEMA_VERSION, type SetupAssessmentV1 } from '../../lib/orderflow/contracts';
 import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
 import {
-    convertMicrostructureToMarketEvidence,
+    buildDecisionZones,
+    detectAbsorption,
+    detectAcceptance,
+    reconcileAbsorptionAndAcceptance,
+    detectCvdDivergence,
+    getFootprintBarMetrics,
+    synthesizeFlowEvidence,
     detectStackedImbalances,
     trackLiquidityPersistence,
     type DepthObservation,
-} from '../../lib/orderflow/microstructure';
+} from '../../lib/orderflow';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export interface DecisionDockProps {
@@ -93,6 +99,100 @@ export default function DecisionDock({
         approximation: 'NONE',
         quality: 'UNAVAILABLE',
     });
+
+    const flowEvidence = useMemo(() => {
+        if (!trueFlowSnapshot) return [];
+        const observations: DepthObservation[] = (liquidityFeed.frames || []).flatMap((frame) =>
+            (frame.levels || []).map((lvl) => ({
+                priceBucket: lvl.price,
+                side: lvl.side,
+                notionalUsd: lvl.notionalUsd,
+                timestamp: frame.eventTime,
+            }))
+        );
+        const persistence = trackLiquidityPersistence(observations);
+        const stacked = trueFlowSnapshot.footprintBars.flatMap((bar) =>
+            detectStackedImbalances(bar.footprint?.cells ?? [], bar.footprint?.openTime ?? 0)
+        );
+
+        const decisionZones = buildDecisionZones({
+            spotPrice: metrics.spot,
+            optionsLevels: {
+                callWall: metrics.callWall,
+                putWall: metrics.putWall,
+                gammaFlip: metrics.gammaFlip,
+                maxPain: metrics.maxPain,
+            },
+            volumeProfile: trueFlowSnapshot.tradeVolumeProfile?.pocPrice
+                ? {
+                      poc: trueFlowSnapshot.tradeVolumeProfile.pocPrice,
+                      vah: trueFlowSnapshot.tradeVolumeProfile.vahPrice,
+                      val: trueFlowSnapshot.tradeVolumeProfile.valPrice,
+                      isApproximate: false,
+                  }
+                : undefined,
+            persistentWalls: persistence,
+        });
+
+        const footprintBars = trueFlowSnapshot.footprintBars.map((b) => b.footprint);
+        const rawAbsorptions = detectAbsorption({
+            bars: footprintBars,
+            decisionZones,
+            persistentWalls: persistence,
+            isProduction: orderflowMode === 'LIVE',
+        });
+
+        const rawAcceptances = detectAcceptance({
+            bars: footprintBars,
+            decisionZones,
+        });
+
+        const { reconciledAbsorptions, reconciledAcceptances } = reconcileAbsorptionAndAcceptance(
+            rawAbsorptions,
+            rawAcceptances
+        );
+
+        const cvdPoints = trueFlowSnapshot.cvdSegments.flatMap((seg) =>
+            seg.bars.map((b) => ({ time: b.openTime, cvd: b.cumulativeDeltaNotionalUsd }))
+        );
+        const candles = footprintBars.map((b) => {
+            const m = getFootprintBarMetrics(b);
+            return {
+                openTime: b.openTime,
+                closeTime: b.closeTime,
+                open: m.barLow,
+                high: m.barHigh,
+                low: m.barLow,
+                close: m.barClose,
+            };
+        });
+
+        const divergences = detectCvdDivergence({
+            candles,
+            cvdPoints,
+            decisionZones,
+        });
+
+        return synthesizeFlowEvidence({
+            zones: decisionZones,
+            absorptions: reconciledAbsorptions,
+            acceptances: reconciledAcceptances,
+            divergences,
+            stackedImbalances: stacked,
+            persistentWalls: persistence,
+            coverage: trueFlowSnapshot.coverage,
+        });
+    }, [
+        trueFlowSnapshot,
+        liquidityFeed.frames,
+        metrics.spot,
+        metrics.callWall,
+        metrics.putWall,
+        metrics.gammaFlip,
+        metrics.maxPain,
+        orderflowMode,
+    ]);
+
     const setupAssessment: SetupAssessmentV1 = {
         schemaVersion: ORDERFLOW_SCHEMA_VERSION,
         state: 'INSUFFICIENT_DATA',
@@ -116,32 +216,12 @@ export default function DecisionDock({
             persistentLiquidity: 'UNAVAILABLE',
             optionsStructure: 'UNAVAILABLE',
         },
-        evidenceIds: [],
+        evidenceIds: flowEvidence.slice(0, 5).map((e) => e.id),
         conflictIds: [],
         grade: 'NONE',
-        dataQuality: unavailableCoverage,
-        deterministicVersion: 'ux16.0-shell-only',
+        dataQuality: trueFlowSnapshot ? trueFlowSnapshot.coverage : unavailableCoverage,
+        deterministicVersion: 'ux16.5-flow-evidence',
     };
-        const microstructureEvents = useMemo(() => {
-        if (!trueFlowSnapshot) return [];
-        const observations: DepthObservation[] = (liquidityFeed.frames || []).flatMap((frame) =>
-            (frame.levels || []).map((lvl) => ({
-                priceBucket: lvl.price,
-                side: lvl.side,
-                notionalUsd: lvl.notionalUsd,
-                timestamp: frame.eventTime,
-            }))
-        );
-        const persistence = trackLiquidityPersistence(observations);
-        const stacked = trueFlowSnapshot.footprintBars.flatMap((bar) =>
-            detectStackedImbalances(bar.footprint?.cells ?? [], bar.footprint?.openTime ?? 0)
-        );
-        return convertMicrostructureToMarketEvidence({
-            stackedZones: stacked,
-            persistentWalls: persistence,
-            coverage: trueFlowSnapshot.coverage,
-        });
-    }, [trueFlowSnapshot, liquidityFeed.frames]);
 
     const activeOverlayCount = Object.values(chartLayers).filter(Boolean).length;
 
@@ -208,13 +288,13 @@ export default function DecisionDock({
                                     footprintStatus="NOT_CONNECTED"
                                     cvdStatus="UNAVAILABLE"
                                     currentCvdUsd={null}
-                                    events={microstructureEvents}
+                                    events={flowEvidence}
                                     dataMode={orderflowMode}
                                     trueFlowSnapshot={trueFlowSnapshot}
                                 />
                             )}
                             {workspaceMode === 'SETUP' && (
-                                <SetupMode assessment={setupAssessment} evidence={[]} />
+                                <SetupMode assessment={setupAssessment} evidence={flowEvidence} />
                             )}
                         </>
                     )}
@@ -236,7 +316,7 @@ export default function DecisionDock({
                                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                                         <div className="text-[#8390A0]">Dist to Call Wall</div>
                                         <div className="mt-0.5 font-bold text-[#D8DEE8]">
-                                            {(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%
+                                             {(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%
                                         </div>
                                     </div>
                                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">

@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.10
+Version: 3.11
 Last updated: 2026-11-03
-Overall status: UX16.4 IMBALANCE AND LIQUIDITY BEHAVIOR COMPLETE (68.3% IMPLEMENTED / 68.3% TESTED) · UX16.5 IN PROGRESS
-Current checkpoint: UX16.4 Imbalance & Microstructure verified with Playwright across 4 viewports; kicking off UX16.5 Absorption and Acceptance
+Overall status: UX16.5 ABSORPTION AND ACCEPTANCE COMPLETE (76.7% IMPLEMENTED / 76.7% TESTED) · UX16.6 IN PROGRESS
+Current checkpoint: UX16.5 Absorption, acceptance, divergence, and zones verified with Playwright across 4 viewports; kicking off UX16.6 Setup State Machine
 
 ## Scope Statement
 
@@ -59,7 +59,8 @@ Observed UI limitations:
 | UX16.2 — True flow & project-control dashboard | COMPLETE | Gap-safe trade CVD, footprint with semantic zoom, captured VP, /project-control dashboard; released to production on main |
 | UX16.3 — Liquidity Surface V2 | COMPLETE | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, neutral amber ramp, focused/full toggle, Playwright verified across 4 viewports |
 | UX16.4 — Imbalance and liquidity behavior | COMPLETE | Diagonal and stacked imbalance, order persistence, add/pull events, probable replenishment; Playwright and Vitest verified across 4 viewports |
-| UX16.5 — Absorption and acceptance | IN PROGRESS | Absorption, acceptance, divergence and zones |
+| UX16.5 — Absorption and acceptance | COMPLETE | Absorption, acceptance, divergence and zones; Playwright and Vitest verified across 4 viewports |
+| UX16.6 — Setup state machine | IN PROGRESS | Setup state machine, mandatory gates, triggers/invalidations, Decision Dock |
 
 ## UX0 Evidence
 
@@ -325,3 +326,34 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   - `ux16-4-microstructure-mobile-390x844.png`
 - Progress telemetry: Implemented progress increased to 68.3%, tested progress increased to 68.3%, accepted progress at 6.7%.
 - Advancing immediately to UX16.5 (Absorption and Acceptance).
+
+### 2026-11-03 — UX16.5 Absorption, acceptance, divergence, and zones verified and marked COMPLETE
+
+- Implemented pure deterministic evidence engine in `src/lib/orderflow/evidence-engine.ts` and contracts in `src/lib/orderflow/evidence-contracts.ts`:
+  - Decision Zone Construction (Section 13): converts point structural levels (Call Wall, Put Wall, Gamma Flip, POC, VAH, VAL, HVNs, LVNs, persistent walls, swings, VWAP) into tolerance bands (tick size, ATR, and basis-point floors); deterministically merges overlapping bands; preserves contributors and multi-source provenance; ranks by composite strength and proximity to spot.
+  - Strict Production Gating (Section 12.11): absorption CANNOT fire outside a validated decision zone in production mode.
+  - Aggressive Execution Gate: absorption CANNOT fire without aggressive execution volume (configurable `minAggressiveVolumeUsd`, delta in aggression direction).
+  - Price Progress Containment: requires small price displacement relative to aggressive execution (`absorptionRatio >= minAbsorptionRatio`).
+  - Acceptance Detection (Section 12.12): detects breakout and dwell/close condition beyond decision level with aligned flow and breakout delta.
+  - Mutual Exclusion Rule: acceptance and absorption cannot both remain active for the same side/level/time window (if price accepts beyond a zone, conflicting absorption is revoked).
+  - CVD Divergence with Pivot Auditability (Section 12.13): identifies swing-pivot divergence across declared lookback windows; exposes compared pivots (`pricePivot1`, `pricePivot2`, `cvdPivot1`, `cvdPivot2`) with timestamps and values.
+  - Approximate VP Gate Rule: approximate volume profile cannot satisfy a mandatory setup gate (`canSatisfyMandatoryGate()` returns `APPROXIMATE_VP_CANNOT_SATISFY_MANDATORY_GATE`).
+  - Unified Flow Evidence Synthesizer: produces schema-valid `MarketEvidenceV1[]` with explicit reason codes, source references, and capture coverage.
+- Integrated flow evidence engine into `DecisionDock.tsx` (providing live evidence events to FlowMode and SetupMode).
+- Unit tests in `src/lib/orderflow/evidence-engine.test.ts`: 9/9 passed. Full vitest suite: 50 test files, 332 tests passed with 0 errors.
+- Verified cross-viewport Playwright browser acceptance suite `tests/ui/ux16-flow-evidence.pw.ts` across 4 viewports:
+  - Desktop 1920×1080: PASS
+  - Compact 1664×936: PASS
+  - Laptop 1366×768: PASS
+  - Mobile 390×844: PASS (0 horizontal scroll overflow)
+- Captured visual acceptance screenshots in `.artifacts/ui-overhaul/` and mirrored to brain artifact directory:
+  - `ux16-5-evidence-desktop-1920x1080.png`
+  - `ux16-5-evidence-compact-1664x936.png`
+  - `ux16-5-evidence-laptop-1366x768.png`
+  - `ux16-5-evidence-mobile-390x844.png`
+- Updated telemetry in `src/lib/project-control/ux16-plan.ts`:
+  - Implemented progress: 76.7% (46 / 60 weight)
+  - Tested progress: 76.7% (46 / 60 weight)
+  - Accepted progress: 6.7% (4 / 60 weight)
+  - Blocked tasks: 0
+- Milestone UX16.5 marked COMPLETE. Advancing immediately to UX16.6 Setup State Machine.

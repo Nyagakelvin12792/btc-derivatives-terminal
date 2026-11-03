@@ -19,7 +19,7 @@ test.describe('UX16.4 Imbalance & Microstructure Acceptance', () => {
                 ratioThreshold: 3.0,
                 minDominantNotionalUsd: 50_000,
                 minDeltaNotionalUsd: 25_000,
-                stackedMinRows: 3,
+                stackedRowCount: 3,
             },
         });
 
