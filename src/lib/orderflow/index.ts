@@ -19,3 +19,5 @@ export * from './evidence-engine';
 export * from './setup-engine';
 export * from './jev-contracts';
 export * from './jev-adapter';
+export * from './replay-calibration';
+export * from './paper-evaluation';

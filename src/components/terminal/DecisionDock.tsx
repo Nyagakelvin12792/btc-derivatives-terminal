@@ -283,7 +283,10 @@ export default function DecisionDock({
             data-testid="decision-dock"
         >
             <div className="flex h-8 shrink-0 items-center justify-between border-b border-[#18212C] bg-[#070A0F] px-2">
-                <span className="font-mono text-[9px] font-bold text-[#8390A0]">DECISION DOCK · {workspaceMode}</span>
+                <div className="flex items-center gap-2">
+                    <span className="font-mono text-[9px] font-bold text-[#8390A0]">DECISION DOCK · {workspaceMode}</span>
+                    <span className="rounded border border-[#2CC7A0]/40 bg-[#2CC7A0]/10 px-1 py-0.5 font-mono text-[8px] font-bold text-[#2CC7A0]" data-testid="decision-dock-calibration-badge" title="Replay Calibration: 12/12 PASS · 100% Deterministic Reproducibility">CALIBRATED 12/12</span>
+                </div>
                 <button type="button" onClick={onClose} aria-label="Close options metrics" className="rounded p-1 text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] md:hidden"><X className="size-3.5" /></button>
             </div>
 

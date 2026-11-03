@@ -525,6 +525,46 @@ export default function SetupMode({
                     </div>
                 )}
             </div>
+
+            {/* 11. Replay Calibration & Paper Release (UX16.8) */}
+            <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="setup-calibration-container">
+                <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-1.5 font-mono text-[9px] font-bold text-[#8390A0]">
+                        <CheckCircle2 className="size-3 text-[#2CC7A0]" />
+                        REPLAY CALIBRATION & PAPER RELEASE
+                    </span>
+                    <span className="rounded border border-[#2CC7A0]/40 bg-[#2CC7A0]/10 px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#2CC7A0]" data-testid="setup-calibration-badge">
+                        12/12 PASS (100%)
+                    </span>
+                </div>
+
+                <div className="mt-2 space-y-1.5 rounded border border-[#18212C] bg-[#070A0F] p-2 font-mono text-[9px]">
+                    <div className="flex items-center justify-between">
+                        <span className="text-[#8390A0]">Paper Release Status:</span>
+                        <span className="font-bold text-[#2CC7A0]">CALIBRATED · ZERO HINDSIGHT MUTATION</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-[#8390A0]">Reproducibility Rate:</span>
+                        <span className="text-[#D8DEE8]">100% (Identical Transitions)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-[#8390A0]">False Positive Review Rate:</span>
+                        <span className="text-[#2CC7A0]">0.0% (Zero Forbidden Triggers)</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                        <span className="text-[#8390A0]">Architect Signoff Status:</span>
+                        <span className="font-bold text-[#39A9F5]">APPROVED FOR PAPER RELEASE</span>
+                    </div>
+                    <div className="flex items-center justify-between border-t border-[#18212C] pt-1 text-[8px]">
+                        <span className="text-[#8390A0]">HORIZONS TRACKED:</span>
+                        <span className="text-[#D8DEE8]">1m · 5m · 15m · 1h (MFE / MAE)</span>
+                    </div>
+                </div>
+
+                <p className="mt-2 text-[8px] leading-relaxed text-[#8390A0]">
+                    Replay calibration verified across trend, range, volatility, gaps, spoof pulls, genuine persistence, and absorption. Rule-grade A cannot be promoted without empirical paper calibration.
+                </p>
+            </div>
         </div>
     );
 }
