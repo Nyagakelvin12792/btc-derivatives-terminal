@@ -3,8 +3,9 @@
 ## 1. Overview and Milestone Purpose
 
 **Milestone**: UX16.2 — True Trade-Based CVD, Footprint, and Captured-Trade Volume Profile Presentation & Read-Only Project Control Dashboard  
-**Status**: DRAFT — CODEX TAKEOVER REVIEW IN PROGRESS  
-**Source Baseline**: `codex/ux16.2-true-flow` (commit `00efc7ddb2ad8b3fe0cee10ed6cf77e45634b5e7`)  
+**Status**: TESTED — ARCHITECT REVIEW REQUIRED
+
+**Source Baseline**: `codex/ux16.2-true-flow` (assembled commit `c8e7072`)
 **Worktree Branch**: `agent/gemini-ux16.2-ui`  
 **Ownership Boundary**:
 - Pure calculations and contracts: Codex (`src/lib/orderflow/true-flow.ts`, `src/lib/orderflow/true-flow-contracts.ts`, `src/lib/project-control/contracts.ts`, `src/app/api/project-control/route.ts`).
@@ -93,6 +94,9 @@
 
 | Artifact | Resolution | Description |
 | :--- | :--- | :--- |
+| `ux16-2-true-flow-desktop-1920x1080.png` | 1920×1080 | Desktop Flow mode and lower CVD pane |
+| `ux16-2-true-flow-compact-1664x936.png` | 1664×936 | Compact desktop Flow mode |
+| `ux16-2-true-flow-laptop-1366x768.png` | 1366×768 | Laptop Flow mode |
 | `ux16-2-true-flow-mobile-390x844.png` | 390×844 | Mobile responsive layout with zero horizontal overflow |
 | `project-control-milestones-1920x1080.png` | 1920×1080 | Project Control dashboard showing milestones and separate completion percentages |
 | `project-control-spend-1920x1080.png` | 1920×1080 | Spend & telemetry tab showing cost truthfulness and subscription handling |
@@ -102,7 +106,10 @@
 
 ## 5. Verification Results
 
-- **Focused component tests**: 2 files, 25 tests passed during Codex takeover review.
-- **TypeScript**: `npx tsc --noEmit` passed during Codex takeover review.
-- **Full suite, build and Playwright**: pending assembled integration review.
-- **Live true-flow wiring**: pending; draft components are not yet connected to the worker snapshot.
+- **Unit and contract tests**: 47 files, 305 tests passed.
+- **TypeScript and scoped ESLint**: passed with zero errors and zero warnings.
+- **Production build**: Next.js 16.4.2 webpack build passed, including `/project-control` and `/api/project-control`.
+- **Full UX16 browser regression**: 38 passed, two intentional desktop-only mobile skips.
+- **True-flow wiring**: worker snapshots reach the Flow inspector and the linked lower CVD chart; the chart displays only the current uninterrupted segment.
+- **Live upstream limitation**: browser integration uses deterministic worker fixtures. The earlier UX16.1 bounded Binance observation established stream reachability, not continuous production availability.
+- **Release posture**: shadow decision support only; no setup grading, Jev authority, or live execution.

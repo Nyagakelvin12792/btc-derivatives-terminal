@@ -7,7 +7,7 @@ import {
     type WorkStatus,
 } from './contracts';
 
-const UPDATED_AT = '2026-11-02T00:00:00.000Z';
+const UPDATED_AT = '2026-11-03T00:00:00.000Z';
 
 interface TaskInput {
     id: string;
@@ -129,7 +129,7 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 tests: [{ id: 'ux16-1-suite', command: 'npx vitest run && npm run test:ux16', result: 'PASS', passed: 253, failed: 0, skipped: 2, executedAt: '2026-10-26T00:00:00.000Z', commit: 'd357dd6', artifactPaths: ['.artifacts/ui-overhaul/ux16-1-ready-enabled-1920x1080.png'] }],
             }),
         ]),
-        milestone('UX16.2', 'True CVD, footprint, and trade VP', 'IN_PROGRESS', 'TRUE_FLOW', 'Trade-derived flow', [
+        milestone('UX16.2', 'True CVD, footprint, and trade VP', 'REVIEW_REQUIRED', 'TRUE_FLOW', 'Trade-derived flow', [
             task({
                 id: 'UX16.2-CALC-01', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
                 title: 'Canonical true-flow contracts and pure derivation',
@@ -150,9 +150,10 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 id: 'UX16.2-UI-03', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
                 title: 'True-flow presentation and semantic zoom',
                 description: 'Render discontinuous CVD, footprint geometry and exact/mixed trade profile states.',
-                owner: 'ANTIGRAVITY', supportingAgents: ['CODEX'], status: 'IN_PROGRESS', weight: 3, dependsOn: ['UX16.2-CALC-01'],
+                owner: 'ANTIGRAVITY', supportingAgents: ['CODEX'], status: 'REVIEW_REQUIRED', weight: 3, dependsOn: ['UX16.2-CALC-01'],
                 acceptanceCriteria: ['Numbers hide before geometry.', 'No footprint renders before capture.', 'Mixed coverage is visually distinct.'],
-                branch: 'agent/gemini-ux16.2-ui',
+                branch: 'codex/ux16.2-true-flow', commit: 'c8e7072', evidenceStatus: 'TESTED',
+                tests: [{ id: 'ux16-2-ui-browser', command: 'npx playwright test --config=playwright.ux16.config.ts', result: 'PASS', passed: 38, failed: 0, skipped: 2, executedAt: UPDATED_AT, commit: 'c8e7072', artifactPaths: ['.artifacts/ui-overhaul/project-control-milestones-1920x1080.png', '.artifacts/ui-overhaul/ux16-2-true-flow-desktop-1920x1080.png'] }],
             }),
             task({
                 id: 'UX16.2-VALIDATION-04', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
@@ -167,9 +168,11 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 id: 'UX16.2-ACCEPT-05', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
                 title: 'Integrated acceptance checkpoint',
                 description: 'Full unit, type, lint, build, browser and visual review of the assembled milestone.',
-                owner: 'ARCHITECT', supportingAgents: ['CODEX', 'ANTIGRAVITY', 'DEEPSEEK'], status: 'NOT_STARTED', weight: 2,
+                owner: 'ARCHITECT', supportingAgents: ['CODEX', 'ANTIGRAVITY', 'DEEPSEEK'], status: 'REVIEW_REQUIRED', weight: 2,
                 dependsOn: ['UX16.2-RUNTIME-02', 'UX16.2-UI-03', 'UX16.2-VALIDATION-04'],
                 acceptanceCriteria: ['All five UX16.2 plan acceptance gates pass.'],
+                branch: 'codex/ux16.2-true-flow', commit: 'c8e7072', evidenceStatus: 'TESTED',
+                tests: [{ id: 'ux16-2-assembled', command: 'npx vitest run; npx tsc --noEmit; npx eslint scoped; npx playwright test --config=playwright.ux16.config.ts', result: 'PASS', passed: 343, failed: 0, skipped: 2, executedAt: UPDATED_AT, commit: 'c8e7072', artifactPaths: ['docs/ui-ux/UX16_2_VISUAL_ACCEPTANCE.md', 'docs/ui-ux/UX16_2_VALIDATION_MATRIX.md'] }],
             }),
         ]),
         milestone('UX16.3', 'Liquidity Surface V2', 'NOT_STARTED', 'LIQUIDITY_SURFACE', 'Timestamp-aligned depth', [

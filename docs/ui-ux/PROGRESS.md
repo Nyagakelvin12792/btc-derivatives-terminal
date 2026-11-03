@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.5
-Last updated: 2026-10-30
-Overall status: UX16.2 TRUE-FLOW IMPLEMENTATION IN PROGRESS — UX16.1 INTEGRATED AND REVIEW EVIDENCE RETAINED
-Current checkpoint: UX16.2 canonical contracts/calculations and project-control telemetry started on `codex/ux16.2-true-flow`
+Version: 3.6
+Last updated: 2026-11-03
+Overall status: UX16.2 ASSEMBLED AND TESTED — ARCHITECT REVIEW AND RELEASE IN PROGRESS
+Current checkpoint: UX16.2 calculation, presentation, independent oracle and project-control dashboard verified on `codex/ux16.2-true-flow`
 
 ## Scope Statement
 
@@ -252,3 +252,12 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - DeepSeek cross-checked 16 deterministic scenarios against production and began its oracle data and validation matrix on `agent/deepseek-ux16.2-validation`; reconciliation/boundary test deliverables and a commit are still pending.
 - Codex added bounded incremental true-flow session state and worker snapshot emission in `80ef5c3`; focused runtime verification proves session totals survive raw-tape eviction.
 - Codex hardened reconnect coverage semantics and transactional limits in `dea002c`; all 256 repository tests pass.
+
+### 2026-11-03 — UX16.2 assembled release candidate
+
+- Codex preserved the Antigravity and DeepSeek drafts, corrected the DeepSeek oracle, and integrated 16 hand-calculated scenarios with 21 boundary/reconciliation tests.
+- Connected the true-flow worker snapshot to the Flow inspector and linked lower CVD chart. The chart keeps timestamp alignment by using whitespace before captured trades and shows the current uninterrupted segment after a gap.
+- Added inspectable CVD segments, footprint geometry with semantic zoom, and a captured-trade profile with distinct exact/gapped/mixed coverage labels.
+- Added the read-only `/project-control` progress and usage/spend dashboard, including per-task evidence and explicit `UNREPORTED` cost states.
+- Verified 47 unit test files and 305 tests, TypeScript, scoped ESLint, production webpack build, and 38 UX16 browser tests with two intentional mobile skips.
+- UX16.2 remains shadow decision support and awaits Architect acceptance; no institutional identity claim or live execution was added.

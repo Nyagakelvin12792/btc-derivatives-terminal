@@ -1,13 +1,13 @@
-# CODEX HANDOFF REPORT — UX16.2 CALCULATION AND RUNTIME CHECKPOINT
+# CODEX HANDOFF REPORT — UX16.2 ASSEMBLED RELEASE CANDIDATE
 
 >>> COMPLETED BY: Codex
 >>> STATUS: REVIEW REQUIRED
 >>> BRANCH: codex/ux16.2-true-flow
->>> COMMIT: dea002c
->>> TESTS: PASS — full Vitest 42 files/256 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 webpack production build passed. Default Turbopack build remains blocked by this worktree's external node_modules junction and was not represented as a code failure.
+>>> COMMIT: c8e7072
+>>> TESTS: PASS — full Vitest 47 files/305 tests; TypeScript 0 errors; scoped ESLint 0 warnings/errors; Next.js 16.4.2 webpack production build passed; full UX16 Playwright 38 passed/2 intentional mobile skips
 >>> NEXT AGENT: Architect
->>> ACTION REQUIRED: Review Codex calculations/runtime and integrate the pending Antigravity and DeepSeek branches after their committed handoffs
->>> TARGET: UX16.2 true-flow contracts, pure/incremental calculations, worker/runtime snapshot emission, project-control backend
+>>> ACTION REQUIRED: Review the assembled UX16.2 shadow release candidate and production configuration; record Architect acceptance separately from tested evidence
+>>> TARGET: UX16.2 calculations/runtime, corrected independent oracle, true-flow presentation, project-control dashboard and usage ledger
 
 ## Checkpoint result
 
@@ -41,23 +41,33 @@
 
 ## Verification evidence
 
-- Focused true-flow/runtime verification: **3 files, 18 tests passed** after
-  the reconnect-semantics correction.
-- `npx vitest run`: **42 files, 256 tests passed**.
+- `npx vitest run`: **47 files, 305 tests passed**.
 - `npx tsc --noEmit`: **passed**.
-- Scoped ESLint over new orderflow, project-control, and API files: **passed with zero output**.
-- `npx next build --webpack`: **passed**, including `/api/project-control`.
+- Scoped ESLint over all changed source, dashboard, and browser files: **zero
+  errors and warnings**.
+- `npx next build --webpack`: **passed**, including `/project-control` and
+  `/api/project-control`.
+- `npx playwright test --config=playwright.ux16.config.ts`: **38 passed, two
+  intentional desktop-only mobile skips**.
 - `npm run build`: unable to use Turbopack because `node_modules` is a junction
   to another worktree; Turbopack's hermetic resolver rejects dependencies
   outside this workspace root.
 
-## Remaining integration work
+## Assembled review result
 
-1. Review and integrate independent DeepSeek oracle/boundary findings after its
-   branch produces a committed handoff.
-2. Review and integrate Antigravity presentation/dashboard work after its
-   branch produces a committed handoff.
-3. Run final full-suite and assembled-browser acceptance.
+1. Antigravity's uncommitted draft was preserved at `cfb2ef5` and corrected
+   after integration. Its true-flow presentation and `/project-control`
+   dashboard are wired and tested.
+2. DeepSeek's uncommitted draft was preserved at `c64f006`; its incorrect
+   hand totals, reconnect fixture and unverified matrix claims were replaced
+   in `9da7073` by 16 auditable scenarios and 21 executable tests.
+3. The lower CVD chart uses the current uninterrupted segment on the existing
+   timestamp grid, preserving linked chart coordinates without drawing data
+   before capture.
+4. The dashboard exposes implemented, tested and Architect-accepted progress
+   separately. Unknown agent usage remains `UNREPORTED`, not a zero-cost claim.
+5. The full UX16 browser suite passed 38 tests with two explicit desktop-only
+   skips on mobile. Production alias verification remains a release step.
 
 DeepSeek compatibility note: any pre-`dea002c` reconnect fixture that expected
 `CAPTURED_EXACT` across a reconnect must be updated to
