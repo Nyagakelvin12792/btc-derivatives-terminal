@@ -1,4 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process';
+import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const nextCli = fileURLToPath(new URL('../node_modules/next/dist/bin/next', import.meta.url));
@@ -7,14 +8,16 @@ const environment = {
     NEXT_PUBLIC_UX16_CALM_WORKSPACE: 'true',
 };
 
-const build = spawnSync(process.execPath, [nextCli, 'build', '--webpack'], {
-    cwd: process.cwd(),
-    env: environment,
-    stdio: 'inherit',
-});
+if (process.env.SKIP_BUILD !== 'true' || !fs.existsSync('.next/BUILD_ID')) {
+    const build = spawnSync(process.execPath, [nextCli, 'build', '--webpack'], {
+        cwd: process.cwd(),
+        env: environment,
+        stdio: 'inherit',
+    });
 
-if (build.error) throw build.error;
-if (build.status !== 0) process.exit(build.status ?? 1);
+    if (build.error) throw build.error;
+    if (build.status !== 0) process.exit(build.status ?? 1);
+}
 
 const server = spawn(
     process.execPath,

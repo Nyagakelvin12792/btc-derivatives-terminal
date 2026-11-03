@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.8
+Version: 3.9
 Last updated: 2026-11-03
-Overall status: UX16.3 LIQUIDITY SURFACE V2 IN PROGRESS (60.0% IMPLEMENTED / 60.0% TESTED)
-Current checkpoint: Timestamp-aligned depth projection, canvas amber sequential ramp, and density controls implemented on `agent/gemini-ux16.3-surface`
+Overall status: UX16.3 LIQUIDITY SURFACE V2 COMPLETE (60.0% IMPLEMENTED / 60.0% TESTED) · UX16.4 IN PROGRESS
+Current checkpoint: UX16.3 Liquidity Surface V2 verified with Playwright across 4 viewports; kicking off UX16.4 Imbalance and Liquidity Behavior
 
 ## Scope Statement
 
@@ -57,7 +57,8 @@ Observed UI limitations:
 | UX16.0 — Calm workspace baseline | COMPLETE | Approved Calm Analytical Instrument workspace foundation behind feature flag |
 | UX16.1 — Validated aggregate-trade capture | COMPLETE | Binance Spot aggTrade capture engine, buyer-maker classification, gap/reconnect boundaries |
 | UX16.2 — True flow & project-control dashboard | COMPLETE | Gap-safe trade CVD, footprint with semantic zoom, captured VP, /project-control dashboard; released to production on main |
-| UX16.3 — Liquidity Surface V2 | IN PROGRESS | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, neutral amber ramp, focused/full toggle |
+| UX16.3 — Liquidity Surface V2 | COMPLETE | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, neutral amber ramp, focused/full toggle, Playwright verified across 4 viewports |
+| UX16.4 — Imbalance and liquidity behavior | IN PROGRESS | Diagonal and stacked imbalance, order persistence, add/pull events, probable replenishment |
 
 ## UX0 Evidence
 
@@ -286,3 +287,17 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Wired `MarketStructureChart.tsx` to pass `timeToX` and added an interactive `FOCUSED` vs `FULL` density mode toggle.
 - Verified with 6/6 passing unit tests in `src/components/terminal/liquidity-surface-v2.test.ts` and all 48 test files (311 tests) repository-wide.
 - Telemetry updated: Implemented progress increased from 45.3% to 60.0%, tested progress increased from 45.3% to 60.0%.
+
+### 2026-11-03 — UX16.3 Playwright browser acceptance & verification complete
+
+- Added comprehensive cross-viewport Playwright acceptance suite in `tests/ui/ux16-liquidity-surface.pw.ts`.
+- Verified desktop viewports (1920×1080, 1664×936, 1366×768) and mobile responsive layout (390×844) without horizontal scrollbar overflow.
+- Confirmed interactive `FOCUSED` / `FULL` density mode toggle updates `data-density-mode` and filters levels truthfully.
+- Captured four visual acceptance screenshots into `.artifacts/ui-overhaul/`:
+  - `ux16-3-liquidity-surface-desktop-1920x1080.png`
+  - `ux16-3-liquidity-surface-compact-1664x936.png`
+  - `ux16-3-liquidity-surface-laptop-1366x768.png`
+  - `ux16-3-liquidity-surface-mobile-390x844.png`
+- Full vitest suite (48 test files, 311 unit tests) and Playwright matrix all passing with 0 errors.
+- Milestone UX16.3 marked COMPLETE (review required by Architect).
+- Telemetry: 60.0% implemented, 60.0% tested, 6.7% accepted. Transitioning to UX16.4 Imbalance & Liquidity Behavior.

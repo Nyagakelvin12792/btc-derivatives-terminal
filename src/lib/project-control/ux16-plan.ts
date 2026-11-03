@@ -175,7 +175,7 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 tests: [{ id: 'ux16-2-assembled', command: 'npx vitest run; npx tsc --noEmit; npx eslint scoped; npx playwright test --config=playwright.ux16.config.ts', result: 'PASS', passed: 343, failed: 0, skipped: 2, executedAt: UPDATED_AT, commit: 'c8e7072', artifactPaths: ['docs/ui-ux/UX16_2_VISUAL_ACCEPTANCE.md', 'docs/ui-ux/UX16_2_VALIDATION_MATRIX.md'] }],
             }),
         ]),
-        milestone('UX16.3', 'Liquidity Surface V2', 'IN_PROGRESS', 'LIQUIDITY_SURFACE', 'Timestamp-aligned depth', [
+        milestone('UX16.3', 'Liquidity Surface V2', 'REVIEW_REQUIRED', 'LIQUIDITY_SURFACE', 'Timestamp-aligned depth', [
             task({
                 id: 'UX16.3-CONTRACTS-01', milestoneId: 'UX16.3', featureId: 'LIQUIDITY_SURFACE',
                 title: 'Liquidity Surface V2 contracts and schemas',
@@ -216,14 +216,17 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 id: 'UX16.3-VERIFY-01', milestoneId: 'UX16.3', featureId: 'LIQUIDITY_SURFACE',
                 title: 'Integrated test verification and regression',
                 description: 'Full repository unit test suite and Playwright browser regression.',
-                owner: 'ANTIGRAVITY', status: 'IN_PROGRESS', weight: 2, dependsOn: ['UX16.3-CONTROLS-01'],
-                acceptanceCriteria: ['All 48 test files pass with 0 errors.'],
-                branch: 'agent/gemini-ux16.3-surface', commit: '5b60857', evidenceStatus: 'TESTED',
-                tests: [{ id: 'ux16-3-all-tests', command: 'npx vitest run', result: 'PASS', passed: 311, failed: 0, skipped: 0, executedAt: UPDATED_AT, commit: '5b60857', artifactPaths: [] }],
+                owner: 'ANTIGRAVITY', status: 'COMPLETE', weight: 2, dependsOn: ['UX16.3-CONTROLS-01'],
+                acceptanceCriteria: ['All 48 test files pass with 0 errors.', 'Playwright cross-viewport test passes with screenshots.'],
+                branch: 'agent/gemini-ux16.3-surface', commit: 'ce6bc4b', evidenceStatus: 'TESTED',
+                tests: [
+                    { id: 'ux16-3-all-tests', command: 'npx vitest run', result: 'PASS', passed: 311, failed: 0, skipped: 0, executedAt: UPDATED_AT, commit: 'ce6bc4b', artifactPaths: [] },
+                    { id: 'ux16-3-playwright', command: 'npx playwright test tests/ui/ux16-liquidity-surface.pw.ts --config=playwright.ux16.config.ts', result: 'PASS', passed: 4, failed: 0, skipped: 0, executedAt: UPDATED_AT, commit: 'ce6bc4b', artifactPaths: ['.artifacts/ui-overhaul/ux16-3-liquidity-surface-desktop-1920x1080.png', '.artifacts/ui-overhaul/ux16-3-liquidity-surface-compact-1664x936.png', '.artifacts/ui-overhaul/ux16-3-liquidity-surface-laptop-1366x768.png', '.artifacts/ui-overhaul/ux16-3-liquidity-surface-mobile-390x844.png'] },
+                ],
             }),
         ]),
-        milestone('UX16.4', 'Imbalance and liquidity behavior', 'NOT_STARTED', 'MICROSTRUCTURE', 'Imbalance/persistence/add-pull', [
-            task({ id: 'UX16.4-MICRO-01', milestoneId: 'UX16.4', featureId: 'MICROSTRUCTURE', title: 'Imbalance, persistence, add/pull and replenishment', description: 'Deterministic microstructure observations with minimum-volume and adjacency gates.', owner: 'CODEX', supportingAgents: ['ANTIGRAVITY'], status: 'NOT_STARTED', weight: 5, dependsOn: ['UX16.3-SURFACE-01'], acceptanceCriteria: ['Hand-calculated fixtures match and replenishment remains labelled probable.'] }),
+        milestone('UX16.4', 'Imbalance and liquidity behavior', 'IN_PROGRESS', 'MICROSTRUCTURE', 'Imbalance/persistence/add-pull', [
+            task({ id: 'UX16.4-MICRO-01', milestoneId: 'UX16.4', featureId: 'MICROSTRUCTURE', title: 'Imbalance, persistence, add/pull and replenishment', description: 'Deterministic microstructure observations with minimum-volume and adjacency gates.', owner: 'ANTIGRAVITY', supportingAgents: ['CODEX'], status: 'IN_PROGRESS', weight: 5, dependsOn: ['UX16.3-VERIFY-01'], acceptanceCriteria: ['Hand-calculated fixtures match and replenishment remains labelled probable.'] }),
         ]),
         milestone('UX16.5', 'Absorption and acceptance', 'NOT_STARTED', 'FLOW_EVIDENCE', 'Absorption/divergence/zones', [
             task({ id: 'UX16.5-EVIDENCE-01', milestoneId: 'UX16.5', featureId: 'FLOW_EVIDENCE', title: 'Absorption, acceptance, divergence and zones', description: 'Combine aggressive execution, price response and structural location into deterministic evidence.', owner: 'CODEX', supportingAgents: ['ANTIGRAVITY'], status: 'NOT_STARTED', weight: 5, dependsOn: ['UX16.4-MICRO-01'], acceptanceCriteria: ['Absorption requires aggressive execution and a valid decision zone.'] }),
