@@ -84,6 +84,7 @@ export interface TerminalState {
         avwap: boolean;
         footprint?: boolean;
         tradeVolumeProfile?: boolean;
+        leftExecutionPane?: boolean;
     };
     toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
     resetWorkspaceUi: () => void;
@@ -100,6 +101,7 @@ const defaultChartLayers = {
     avwap: true,
     footprint: false,
     tradeVolumeProfile: false,
+    leftExecutionPane: true,
 };
 
 export const useTerminalStore = create<TerminalState>()(persist((set) => ({

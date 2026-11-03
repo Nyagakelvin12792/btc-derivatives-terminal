@@ -17,6 +17,8 @@ import CandleFootprintCanvasOverlay, {
     projectFootprintBarsToChart,
     projectTradeVolumeProfileToChart,
 } from './CandleFootprintCanvasOverlay';
+import LeftFootprintExecutionPane, { buildSkeletonExecutionBars } from './LeftFootprintExecutionPane';
+import { createDemoMarketBars } from '../../lib/ui/market-fixtures';
 import FlowMode from './FlowMode';
 
 const BASE_TIME = Date.UTC(2026, 9, 30, 12, 0, 0);
@@ -327,6 +329,35 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             expect(html).toContain('data-testid="cycle-onchart-footprint-zoom"');
             expect(html).toContain('data-testid="toggle-trade-vp-placement"');
             expect(html).toContain('data-testid="onchart-footprint-opacity-slider"');
+        });
+    });
+
+    describe('LeftFootprintExecutionPane (Synchronized Left Skeleton Candle & Delta Ladder Pane)', () => {
+        it('builds skeleton execution bars with Bid×Ask ladders, POC, and renders FOOTPRINT / DELTA LADDER / HEATMAP + IMB controls', () => {
+            const demoBars = createDemoMarketBars(77900, 24, 60);
+            const snapshot = createTestSnapshot(false);
+            const { executionBars, bucketStep } = buildSkeletonExecutionBars(demoBars, 10, 60, snapshot, [], 14);
+
+            expect(executionBars).toHaveLength(10);
+            expect(bucketStep).toBeGreaterThan(0);
+            expect(executionBars[0].cells.length).toBeGreaterThan(0);
+            expect(executionBars[0].cells.some((c) => c.isPoc)).toBe(true);
+
+            const html = renderToStaticMarkup(
+                <LeftFootprintExecutionPane
+                    bars={demoBars}
+                    timeframeSeconds={60}
+                    trueFlowSnapshot={snapshot}
+                    hoveredPrice={77900}
+                />,
+            );
+
+            expect(html).toContain('data-testid="left-footprint-execution-pane"');
+            expect(html).toContain('data-testid="exec-mode-footprint"');
+            expect(html).toContain('data-testid="exec-mode-delta-ladder"');
+            expect(html).toContain('data-testid="exec-mode-heatmap-imbalance"');
+            expect(html).toContain('data-testid="exec-zoom-in"');
+            expect(html).toContain('data-testid="exec-zoom-out"');
         });
     });
 });

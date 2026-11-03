@@ -15,7 +15,7 @@ import {
     type ISeriesApi,
     type LogicalRange,
 } from 'lightweight-charts';
-import { Eye, EyeOff, GripVertical, Lock, Move, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
+import { Eye, EyeOff, Lock, Move, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
@@ -41,10 +41,10 @@ import LiquidityHeatmapOverlay, {
 } from './LiquidityHeatmapOverlay';
 import CandleFootprintCanvasOverlay, {
     projectFootprintBarsToChart,
-    projectTradeVolumeProfileToChart,
     type ProjectedCandleFootprintBar,
     type ProjectedTradeVpLayout,
 } from './CandleFootprintCanvasOverlay';
+import LeftFootprintExecutionPane from './LeftFootprintExecutionPane';
 import type { FootprintZoomLevel } from './FootprintChartOverlay';
 import type { LiquidityDensityMode } from '../../lib/binance/liquidity-surface-contracts';
 import {
@@ -279,7 +279,7 @@ export default function MarketStructureChart({
     const [studyPaneHeight, setStudyPaneHeight] = useState<number>(() => readPersistedStudyPaneHeight());
     const [range, setRange] = useState<ProfileRange | null>(null);
     const [anchorIndex, setAnchorIndex] = useState(66);
-    const [profileRowCount, setProfileRowCount] = useState(48);
+    const [profileRowCount, setProfileRowCount] = useState(1000);
     const [profileWidthPercent, setProfileWidthPercent] = useState(40);
     const [profileValueAreaPercent, setProfileValueAreaPercent] = useState(70);
     const [profileOpacityPercent, setProfileOpacityPercent] = useState(75);
@@ -289,6 +289,9 @@ export default function MarketStructureChart({
     const [onChartFootprintZoom, setOnChartFootprintZoom] = useState<'AUTO' | FootprintZoomLevel>('AUTO');
     const [tradeVpPlacement, setTradeVpPlacement] = useState<ProfilePlacement>('RIGHT');
     const [onChartFlowOpacity, setOnChartFlowOpacity] = useState(85);
+    const [syncedHoverPrice, setSyncedHoverPrice] = useState<number | null>(null);
+    const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState<number>(42);
+    const [isResizingLeftPane, setIsResizingLeftPane] = useState<boolean>(false);
     const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
     const [cvdSourceMode, setCvdSourceMode] = useState<CvdSourceMode>('HISTORICAL');
     const [liquidityDensityMode, setLiquidityDensityMode] = useState<LiquidityDensityMode>('FOCUSED');
@@ -598,6 +601,12 @@ export default function MarketStructureChart({
         const handleCrosshairMove: Parameters<IChartApi['subscribeCrosshairMove']>[0] = (param) => {
             const point = param.seriesData.get(candles) as DemoMarketBar | undefined;
             setHoverBar(point ?? null);
+            if (param.point && priceSeriesRef.current) {
+                const p = priceSeriesRef.current.coordinateToPrice(param.point.y);
+                setSyncedHoverPrice(p !== null && Number.isFinite(p) ? Number(p) : point?.close ?? null);
+            } else {
+                setSyncedHoverPrice(point?.close ?? null);
+            }
             if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = param.time ? String(param.time) : '';
             if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = param.time ? String(param.time) : '';
             if (crosshairSyncRef.current) return;
@@ -764,9 +773,7 @@ export default function MarketStructureChart({
                         priceToY: coordinate,
                     })
                     : [],
-                tradeVpLayout: chartLayers.tradeVolumeProfile && trueFlowSnapshot?.tradeVolumeProfile
-                    ? projectTradeVolumeProfileToChart(trueFlowSnapshot.tradeVolumeProfile, coordinate, hostHeight)
-                    : null,
+                tradeVpLayout: null,
             });
             const projector: ChartProjector = {
                 timeToX: (time: number) => {
@@ -1303,7 +1310,7 @@ export default function MarketStructureChart({
         ? 0
         : Math.max(2, Math.abs(overlayLayout.profileRightX - overlayLayout.profileLeftX));
     const profileRowHeight = overlayLayout.profileRows.length > 1
-        ? Math.max(1, Math.abs(overlayLayout.profileRows[1].y - overlayLayout.profileRows[0].y) - 1)
+        ? Math.max(1, Math.abs(overlayLayout.profileRows[1].y - overlayLayout.profileRows[0].y))
         : 6;
     const selectedDrawingAnchor = selectedDrawingView
         ? selectedDrawingView.points.length >= 2
@@ -1320,12 +1327,57 @@ export default function MarketStructureChart({
     const toolbarPosition = selectedDrawingAnchor
         ? constrainToolbarPosition(selectedDrawingAnchor, overlayLayout)
         : { left: 0, top: 0 };
+    const showLeftExecutionPane = chartLayers.leftExecutionPane !== false;
 
     return (
         <div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-[#080d14]">
             <div
+                className="relative flex min-h-[240px] flex-1 overflow-hidden"
+                onPointerMove={(event) => {
+                    if (!isResizingLeftPane || !workspaceContainerRef.current) return;
+                    const rect = workspaceContainerRef.current.getBoundingClientRect();
+                    const nextPct = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100;
+                    setLeftPaneWidthPercent(Math.max(24, Math.min(62, Math.round(nextPct))));
+                }}
+                onPointerUp={() => { if (isResizingLeftPane) setIsResizingLeftPane(false); }}
+            >
+                {showLeftExecutionPane && (
+                    <>
+                        <div
+                            style={{ width: `${leftPaneWidthPercent}%` }}
+                            className="h-full shrink-0 overflow-hidden"
+                            data-testid="left-execution-pane-wrapper"
+                        >
+                            <LeftFootprintExecutionPane
+                                bars={bars}
+                                timeframeSeconds={TIMEFRAME_SECONDS[timeframe]}
+                                trueFlowSnapshot={trueFlowSnapshot}
+                                liquidityFrames={liquidityFeed.frames}
+                                hoveredPrice={syncedHoverPrice}
+                                hoveredTime={lastBar ? Number(lastBar.time) : null}
+                                onHoverPriceChange={(price) => setSyncedHoverPrice(price)}
+                                onClosePane={() => toggleChartLayer('leftExecutionPane')}
+                            />
+                        </div>
+                        <div
+                            role="separator"
+                            aria-orientation="vertical"
+                            aria-label="Resize Left Footprint Execution Pane"
+                            data-testid="left-execution-pane-resizer"
+                            onPointerDown={(event) => {
+                                event.preventDefault();
+                                setIsResizingLeftPane(true);
+                            }}
+                            className="group relative z-50 w-1.5 shrink-0 cursor-col-resize bg-[#18212C] transition-colors hover:bg-[#39A9F5]/60"
+                        >
+                            <span className="absolute inset-y-0 -left-1 -right-1" />
+                        </div>
+                    </>
+                )}
+
+            <div
                 ref={chartSurfaceRef}
-                className="relative min-h-[240px] flex-1 overflow-hidden"
+                className="relative min-h-[240px] min-w-0 flex-1 overflow-hidden"
                 role="group"
                 aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} BTC price chart with options structure overlays`}
                 data-drawing-count={drawings.length}
@@ -1357,12 +1409,12 @@ export default function MarketStructureChart({
                     />
                 )}
 
-                {(chartLayers.footprint || chartLayers.tradeVolumeProfile) && (
+                {chartLayers.footprint && (
                     <CandleFootprintCanvasOverlay
                         projectedBars={overlayLayout.footprintBars}
-                        projectedTradeVp={overlayLayout.tradeVpLayout}
+                        projectedTradeVp={null}
                         showFootprint={Boolean(chartLayers.footprint)}
-                        showTradeVp={Boolean(chartLayers.tradeVolumeProfile)}
+                        showTradeVp={false}
                         width={overlayLayout.width}
                         height={overlayLayout.height}
                         zoomMode={onChartFootprintZoom}
@@ -1385,10 +1437,11 @@ export default function MarketStructureChart({
                 {chartLayers.maxPain && overlayLayout.maxPainY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 border-t border-dotted border-zinc-300/45" style={{ top: overlayLayout.maxPainY }}><span className="absolute left-[52%] -top-4 text-[8px] font-semibold text-zinc-300">MAX PAIN {money(maxPain)}</span></div>}
 
                 {chartLayers.volumeProfile && profileLeft !== null && <div
-                    className={cn('pointer-events-none absolute bottom-7 top-0 z-20 border-x border-cyan-400/40 bg-cyan-400/[0.025]', selectedObject === 'VP' && 'ring-1 ring-inset ring-cyan-300/30')}
+                    className={cn('pointer-events-none absolute bottom-7 top-0 z-20 border-x border-cyan-400/35 bg-cyan-400/[0.02] transition-colors', selectedObject === 'VP' && 'ring-1 ring-inset ring-cyan-300/35')}
                     style={{ left: profileLeft, width: profileWidth }}
                     data-testid="fixed-range-volume-profile"
                     data-selected-bars={selectedBarCount}
+                    data-row-count={profileRowCount}
                     data-start-index={profileStartIndex}
                     data-end-index={profileEndIndex}
                     data-placement={profilePlacement}
@@ -1398,8 +1451,8 @@ export default function MarketStructureChart({
                 >
                     {valueAreaTop !== null && <div className="pointer-events-none absolute inset-x-0 bg-sky-400/[0.045]" style={{ top: valueAreaTop, height: valueAreaHeight, opacity: profileOpacityPercent / 100 }} />}
                     <div className="pointer-events-none absolute inset-0" style={{ opacity: profileOpacityPercent / 100 }} data-testid="fixed-range-vp-bars">
-                        {profile.map((row) => {
-                            const y = overlayLayout.profileRows.find((position) => position.price === row.price)?.y;
+                        {profile.map((row, idx) => {
+                            const y = overlayLayout.profileRows[idx]?.y;
                             if (y === undefined) return null;
                             const metric = profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume;
                             const width = (metric / maxProfile) * profileWidthPercent;
@@ -1415,16 +1468,44 @@ export default function MarketStructureChart({
                         ['POC', profileLevels?.poc, overlayLayout.pocY, 'border-rose-300/70 text-rose-300'],
                         ['VAL', profileLevels?.val, overlayLayout.valY, 'border-sky-300/50 text-sky-200'],
                     ].map(([label, price, y, classes]) => typeof y === 'number' && typeof price === 'number' ? <div key={String(label)} className={cn('pointer-events-none absolute inset-x-0 border-t', String(classes).split(' ')[0])} style={{ top: y }}><span className={cn('absolute -top-4 bg-[#08101a]/95 px-1 text-[8px] font-semibold', profilePlacement === 'RIGHT' ? 'right-1' : 'left-1', String(classes).split(' ')[1])}>{label} {Math.round(price).toLocaleString()}</span></div> : null)}
-                    {!objectLocked && <><button type="button" aria-label="Adjust volume profile start" onPointerDown={(event) => beginProfileDrag(event, 'range-start')} className="pointer-events-auto absolute -left-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>{!extendProfileRight && <button type="button" aria-label="Adjust volume profile end" onPointerDown={(event) => beginProfileDrag(event, 'range-end')} className="pointer-events-auto absolute -right-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>}</>}
-                    <div className="pointer-events-auto absolute left-2 top-2 flex items-center gap-1">
+                    {!objectLocked && (
+                        <>
+                            <div
+                                role="separator"
+                                aria-label="Adjust volume profile start"
+                                title="Hover and drag to extend or move Volume Profile start boundary"
+                                onPointerDown={(event) => beginProfileDrag(event, 'range-start')}
+                                className="pointer-events-auto absolute inset-y-0 -left-2 z-30 w-4 cursor-ew-resize transition-colors hover:bg-cyan-400/20"
+                            />
+                            {!extendProfileRight && (
+                                <div
+                                    role="separator"
+                                    aria-label="Adjust volume profile end"
+                                    title="Hover and drag to extend or move Volume Profile end boundary"
+                                    onPointerDown={(event) => beginProfileDrag(event, 'range-end')}
+                                    className="pointer-events-auto absolute inset-y-0 -right-2 z-30 w-4 cursor-ew-resize transition-colors hover:bg-cyan-400/20"
+                                />
+                            )}
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                aria-label="Drag volume profile range"
+                                title="Hover and drag to slide Volume Profile range"
+                                onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); }}
+                                onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
+                                className="pointer-events-auto absolute inset-x-2 top-0 z-20 h-6 cursor-move transition-colors hover:bg-cyan-400/10"
+                            />
+                        </>
+                    )}
+                    <div className="pointer-events-auto absolute left-2 top-2 z-30 flex items-center gap-1">
                         <button
                             type="button"
-                            title="Select or drag the fixed range volume profile"
+                            title="Hover and drag to move Volume Profile, or click for controls"
                             onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); }}
                             onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
                             className="flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200 hover:border-cyan-400/45"
                         >
-                            <Move className="size-3" />FIXED RANGE VP · {selectedBarCount} BARS · {profileSourceLabel}
+                            FIXED RANGE VP · {selectedBarCount} BARS · {profileRowCount} ROWS · {profileSourceLabel}
                         </button>
                         <button
                             type="button"
@@ -1438,7 +1519,7 @@ export default function MarketStructureChart({
                         <button
                             type="button"
                             data-testid="vp-quick-settings-trigger"
-                            title="Configure Volume Profile Opacity, Side & Bars"
+                            title="Configure Volume Profile Rows (1,000), Opacity, Side & Bars"
                             onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); setSettingsOpen(true); }}
                             className="flex items-center gap-1 rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] text-zinc-300 hover:bg-white/10"
                         >
@@ -1468,7 +1549,7 @@ export default function MarketStructureChart({
                                     <button type="button" onClick={setProfileToVisibleBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">Visible range</button>
                                     <button type="button" onClick={setProfileToAllLoadedBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">All loaded</button>
                                 </div>
-                                <label htmlFor="profile-rows" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Number of rows</span><select id="profile-rows" value={profileRowCount} onChange={(event) => setProfileRowCount(Number(event.target.value))} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value={24}>24</option><option value={48}>48</option><option value={72}>72</option><option value={100}>100</option></select></label>
+                                <label htmlFor="profile-rows" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Number of rows</span><select id="profile-rows" value={profileRowCount} onChange={(event) => setProfileRowCount(Number(event.target.value))} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value={24}>24</option><option value={48}>48</option><option value={72}>72</option><option value={100}>100</option><option value={250}>250</option><option value={500}>500</option><option value={1000}>1000</option></select></label>
                                 <label htmlFor="profile-volume-mode" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Volume</span><select id="profile-volume-mode" value={profileVolumeMode} onChange={(event) => setProfileVolumeMode(event.target.value as ProfileVolumeMode)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="TOTAL">Total</option><option value="UP_DOWN">Up / Down</option><option value="DELTA">Delta</option></select></label>
                                 <label htmlFor="profile-placement" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Placement (Side)</span><select id="profile-placement" value={profilePlacement} onChange={(event) => setProfilePlacement(event.target.value as ProfilePlacement)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="RIGHT">Right-sided</option><option value="LEFT">Left-sided</option></select></label>
                                 <label htmlFor="profile-opacity" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Bar opacity</span><span className="font-mono tabular-nums text-zinc-200">{profileOpacityPercent}%</span></span><input id="profile-opacity" data-testid="vp-opacity-slider" type="range" min="10" max="100" step="5" value={profileOpacityPercent} onChange={(event) => setProfileOpacityPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
@@ -1673,6 +1754,7 @@ export default function MarketStructureChart({
                 />
                 <span className="sr-only" aria-live="polite">{drawingStatus}</span>
                 {replayActive && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">REPLAY PAUSED · HISTORICAL {dataMode}</div>}
+            </div>
             </div>
 
             {studyPaneOpen && (

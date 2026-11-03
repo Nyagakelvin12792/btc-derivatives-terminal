@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.16
+Version: 3.17
 Last updated: 2026-11-04
-Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · ATAS/NINJATRADER ON-CANDLE FOOTPRINT & 1,000-BAR VOLUME PROFILE COMPLETE
-Current checkpoint: Added ATAS/NinjaTrader-style on-candle Footprint & Trade Volume Profile canvas overlay (`CandleFootprintCanvasOverlay.tsx`), restored 10,000-bar historical CVD with live-tape switcher, upgraded Fixed Range Volume Profile to 1,000-bar minimum default with inline Left/Right placement and 10%–100% bar opacity slider, verified across 56 Vitest suites (372 tests) and production build.
+Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · DUAL-PANE ATAS SKELETON FOOTPRINT / DELTA LADDER & 1,000-ROW VOLUME PROFILE COMPLETE
+Current checkpoint: Added synchronized Left Skeleton Footprint / Colored Delta Ladder / Heatmap+Imbalance execution pane (`LeftFootprintExecutionPane.tsx`), upgraded Fixed Range Volume Profile to 1,000 rows & 1,000 bars default with hover-sensitive resize/drag boundaries (removed bulky grip buttons), and removed the duplicate right-axis Trade VP overlay.
 
 ## Scope Statement
 
@@ -537,3 +537,15 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   - Added a `Bar opacity` slider (`10%–100%`, `data-testid="vp-opacity-slider"`), `Placement (Side)` selector (`Right-sided` / `Left-sided`), and a `1,000 bars` quick-range button inside the Fixed Range VP settings popover.
 - **10,000-Bar Historical CVD Preservation with Source Switcher (`src/components/terminal/LowerStudyPane.tsx`)**:
   - Restored `10K BAR CVD` (all 10,000 historical Binance bars + `Anchor` selector) as the default lower CVD view while adding a `[ 10K BAR CVD | LIVE TAPE CVD (Nb) ]` toggle button so users never lose historical CVD context when live aggregate-trade capture is active.
+- **Synchronized Left Skeleton Footprint / Colored Delta Ladder / Heatmap + Imbalance Execution Pane (`src/components/terminal/LeftFootprintExecutionPane.tsx`)**:
+  - Added a resizable left-hand order-flow execution pane alongside the main candlestick structure chart (`42% / 58%` default split with draggable vertical separator).
+  - Renders each candle in **ATAS Skeleton Candle** form (thin High–Low wick spine + 6px hollow Open–Close body along the central axis) so candle bodies never obscure footprint numbers.
+  - Supports 3 selectable entry-timing modes in the top bar:
+    1. **`FOOTPRINT`**: Bid × Ask volume bars and numbers straddling the skeleton spine, golden Point-of-Control (`POC`) outline, and bold diagonal imbalance highlights.
+    2. **`DELTA LADDER`**: Color-graded Net Delta ladder rungs (`Ask - Bid`) with signed delta values printed inside each price bucket.
+    3. **`HEATMAP + IMB`**: Resting L2 order-book liquidity heatmap intensity overlaid with directional diagonal/stacked imbalances.
+  - Includes synchronized price crosshair (`Y`) with the right candlestick chart and zoom controls (`5B`–`22B` visible skeleton candles).
+- **1,000-Row Volume Profile, Hover-Sensitive Edges & Removal of Duplicate Right-Axis Trade VP (`src/components/terminal/MarketStructureChart.tsx`)**:
+  - Upgraded `Number of rows` in Fixed Range Volume Profile settings to support `24`, `48`, `72`, `100`, `250`, `500`, and **`1000` rows** (defaulting to **`1000` rows**) with `O(1)` indexed row projection.
+  - Removed the visible `<GripVertical />` pill buttons on the Volume Profile borders and replaced them with clean, hover-sensitive resize (`cursor-ew-resize`) and drag (`cursor-move`) boundary zones.
+  - Removed the duplicate right-axis `T-POC / T-VAH / T-VAL` Trade Volume Profile overlay from the main candlestick chart.
