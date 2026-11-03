@@ -10,6 +10,7 @@ import type { OrderFlowStudy } from './LowerStudyDock';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export type CvdAnchorOption = 'AUTO' | CvdAnchor;
+export type CvdSourceMode = 'CAPTURED' | 'HISTORICAL';
 
 export const STUDY_PANE_MIN_HEIGHT = 156;
 export const STUDY_PANE_MAX_HEIGHT = 380;
@@ -149,6 +150,8 @@ export interface LowerStudyPaneProps {
     paneHeight: number;
     maxPaneHeight: number;
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
+    cvdSourceMode?: CvdSourceMode;
+    onCvdSourceModeChange?: (mode: CvdSourceMode) => void;
     onCvdAnchorChange: (anchor: CvdAnchorOption) => void;
     onResizeHeight: (nextHeight: number) => void;
     onResetChartAndObjects: () => void;
@@ -170,6 +173,8 @@ export default function LowerStudyPane({
     paneHeight,
     maxPaneHeight,
     trueFlowSnapshot,
+    cvdSourceMode = 'HISTORICAL',
+    onCvdSourceModeChange,
     onCvdAnchorChange,
     onResizeHeight,
     onResetChartAndObjects,
@@ -211,10 +216,12 @@ export default function LowerStudyPane({
                 ? 'BTCUSDT Order Book'
                 : 'Observed Liquidity';
 
+    const showingCapturedCvd = activeStudy === 'CVD' && Boolean(trueFlowSnapshot) && cvdSourceMode === 'CAPTURED';
+
     const sourceDescription = dataMode === 'LIVE'
         ? activeStudy === 'BOOK' || activeStudy === 'LIQUIDITY'
             ? 'Binance Spot L2 · top 20 depth'
-            : activeStudy === 'CVD' && trueFlowSnapshot
+            : showingCapturedCvd
                 ? 'Binance Spot aggregate trades · current continuity segment'
                 : 'Binance aggressor volume · bar precision'
         : 'demo fixture';
@@ -269,7 +276,44 @@ export default function LowerStudyPane({
                             {formatCompactUsd(lastDelta)}
                         </span>
                     )}
-                    {activeStudy === 'CVD' && !trueFlowSnapshot && (
+                    {activeStudy === 'CVD' && trueFlowSnapshot && onCvdSourceModeChange && (
+                        <div
+                            className="flex shrink-0 items-center rounded border border-[#223042] bg-[#070c13] p-0.5 font-mono text-[8px]"
+                            role="group"
+                            aria-label="CVD data source mode"
+                            data-testid="cvd-source-mode-switcher"
+                        >
+                            <button
+                                type="button"
+                                onClick={() => onCvdSourceModeChange('HISTORICAL')}
+                                data-testid="cvd-source-historical"
+                                className={cn(
+                                    'rounded px-1.5 py-0.5 font-bold transition-colors',
+                                    cvdSourceMode === 'HISTORICAL'
+                                        ? 'bg-[#182231] text-cyan-300'
+                                        : 'text-zinc-500 hover:text-zinc-300',
+                                )}
+                                title="Show full 10,000-bar historical bar-derived CVD"
+                            >
+                                10K BAR CVD
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => onCvdSourceModeChange('CAPTURED')}
+                                data-testid="cvd-source-captured"
+                                className={cn(
+                                    'rounded px-1.5 py-0.5 font-bold transition-colors',
+                                    cvdSourceMode === 'CAPTURED'
+                                        ? 'bg-emerald-500/20 text-emerald-300'
+                                        : 'text-zinc-500 hover:text-zinc-300',
+                                )}
+                                title="Show live session-captured aggregate-trade CVD (no pre-session backfill)"
+                            >
+                                LIVE TAPE CVD ({trueFlowSnapshot.cvdSegments.at(-1)?.bars.length ?? 0}b)
+                            </button>
+                        </div>
+                    )}
+                    {activeStudy === 'CVD' && !showingCapturedCvd && (
                         <label className="hidden shrink-0 items-center gap-1 rounded border border-[#223042] bg-[#070c13] px-1.5 py-0.5 text-zinc-500 sm:flex">
                             <span>Anchor</span>
                             <select
@@ -325,7 +369,7 @@ export default function LowerStudyPane({
                             ref={cvdHostRef}
                             className="size-full"
                             role="img"
-                            aria-label={trueFlowSnapshot
+                            aria-label={showingCapturedCvd
                                 ? 'Captured trade cumulative volume delta for the current continuity segment'
                                 : `${dataMode === 'LIVE' ? 'Live bar-derived' : 'Demo'} cumulative volume delta candles`}
                         />

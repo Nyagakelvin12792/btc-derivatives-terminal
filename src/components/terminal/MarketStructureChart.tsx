@@ -82,6 +82,7 @@ import LowerStudyPane, {
     STUDY_PANE_MAX_HEIGHT,
     writePersistedStudyPaneHeight,
     type CvdAnchorOption,
+    type CvdSourceMode,
 } from './LowerStudyPane';
 
 type PriceSeries = ISeriesApi<'Candlestick'>;
@@ -275,6 +276,7 @@ export default function MarketStructureChart({
     const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
     const [extendProfileRight, setExtendProfileRight] = useState(false);
     const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
+    const [cvdSourceMode, setCvdSourceMode] = useState<CvdSourceMode>('HISTORICAL');
     const [liquidityDensityMode, setLiquidityDensityMode] = useState<LiquidityDensityMode>('FOCUSED');
     const [cvdResetMarkers, setCvdResetMarkers] = useState<Array<{ time: number; x: number }>>([]);
     const [profileQueryRange, setProfileQueryRange] = useState<{ startTimeSeconds: number; endTimeSeconds: number; displayBarSeconds: number } | null>(null);
@@ -420,9 +422,10 @@ export default function MarketStructureChart({
         && trueFlowSnapshot !== undefined
         && trueFlowSnapshot.interval === timeframe.toLowerCase()
         && trueFlowSnapshot.cvdSegments.length > 0;
+    const useCapturedCvdInPane = hasTrueCvd && cvdSourceMode === 'CAPTURED';
     const cvdBars = useMemo<FlowCvdPoint[]>(() => {
         if (dataMode === 'DEMO') return createDemoCvd(bars).map((bar, index) => ({ ...bar, reset: index === 0 }));
-        if (hasTrueCvd && trueFlowSnapshot) {
+        if (useCapturedCvdInPane && trueFlowSnapshot) {
             return projectCapturedCvdToChartTimes(bars.map((bar) => bar.time), trueFlowSnapshot);
         }
         return buildCvdBars(bars.map((bar) => ({
@@ -435,7 +438,7 @@ export default function MarketStructureChart({
             delta: bar.delta ?? 0,
             time: Number(bar.time),
         })), resolvedCvdAnchor);
-    }, [bars, dataMode, hasTrueCvd, resolvedCvdAnchor, trueFlowSnapshot]);
+    }, [bars, dataMode, resolvedCvdAnchor, trueFlowSnapshot, useCapturedCvdInPane]);
     const deltaBars = useMemo(() => dataMode === 'DEMO'
         ? cvdBars.filter(isCvdBar).map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' }))
         : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
@@ -492,7 +495,7 @@ export default function MarketStructureChart({
             .slice(0, 2);
     }, [callWall, data.confluenceLevels, dataMode, gammaFlip, putWall, spot]);
     const lastBar = hoverBar ?? bars.at(-1) ?? null;
-    const lastCvd = hasTrueCvd
+    const lastCvd = useCapturedCvdInPane
         ? trueFlowSnapshot?.cvdSegments.at(-1)?.finalCumulativeDeltaNotionalUsd ?? 0
         : cvdBars.findLast(isCvdBar)?.close ?? 0;
     const lastDelta = deltaBars.at(-1)?.value ?? 0;
@@ -1595,6 +1598,8 @@ export default function MarketStructureChart({
                     paneHeight={studyPaneHeight}
                     maxPaneHeight={STUDY_PANE_MAX_HEIGHT}
                     onCvdAnchorChange={setCvdAnchor}
+                    cvdSourceMode={cvdSourceMode}
+                    onCvdSourceModeChange={setCvdSourceMode}
                     onResizeHeight={handleResizeStudyPane}
                     onResetChartAndObjects={resetChartViewAndObjects}
                     trueFlowSnapshot={hasTrueCvd ? trueFlowSnapshot : null}
