@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "agent-usage-v1",
+  "agent": "DEEPSEEK",
+  "runs": [
+    {
+      "id": "ux16-2-deepseek-validation-draft",
+      "taskId": "UX16.2-VALIDATION-04",
+      "agent": "DEEPSEEK",
+      "provider": "OpenCode/DeepSeek",
+      "model": "UNREPORTED",
+      "billingMode": "UNKNOWN",
+      "startedAt": "2026-10-30T00:00:00.000Z",
+      "completedAt": null,
+      "elapsedMs": null,
+      "inputTokens": null,
+      "cachedInputTokens": null,
+      "outputTokens": null,
+      "reasoningTokens": null,
+      "toolCalls": null,
+      "providerReportedCostUsd": null,
+      "calculatedCostUsd": null,
+      "costStatus": "UNREPORTED",
+      "pricing": null,
+      "usageSource": "UNAVAILABLE",
+      "sourceReference": null,
+      "notes": ["DeepSeek did not provide token, model, or spend evidence before Codex takeover."]
+    }
+  ]
+}
