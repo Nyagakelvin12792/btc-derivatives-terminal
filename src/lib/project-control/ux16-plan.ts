@@ -411,11 +411,79 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 ],
             }),
         ]),
-        milestone('UX16.7', 'Jev shadow explanation', 'IN_PROGRESS', 'JEV_SHADOW', 'Bounded AI explanation', [
-            task({ id: 'UX16.7-JEV-01', milestoneId: 'UX16.7', featureId: 'JEV_SHADOW', title: 'Jev shadow adapter', description: 'Schema-validated, rate-limited, kill-switched explanation of an accepted deterministic feature packet.', owner: 'CODEX', supportingAgents: ['ANTIGRAVITY'], status: 'IN_PROGRESS', weight: 4, dependsOn: ['UX16.6-SETUP-01'], acceptanceCriteria: ['Jev cannot alter state, grade, trigger, invalidation or risk.'] }),
+        milestone('UX16.7', 'Jev shadow explanation', 'COMPLETE', 'JEV_SHADOW', 'Bounded AI explanation', [
+            task({
+                id: 'UX16.7-JEV-01',
+                milestoneId: 'UX16.7',
+                featureId: 'JEV_SHADOW',
+                title: 'Jev shadow adapter',
+                description: 'Schema-validated, rate-limited, kill-switched explanation of an accepted deterministic feature packet.',
+                owner: 'CODEX',
+                supportingAgents: ['ANTIGRAVITY'],
+                status: 'COMPLETE',
+                weight: 4,
+                dependsOn: ['UX16.6-SETUP-01'],
+                acceptanceCriteria: ['Jev cannot alter state, grade, trigger, invalidation or risk.'],
+                branch: 'agent/gemini-ux16.7-jev-shadow',
+                commit: '23122e2',
+                evidenceStatus: 'TESTED',
+                tests: [
+                    {
+                        id: 'ux16-7-vitest-adapter',
+                        command: 'npx vitest run src/lib/orderflow/jev-adapter.test.ts',
+                        result: 'PASS',
+                        passed: 7,
+                        failed: 0,
+                        skipped: 0,
+                        executedAt: UPDATED_AT,
+                        commit: '23122e2',
+                        artifactPaths: [],
+                    },
+                    {
+                        id: 'ux16-7-vitest-route',
+                        command: 'npx vitest run src/app/api/orderflow/jev/route.test.ts',
+                        result: 'PASS',
+                        passed: 5,
+                        failed: 0,
+                        skipped: 0,
+                        executedAt: UPDATED_AT,
+                        commit: '23122e2',
+                        artifactPaths: [],
+                    },
+                    {
+                        id: 'ux16-7-playwright-jev',
+                        command: 'npx playwright test tests/ui/ux16-jev-shadow.pw.ts',
+                        result: 'PASS',
+                        passed: 2,
+                        failed: 0,
+                        skipped: 0,
+                        executedAt: UPDATED_AT,
+                        commit: '23122e2',
+                        artifactPaths: [
+                            '.artifacts/ui-overhaul/ux16-7-jev-desktop-1920x1080.png',
+                            '.artifacts/ui-overhaul/ux16-7-jev-compact-1664x936.png',
+                            '.artifacts/ui-overhaul/ux16-7-jev-laptop-1366x768.png',
+                            '.artifacts/ui-overhaul/ux16-7-jev-mobile-390x844.png',
+                        ],
+                    },
+                    {
+                        id: 'ux16-7-all-unit-tests',
+                        command: 'npx vitest run',
+                        result: 'PASS',
+                        passed: 354,
+                        failed: 0,
+                        skipped: 0,
+                        executedAt: UPDATED_AT,
+                        commit: '23122e2',
+                        artifactPaths: [],
+                    },
+                ],
+            }),
         ]),
-        milestone('UX16.8', 'Replay calibration and paper release', 'NOT_STARTED', 'CALIBRATION', 'Replay and paper evaluation', [
-            task({ id: 'UX16.8-CAL-01', milestoneId: 'UX16.8', featureId: 'CALIBRATION', title: 'Replay calibration and paper release', description: 'Measure coverage, stability, false positives, abstention and outcomes without live execution.', owner: 'CODEX', supportingAgents: ['ANTIGRAVITY', 'ARCHITECT'], status: 'NOT_STARTED', weight: 5, dependsOn: ['UX16.7-JEV-01'], acceptanceCriteria: ['Replays reproduce identical evidence and Architect approves promotion.'] }),
+        milestone('UX16.8', 'Replay calibration and paper release', 'IN_PROGRESS', 'CALIBRATION', 'Replay and paper evaluation', [
+            task({ id: 'UX16.8-CAL-01', milestoneId: 'UX16.8', featureId: 'CALIBRATION', title: 'Replay calibration and paper release', description: 'Measure coverage, stability, false positives, abstention and outcomes without live execution.', owner: 'CODEX', supportingAgents: ['ANTIGRAVITY', 'ARCHITECT'], status: 'IN_PROGRESS', weight: 5, dependsOn: ['UX16.7-JEV-01'], acceptanceCriteria: ['Replays reproduce identical evidence and Architect approves promotion.'] }),
         ]),
     ];
 }
+
+

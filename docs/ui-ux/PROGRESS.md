@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.12
+Version: 3.13
 Last updated: 2026-11-03
-Overall status: UX16.6 SETUP STATE MACHINE AND DECISION DOCK COMPLETE (85.0% IMPLEMENTED / 85.0% TESTED) · UX16.7 IN PROGRESS
-Current checkpoint: UX16.6 Setup State Machine, 7 mandatory gates, confirmation triggers, structural invalidations, and Decision Dock verified with Playwright across 4 viewports; kicking off UX16.7 Jev shadow explanation
+Overall status: UX16.7 JEV SHADOW EXPLANATION COMPLETE (91.7% IMPLEMENTED / 91.7% TESTED) · UX16.8 IN PROGRESS
+Current checkpoint: UX16.7 Jev shadow explanation, bounded AI schema, server adapter, kill-switch, and cross-viewport Playwright acceptance verified; advancing to UX16.8 Replay calibration and paper release
 
 ## Scope Statement
 
@@ -61,7 +61,8 @@ Observed UI limitations:
 | UX16.4 — Imbalance and liquidity behavior | COMPLETE | Diagonal and stacked imbalance, order persistence, add/pull events, probable replenishment; Playwright and Vitest verified across 4 viewports |
 | UX16.5 — Absorption and acceptance | COMPLETE | Absorption, acceptance, divergence and zones; Playwright and Vitest verified across 4 viewports |
 | UX16.6 — Setup state machine | COMPLETE | Setup state machine, 7 mandatory gates, triggers/invalidations, Decision Dock; Playwright verified across 4 viewports |
-| UX16.7 — Jev shadow explanation | IN PROGRESS | Bounded AI explanation of accepted deterministic feature packet, schema-validated, kill-switched |
+| UX16.7 — Jev shadow explanation | COMPLETE | Bounded AI explanation of accepted deterministic feature packet, schema-validated, kill-switched, Playwright verified across 4 viewports |
+| UX16.8 — Replay calibration and paper release | IN PROGRESS | Replay calibration, metrics (coverage, stability, false positives, abstention), and paper release evaluation |
 
 ## UX0 Evidence
 
@@ -407,3 +408,48 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   - Blocked tasks: 0
   - Review required tasks: 6
 - Milestone UX16.6 marked COMPLETE. Advancing immediately to UX16.7 (Jev Shadow Explanation).
+
+### 2026-11-03 — UX16.7 Jev shadow explanation verified and marked COMPLETE
+
+- Implemented Jev contracts in `src/lib/orderflow/jev-contracts.ts`:
+  - `JevStanceSchema`: strictly enum `AGREE`, `CAUTION`, `DISAGREE`, `ABSTAIN`.
+  - `JevShadowRequestV1Schema` & `JevShadowResponseV1Schema`: versioned, strict schema adhering to `ORDERFLOW_SCHEMA_VERSION = 1`.
+  - `computeFeaturePacketHash()`: deterministic FNV-1a 64-bit hash function returning formatted `jev-<hash>` string over setup state, grade, direction, zone bounds, trigger price, invalidation price, evidence IDs, conflict IDs, and mandatory gates.
+  - Provable architectural guardrail: Jev responses cannot alter setup state, grade, direction, trigger, invalidation, or risk boundaries.
+- Implemented Server Adapter in `src/lib/orderflow/jev-adapter.ts`:
+  - Enforces schema validation on input feature packets.
+  - Kill-switch via `process.env.JEV_SHADOW_ENABLED === 'true'`. Returns `ABSTAIN` with reason `'KILL_SWITCH_ACTIVE'` when disabled.
+  - In-memory cache by `featurePacketHash` with 60-second TTL.
+  - Abstraction & timeout fallback: gracefully degrades to `ABSTAIN` with reason `'TIMEOUT'` or `'ABSTENTION'` if upstream LLM is unreachable or times out (default 4000ms).
+  - Sanitization: strips any internal reasoning or raw prompts; returns only structured public fields.
+  - Test helper `clearJevShadowCache()` for clean test isolation.
+- Implemented Next.js Server Route in `src/app/api/orderflow/jev/route.ts`:
+  - Route: `POST /api/orderflow/jev`.
+  - Sets `Cache-Control: no-store` on all responses.
+  - Validates request payload against `JevShadowRequestV1Schema`.
+  - Dispatches to `evaluateJevShadow()`.
+  - Returns zero secrets or internal provider keys.
+- Client UI Integration in `src/components/terminal/SetupMode.tsx`:
+  - Expandable Jev Shadow Explanation container in Decision Dock with `Bot` icon.
+  - Visual stance badge: `AGREE` (emerald), `CAUTION` (amber), `DISAGREE` (rose), `ABSTAIN` (slate/muted), or `STALE` (amber) if feature hash diverges from current terminal setup.
+  - Displays natural-language explanation, recognized evidence list, identified risks/conflicts, boundary restatement, model and hash provenance, manual refresh button, and non-negotiable disclaimer: *"Jev Shadow Explanation is bounded read-only analytical commentary. Jev cannot override deterministic states, alter invalidations, or execute orders."*
+- Comprehensive Vitest Test Suites:
+  - `src/lib/orderflow/jev-adapter.test.ts`: 7/7 tests passed (schema validation, cache hit/miss, kill-switch, timeout fallback, abstention, feature hash change).
+  - `src/app/api/orderflow/jev/route.test.ts`: 5/5 tests passed (POST contract, 400 on malformed input, disabled killswitch response, header sanitization).
+  - Full vitest test suite: 53 test files, 354 tests passed with 0 errors.
+- Production Build Verification:
+  - Next.js turbopack production build (`npm run build`) succeeded with zero TypeScript or route compilation errors.
+- Cross-Viewport Playwright Acceptance Suite (`tests/ui/ux16-jev-shadow.pw.ts`):
+  - 2/2 tests passed across Desktop 1920×1080, Compact 1664×936, Laptop 1366×768, and Mobile 390×844 with 0 horizontal scroll overflow.
+- Visual Acceptance Artifacts captured and mirrored to brain artifact directory:
+  - `ux16-7-jev-desktop-1920x1080.png`
+  - `ux16-7-jev-compact-1664x936.png`
+  - `ux16-7-jev-laptop-1366x768.png`
+  - `ux16-7-jev-mobile-390x844.png`
+- Updated telemetry in `src/lib/project-control/ux16-plan.ts`:
+  - Implemented progress: 91.7% (55 / 60 weight)
+  - Tested progress: 91.7% (55 / 60 weight)
+  - Accepted progress: 6.7% (4 / 60 weight)
+  - Blocked tasks: 0
+  - Review required tasks: 6
+- Milestone UX16.7 marked COMPLETE. Advancing immediately to UX16.8 (Replay calibration and paper release).

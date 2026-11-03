@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
     AlertTriangle,
     Award,
@@ -10,6 +10,7 @@ import {
     ChevronDown,
     ChevronRight,
     Layers,
+    RefreshCw,
     Shield,
     SlidersHorizontal,
     Target,
@@ -17,11 +18,21 @@ import {
     Zap,
 } from 'lucide-react';
 import type { MarketEvidenceV1, SetupAssessmentV1 } from '../../lib/orderflow/contracts';
+import {
+    computeFeaturePacketHash,
+    type JevShadowResponseV1,
+} from '../../lib/orderflow/jev-contracts';
 import { cn } from '../../lib/ui/cn';
 
 export interface SetupModeProps {
     assessment: SetupAssessmentV1;
     evidence: MarketEvidenceV1[];
+    optionsContext?: {
+        gammaRegime?: string;
+        callWall?: number;
+        putWall?: number;
+        netGex?: number;
+    };
     className?: string;
 }
 
@@ -29,8 +40,17 @@ function price(value: number | null | undefined): string {
     return value === null || value === undefined ? '—' : `$${Math.round(value).toLocaleString()}`;
 }
 
-export default function SetupMode({ assessment, evidence, className }: SetupModeProps) {
+export default function SetupMode({
+    assessment,
+    evidence,
+    optionsContext,
+    className,
+}: SetupModeProps) {
     const [jevExpanded, setJevExpanded] = useState(false);
+    const [jevResponse, setJevResponse] = useState<JevShadowResponseV1 | null>(null);
+    const [jevLoading, setJevLoading] = useState(false);
+    const [jevError, setJevError] = useState<string | null>(null);
+
     const aligned = evidence.filter((item) => assessment.evidenceIds.includes(item.id));
     const conflicts = evidence.filter((item) => assessment.conflictIds.includes(item.id));
     const gates = Object.entries(assessment.mandatoryGates);
@@ -45,6 +65,85 @@ export default function SetupMode({ assessment, evidence, className }: SetupMode
         riskDistance && assessment.zone
             ? ((riskDistance / assessment.zone.low) * 100).toFixed(2)
             : null;
+
+    // Compute deterministic feature packet hash
+    const currentHash = useMemo(() => {
+        return computeFeaturePacketHash({
+            state: assessment.state,
+            grade: assessment.grade,
+            zoneLabel: assessment.zone?.label,
+            zoneLow: assessment.zone?.low,
+            zoneHigh: assessment.zone?.high,
+            triggerPrice: assessment.trigger?.price,
+            invalidationPrice: assessment.invalidation?.price,
+            evidenceIds: assessment.evidenceIds,
+            conflictIds: assessment.conflictIds,
+            mandatoryGates: assessment.mandatoryGates,
+        });
+    }, [assessment]);
+
+    const isStale = jevResponse !== null && jevResponse.featurePacketHash !== currentHash;
+
+    const fetchJevOpinion = useCallback(async () => {
+        setJevLoading(true);
+        setJevError(null);
+        try {
+            const payload = {
+                schemaVersion: assessment.schemaVersion,
+                assessment,
+                evidence: evidence.slice(0, 32),
+                higherTimeframeContext: {
+                    h4Trend: (assessment.state.includes('LONG')
+                        ? 'BULLISH'
+                        : assessment.state.includes('SHORT')
+                          ? 'BEARISH'
+                          : 'NEUTRAL') as 'BULLISH' | 'BEARISH' | 'NEUTRAL',
+                    h1Structure: assessment.zone
+                        ? `Testing ${assessment.zone.label}`
+                        : 'Consolidating outside decision zone',
+                },
+                optionsContext: {
+                    gammaRegime: optionsContext?.gammaRegime ?? 'POSITIVE',
+                    callWall: optionsContext?.callWall ?? 98_000,
+                    putWall: optionsContext?.putWall ?? 95_000,
+                    netGex: optionsContext?.netGex ?? 0,
+                },
+                riskSummary: {
+                    entryReferencePrice: assessment.zone ? assessment.zone.low : 95_000,
+                    invalidationPrice: assessment.invalidation?.price ?? null,
+                    riskDistanceUsd: riskDistance,
+                    riskPct: riskPct ? parseFloat(riskPct) : null,
+                },
+                missingInputs: assessment.grade === 'NONE' ? ['Execution confirmation'] : [],
+                featurePacketHash: currentHash,
+            };
+
+            const res = await fetch('/api/orderflow/jev', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+
+            if (!res.ok) {
+                const errData = await res.json().catch(() => ({}));
+                setJevError(errData.summary || 'Failed to fetch Jev opinion');
+            } else {
+                const data: JevShadowResponseV1 = await res.json();
+                setJevResponse(data);
+            }
+        } catch (err: unknown) {
+            setJevError(err instanceof Error ? err.message : 'Network error');
+        } finally {
+            setJevLoading(false);
+        }
+    }, [assessment, evidence, currentHash, optionsContext, riskDistance, riskPct]);
+
+    // Automatically evaluate when Jev section is expanded or when hash updates
+    useEffect(() => {
+        if (jevExpanded && (!jevResponse || isStale) && !jevLoading) {
+            fetchJevOpinion();
+        }
+    }, [jevExpanded, currentHash, isStale, jevResponse, jevLoading, fetchJevOpinion]);
 
     return (
         <div className={cn('space-y-2.5 p-3 font-sans text-[#D8DEE8]', className)} data-testid="setup-mode-container">
@@ -307,25 +406,123 @@ export default function SetupMode({ assessment, evidence, className }: SetupMode
                 )}
             </div>
 
-            {/* 10. Jev Shadow Explanation (Optional / Collapsed) */}
+            {/* 10. Jev Shadow Explanation (UX16.7 - Bounded AI Explanation) */}
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="setup-jev-shadow-container">
-                <button
-                    type="button"
-                    onClick={() => setJevExpanded((open) => !open)}
-                    className="flex w-full items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]"
-                >
-                    <span className="flex items-center gap-1.5">
-                        <Bot className="size-3 text-[#39A9F5]" />
-                        JEV SHADOW EXPLANATION
-                    </span>
-                    <span className="flex items-center gap-1.5">
-                        SHADOW DISABLED {jevExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
-                    </span>
-                </button>
+                <div className="flex items-center justify-between">
+                    <button
+                        type="button"
+                        onClick={() => setJevExpanded((open) => !open)}
+                        className="flex flex-1 items-center justify-between font-mono text-[9px] font-bold text-[#8390A0] hover:text-[#D8DEE8]"
+                        data-testid="setup-jev-toggle-button"
+                    >
+                        <span className="flex items-center gap-1.5">
+                            <Bot className="size-3 text-[#39A9F5]" />
+                            JEV SHADOW EXPLANATION
+                        </span>
+                        <span className="flex items-center gap-1.5">
+                            {jevResponse ? (
+                                <span
+                                    className={cn(
+                                        'rounded border px-1.5 py-0.5 text-[8px] font-bold font-mono',
+                                        isStale
+                                            ? 'border-[#E6B450]/40 bg-[#E6B450]/10 text-[#E6B450]'
+                                            : jevResponse.stance === 'AGREE'
+                                              ? 'border-[#2CC7A0]/40 bg-[#2CC7A0]/10 text-[#2CC7A0]'
+                                              : jevResponse.stance === 'CAUTION'
+                                                ? 'border-[#E6B450]/40 bg-[#E6B450]/10 text-[#E6B450]'
+                                                : jevResponse.stance === 'DISAGREE'
+                                                  ? 'border-[#E06379]/40 bg-[#E06379]/10 text-[#E06379]'
+                                                  : 'border-[#18212C] bg-[#141B24] text-[#8390A0]'
+                                    )}
+                                    data-testid="setup-jev-stance-badge"
+                                >
+                                    {isStale ? 'STALE' : jevResponse.stance}
+                                </span>
+                            ) : (
+                                <span>SHADOW ADAPTER</span>
+                            )}
+                            {jevExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
+                        </span>
+                    </button>
+                    {jevExpanded && (
+                        <button
+                            type="button"
+                            onClick={fetchJevOpinion}
+                            disabled={jevLoading}
+                            title="Re-evaluate Jev opinion"
+                            aria-label="Re-evaluate Jev opinion"
+                            className="ml-2 rounded p-1 text-[#8390A0] hover:bg-[#141B24] hover:text-[#D8DEE8] disabled:opacity-50"
+                        >
+                            <RefreshCw className={cn('size-3', jevLoading && 'animate-spin')} />
+                        </button>
+                    )}
+                </div>
+
                 {jevExpanded && (
-                    <p className="mt-2 border-t border-[#18212C] pt-2 text-[9px] leading-relaxed text-[#8390A0]">
-                        Jev integration is scheduled for UX16.7. It cannot alter deterministic states, gates, levels, or risk.
-                    </p>
+                    <div className="mt-3 space-y-2 border-t border-[#18212C] pt-2 text-[9px]" data-testid="setup-jev-body">
+                        {jevLoading && (
+                            <div className="flex items-center gap-2 py-2 text-[#8390A0] font-mono">
+                                <RefreshCw className="size-3 animate-spin text-[#39A9F5]" />
+                                Evaluating deterministic packet...
+                            </div>
+                        )}
+
+                        {jevError && (
+                            <div className="rounded border border-[#E06379]/30 bg-[#E06379]/10 p-2 text-[#E06379]">
+                                Jev shadow evaluation degraded: {jevError}
+                            </div>
+                        )}
+
+                        {jevResponse && !jevLoading && (
+                            <>
+                                {isStale && (
+                                    <div className="rounded border border-[#E6B450]/40 bg-[#E6B450]/10 p-2 text-[#E6B450]">
+                                        Deterministic setup state has updated. Re-evaluating or click refresh.
+                                    </div>
+                                )}
+                                <p className="leading-relaxed text-[#D8DEE8] font-sans" data-testid="setup-jev-summary">
+                                    {jevResponse.summary}
+                                </p>
+
+                                {jevResponse.strongestEvidence.length > 0 && (
+                                    <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
+                                        <div className="font-mono text-[8px] font-bold text-[#8390A0]">RECOGNIZED EVIDENCE</div>
+                                        <ul className="mt-1 space-y-0.5 font-mono text-[9px] text-[#2CC7A0]">
+                                            {jevResponse.strongestEvidence.map((ev, i) => (
+                                                <li key={i}>· {ev}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {jevResponse.conflicts.length > 0 && (
+                                    <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
+                                        <div className="font-mono text-[8px] font-bold text-[#8390A0]">IDENTIFIED RISKS & CONFLICTS</div>
+                                        <ul className="mt-1 space-y-0.5 font-mono text-[9px] text-[#E06379]">
+                                            {jevResponse.conflicts.map((c, i) => (
+                                                <li key={i}>· {c}</li>
+                                            ))}
+                                        </ul>
+                                    </div>
+                                )}
+
+                                {jevResponse.invalidationRestatement && (
+                                    <div className="text-[9px] text-[#8390A0] font-mono">
+                                        Boundary restatement: <span className="text-[#E06379]">{jevResponse.invalidationRestatement}</span>
+                                    </div>
+                                )}
+
+                                <div className="border-t border-[#18212C] pt-1.5 flex items-center justify-between font-mono text-[8px] text-[#8390A0]">
+                                    <span>MODEL: {jevResponse.model}</span>
+                                    <span title={jevResponse.featurePacketHash}>HASH: {jevResponse.featurePacketHash.slice(0, 12)}…</span>
+                                </div>
+                            </>
+                        )}
+
+                        <p className="border-t border-[#18212C] pt-2 text-[8px] leading-relaxed text-[#8390A0]">
+                            Bounded AI explanation only. Jev cannot alter deterministic states, gates, levels, or risk limits.
+                        </p>
+                    </div>
                 )}
             </div>
         </div>

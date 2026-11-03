@@ -17,3 +17,5 @@ export * from './microstructure';
 export * from './evidence-contracts';
 export * from './evidence-engine';
 export * from './setup-engine';
+export * from './jev-contracts';
+export * from './jev-adapter';

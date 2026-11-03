@@ -346,7 +346,16 @@ export default function DecisionDock({
                                 />
                             )}
                             {workspaceMode === 'SETUP' && (
-                                <SetupMode assessment={setupAssessment} evidence={flowEvidence} />
+                                <SetupMode
+                                    assessment={setupAssessment}
+                                    evidence={flowEvidence}
+                                    optionsContext={{
+                                        gammaRegime: metrics.longGamma ? 'POSITIVE' : 'NEGATIVE',
+                                        callWall: metrics.callWall,
+                                        putWall: metrics.putWall,
+                                        netGex: metrics.netGex,
+                                    }}
+                                />
                             )}
                         </>
                     )}
