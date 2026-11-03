@@ -500,6 +500,11 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                     onClick={() => {
                                         setWorkspaceMode(mode);
                                         setInspectorTab('DECISION');
+                                        if (mode === 'FLOW') {
+                                            if (!chartLayers.footprint) toggleChartLayer('footprint');
+                                            if (!chartLayers.tradeVolumeProfile) toggleChartLayer('tradeVolumeProfile');
+                                            if (chartLayers.liquidityHeatmap === false) toggleChartLayer('liquidityHeatmap');
+                                        }
                                     }}
                                     className={cn(
                                         'h-6 px-2.5 font-mono text-[9px] font-bold tracking-wider rounded transition-colors',
@@ -614,6 +619,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 <LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} />
                                 <LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} />
                                 <LayerToggle label="Liquidity heatmap" checked={chartLayers.liquidityHeatmap !== false} onCheckedChange={() => toggleChartLayer('liquidityHeatmap')} />
+                                <LayerToggle label="Footprint clusters" checked={Boolean(chartLayers.footprint)} onCheckedChange={() => toggleChartLayer('footprint')} />
+                                <LayerToggle label="Captured Trade VP" checked={Boolean(chartLayers.tradeVolumeProfile)} onCheckedChange={() => toggleChartLayer('tradeVolumeProfile')} />
                                 <LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} />
                                 <LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} />
                             </Popover.Content>
@@ -687,6 +694,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                     <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
                                     <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />
                                     <StudyChip label="Liquidity Heatmap" visible={chartLayers.liquidityHeatmap !== false} onToggle={() => toggleChartLayer('liquidityHeatmap')} description="Sequence-validated Binance Spot depth history. Session-local only; no synthetic liquidity." />
+                                    <StudyChip label="Footprint" visible={Boolean(chartLayers.footprint)} onToggle={() => toggleChartLayer('footprint')} description="ATAS/NinjaTrader-style bid/ask cluster cells, POC box, and delta rendered directly on the candles." />
+                                    <StudyChip label="Trade VP" visible={Boolean(chartLayers.tradeVolumeProfile)} onToggle={() => toggleChartLayer('tradeVolumeProfile')} description="Session-captured aggregate-trade volume profile with exact buy/sell split, T-POC, T-VAH, and T-VAL on the price axis." />
                                 </div>
 
                                 <div className="flex min-h-0 flex-1">

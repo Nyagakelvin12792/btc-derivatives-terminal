@@ -13,6 +13,10 @@ import TrueFlowProvenanceBanner, { qualityColor, sequenceStateColor } from './Tr
 import TrueCvdPane from './TrueCvdPane';
 import FootprintChartOverlay from './FootprintChartOverlay';
 import CapturedVolumeProfileOverlay from './CapturedVolumeProfileOverlay';
+import CandleFootprintCanvasOverlay, {
+    projectFootprintBarsToChart,
+    projectTradeVolumeProfileToChart,
+} from './CandleFootprintCanvasOverlay';
 import FlowMode from './FlowMode';
 
 const BASE_TIME = Date.UTC(2026, 9, 30, 12, 0, 0);
@@ -273,6 +277,56 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             expect(html).toContain('data-testid="flow-footprint-status"');
             expect(html).toContain('READY');
             expect(html).toContain('data-testid="flow-trade-vp-container"');
+        });
+    });
+
+    describe('CandleFootprintCanvasOverlay (ATAS/NinjaTrader On-Candle Projection)', () => {
+        it('projects footprint bars and trade volume profile onto chart coordinates and renders HUD controls', () => {
+            const snapshot = createTestSnapshot(false);
+            const firstOpenTimeSeconds = Math.floor(snapshot.footprintBars[0].footprint.openTime / 1_000);
+            const projectedBars = projectFootprintBarsToChart(snapshot.footprintBars, {
+                width: 1200,
+                height: 600,
+                timeframeSeconds: 60,
+                timeToX: (t) => 300 + (t - firstOpenTimeSeconds) * 2,
+                priceToY: (p) => 500 - (p - 98) * 30,
+            });
+            const projectedVp = projectTradeVolumeProfileToChart(
+                snapshot.tradeVolumeProfile,
+                (p) => 500 - (p - 98) * 30,
+                600,
+            );
+
+            expect(projectedBars.length).toBeGreaterThan(0);
+            expect(projectedBars[0].cells.length).toBeGreaterThan(0);
+            expect(projectedVp).not.toBeNull();
+            expect(projectedVp!.rows.length).toBeGreaterThan(0);
+
+            const html = renderToStaticMarkup(
+                <CandleFootprintCanvasOverlay
+                    projectedBars={projectedBars}
+                    projectedTradeVp={projectedVp}
+                    showFootprint
+                    showTradeVp
+                    width={1200}
+                    height={600}
+                    zoomMode="DETAILED"
+                    onCycleZoomMode={() => undefined}
+                    tradeVpPlacement="LEFT"
+                    onToggleTradeVpPlacement={() => undefined}
+                    overlayOpacity={80}
+                    onOverlayOpacityChange={() => undefined}
+                />,
+            );
+
+            expect(html).toContain('data-testid="candle-footprint-canvas-overlay"');
+            expect(html).toContain('data-footprint-bars=');
+            expect(html).toContain('data-trade-vp-rows=');
+            expect(html).toContain('data-trade-vp-placement="LEFT"');
+            expect(html).toContain('data-overlay-opacity="80"');
+            expect(html).toContain('data-testid="cycle-onchart-footprint-zoom"');
+            expect(html).toContain('data-testid="toggle-trade-vp-placement"');
+            expect(html).toContain('data-testid="onchart-footprint-opacity-slider"');
         });
     });
 });

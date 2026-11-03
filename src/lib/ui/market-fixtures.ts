@@ -31,7 +31,7 @@ export interface DemoAvwapBands {
 
 const BAR_SECONDS = 15 * 60;
 
-export function createDemoMarketBars(spot: number, count = 192, barSeconds = BAR_SECONDS): DemoMarketBar[] {
+export function createDemoMarketBars(spot: number, count = 1_200, barSeconds = BAR_SECONDS): DemoMarketBar[] {
     const end = Math.floor(Date.now() / barSeconds / 1000) * barSeconds;
     let previous = spot * 0.972;
 

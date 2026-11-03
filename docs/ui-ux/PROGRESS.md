@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.15
-Last updated: 2026-11-03
-Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · UX16.1, UX16.2 & UX16.3 SYSTEMATIC REVIEW COMPLETE
-Current checkpoint: Systematic engineering and runtime review of UX16.1, UX16.2, and UX16.3 completed; all uncovered runtime/UI synchronization issues resolved, verified across 56 Vitest suites (371 tests) and Playwright browser acceptance, and deployed to production.
+Version: 3.16
+Last updated: 2026-11-04
+Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · ATAS/NINJATRADER ON-CANDLE FOOTPRINT & 1,000-BAR VOLUME PROFILE COMPLETE
+Current checkpoint: Added ATAS/NinjaTrader-style on-candle Footprint & Trade Volume Profile canvas overlay (`CandleFootprintCanvasOverlay.tsx`), restored 10,000-bar historical CVD with live-tape switcher, upgraded Fixed Range Volume Profile to 1,000-bar minimum default with inline Left/Right placement and 10%–100% bar opacity slider, verified across 56 Vitest suites (372 tests) and production build.
 
 ## Scope Statement
 
@@ -523,3 +523,17 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   5. **Project Control Telemetry Promotion (`src/lib/project-control/ux16-plan.ts`)**:
      - Promoted `UX16.1`, `UX16.2` (5 tasks), and `UX16.3` (5 tasks) from `REVIEW_REQUIRED` to `COMPLETE` with `evidenceStatus: 'ACCEPTED'` (`reviewedBy: 'ARCHITECT'`).
      - Updated telemetry totals: **100.0% Implemented (60/60)**, **100.0% Tested (60/60)**, **60.0% Accepted (36/60)**, **0 Review Required Tasks**, **0 Blocked Tasks**.
+
+### 2026-11-04 — ATAS/NinjaTrader On-Candle Footprint, 1,000-Bar Volume Profile, Opacity & Side Controls, and 10K CVD Switcher
+
+- **ATAS / NinjaTrader On-Candle Footprint & Trade VP Projection (`src/components/terminal/CandleFootprintCanvasOverlay.tsx`)**:
+  - Engineered `projectFootprintBarsToChart` and `projectTradeVolumeProfileToChart` to project classified trade footprint clusters (`FootprintBarV1`) and captured trade volume profile (`CapturedVolumeProfileV1`) directly onto the main `MarketStructureChart` price/time canvas coordinates (`timeToCoordinate` and `priceToCoordinate`).
+  - Renders left-side red sell volume bars/numbers, right-side emerald buy volume bars/numbers, golden Point-of-Control (`POC`) outline per candle, and beneath-candle net delta (`Δ`) badges, with semantic zoom (`AUTO` / `DETAILED` / `COMPACT` / `OVERVIEW`).
+  - Renders on-chart Captured Trade Volume Profile (`T-POC`, `T-VAH`, `T-VAL`) with interactive `SIDE: RIGHT | LEFT` toggle and `Opacity` slider (`15%–100%`) directly in the chart HUD.
+  - Wired `Footprint` and `Trade VP` chips into the top Study Chips bar and `Layers` popover in `src/components/terminal/CalmMarketTerminal.tsx`, and configured the `FLOW` mode button to auto-enable `Footprint`, `Trade VP`, and `Liquidity Heatmap` on the main chart.
+- **1,000-Bar Fixed Range Volume Profile with Bar Opacity & Left/Right Side Controls (`src/components/terminal/MarketStructureChart.tsx`)**:
+  - Upgraded the default Fixed Range Volume Profile span from `120` bars to **1,000 bars** (`Math.max(0, end - 999)`) and increased `createDemoMarketBars` default length in `src/lib/ui/market-fixtures.ts` from `192` to `1,200` bars so both `LIVE` (10,000 bars) and `DEMO` modes guarantee at least 1,000 bars.
+  - Added an inline `RIGHT` / `LEFT` side toggle button (`data-testid="vp-placement-toggle"`) and quick settings button (`data-testid="vp-quick-settings-trigger"`) directly on the Fixed Range VP header badge on the chart.
+  - Added a `Bar opacity` slider (`10%–100%`, `data-testid="vp-opacity-slider"`), `Placement (Side)` selector (`Right-sided` / `Left-sided`), and a `1,000 bars` quick-range button inside the Fixed Range VP settings popover.
+- **10,000-Bar Historical CVD Preservation with Source Switcher (`src/components/terminal/LowerStudyPane.tsx`)**:
+  - Restored `10K BAR CVD` (all 10,000 historical Binance bars + `Anchor` selector) as the default lower CVD view while adding a `[ 10K BAR CVD | LIVE TAPE CVD (Nb) ]` toggle button so users never lose historical CVD context when live aggregate-trade capture is active.

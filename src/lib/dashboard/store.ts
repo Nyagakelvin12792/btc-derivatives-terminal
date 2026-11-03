@@ -82,6 +82,8 @@ export interface TerminalState {
         liquidityHeatmap: boolean;
         volumeProfile: boolean;
         avwap: boolean;
+        footprint?: boolean;
+        tradeVolumeProfile?: boolean;
     };
     toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
     resetWorkspaceUi: () => void;
@@ -96,6 +98,8 @@ const defaultChartLayers = {
     liquidityHeatmap: !calmWorkspaceEnabled,
     volumeProfile: true,
     avwap: true,
+    footprint: false,
+    tradeVolumeProfile: false,
 };
 
 export const useTerminalStore = create<TerminalState>()(persist((set) => ({

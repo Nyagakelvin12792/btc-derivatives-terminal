@@ -39,6 +39,13 @@ import LiquidityHeatmapOverlay, {
     projectLiquidityHeatmapFrames,
     type LiquidityHeatmapCell,
 } from './LiquidityHeatmapOverlay';
+import CandleFootprintCanvasOverlay, {
+    projectFootprintBarsToChart,
+    projectTradeVolumeProfileToChart,
+    type ProjectedCandleFootprintBar,
+    type ProjectedTradeVpLayout,
+} from './CandleFootprintCanvasOverlay';
+import type { FootprintZoomLevel } from './FootprintChartOverlay';
 import type { LiquidityDensityMode } from '../../lib/binance/liquidity-surface-contracts';
 import {
     applyDrawingDrag,
@@ -134,6 +141,8 @@ interface OverlayLayout {
     pocY: number | null;
     valY: number | null;
     heatmapCells: LiquidityHeatmapCell[];
+    footprintBars: ProjectedCandleFootprintBar[];
+    tradeVpLayout: ProjectedTradeVpLayout | null;
 }
 
 interface DrawingDragState {
@@ -265,6 +274,7 @@ export default function MarketStructureChart({
         width: 800, height: 460, flipY: 230, callY: null, putY: null, maxPainY: null, anchorX: null, anchorY: null,
         profileLeftX: null, profileRightX: null,
         profileRows: [], secondaryRows: [], vahY: null, pocY: null, valY: null, heatmapCells: [],
+        footprintBars: [], tradeVpLayout: null,
     });
     const [studyPaneHeight, setStudyPaneHeight] = useState<number>(() => readPersistedStudyPaneHeight());
     const [range, setRange] = useState<ProfileRange | null>(null);
@@ -272,9 +282,13 @@ export default function MarketStructureChart({
     const [profileRowCount, setProfileRowCount] = useState(48);
     const [profileWidthPercent, setProfileWidthPercent] = useState(40);
     const [profileValueAreaPercent, setProfileValueAreaPercent] = useState(70);
+    const [profileOpacityPercent, setProfileOpacityPercent] = useState(75);
     const [profileVolumeMode, setProfileVolumeMode] = useState<ProfileVolumeMode>('UP_DOWN');
     const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
     const [extendProfileRight, setExtendProfileRight] = useState(false);
+    const [onChartFootprintZoom, setOnChartFootprintZoom] = useState<'AUTO' | FootprintZoomLevel>('AUTO');
+    const [tradeVpPlacement, setTradeVpPlacement] = useState<ProfilePlacement>('RIGHT');
+    const [onChartFlowOpacity, setOnChartFlowOpacity] = useState(85);
     const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
     const [cvdSourceMode, setCvdSourceMode] = useState<CvdSourceMode>('HISTORICAL');
     const [liquidityDensityMode, setLiquidityDensityMode] = useState<LiquidityDensityMode>('FOCUSED');
@@ -407,7 +421,7 @@ export default function MarketStructureChart({
     const summary = data.summary as unknown as Record<string, unknown>;
     const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
     const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
-    const demoBars = useMemo(() => createDemoMarketBars(spot, 192, TIMEFRAME_SECONDS[timeframe]), [spot, timeframe]);
+    const demoBars = useMemo(() => createDemoMarketBars(spot, 1_200, TIMEFRAME_SECONDS[timeframe]), [spot, timeframe]);
     const liveBars = useMemo<DemoMarketBar[]>(() => marketFeed.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [marketFeed.candles]);
     const allBars = dataMode === 'DEMO' ? demoBars : liveBars;
     const bars = useMemo(() => replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, replayActive]);
@@ -517,10 +531,20 @@ export default function MarketStructureChart({
         if (bars.length < (dataMode === 'LIVE' ? 50 : 2) || profileContextRef.current === chartContextKey) return;
         profileContextRef.current = chartContextKey;
         const end = bars.length - 1;
-        const start = Math.max(0, end - 119);
+        const start = Math.max(0, end - 999);
         setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
         setAnchorIndex(Math.max(0, end - 126));
     }, [bars, chartContextKey, dataMode]);
+
+    useEffect(() => {
+        if (!range || bars.length < 1_000) return;
+        const currentStartIdx = nearestBarIndex(bars, range.startTime);
+        const currentEndIdx = nearestBarIndex(bars, range.endTime);
+        if (currentEndIdx - currentStartIdx + 1 === 120 && currentEndIdx === bars.length - 1) {
+            const newStart = Math.max(0, bars.length - 1_000);
+            setRange({ startTime: Number(bars[newStart].time), endTime: Number(bars[bars.length - 1].time) });
+        }
+    }, [bars, range]);
 
     useEffect(() => {
         if (!chartHostRef.current || !hasChartData) return;
@@ -728,6 +752,21 @@ export default function MarketStructureChart({
                         densityMode: liquidityDensityMode,
                     })
                     : [],
+                footprintBars: chartLayers.footprint && trueFlowSnapshot
+                    ? projectFootprintBarsToChart(trueFlowSnapshot.footprintBars, {
+                        width: hostWidth,
+                        height: hostHeight,
+                        timeframeSeconds: TIMEFRAME_SECONDS[timeframe],
+                        timeToX: (timeSeconds: number) => {
+                            const coord = chart.timeScale().timeToCoordinate(timeSeconds as DemoMarketBar['time']);
+                            return coord === null ? null : Number(coord);
+                        },
+                        priceToY: coordinate,
+                    })
+                    : [],
+                tradeVpLayout: chartLayers.tradeVolumeProfile && trueFlowSnapshot?.tradeVolumeProfile
+                    ? projectTradeVolumeProfileToChart(trueFlowSnapshot.tradeVolumeProfile, coordinate, hostHeight)
+                    : null,
             });
             const projector: ChartProjector = {
                 timeToX: (time: number) => {
@@ -755,7 +794,7 @@ export default function MarketStructureChart({
             cancelAnimationFrame(frame);
             if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
         };
-    }, [anchorIndex, bars, callWall, chartLayers.liquidityHeatmap, drawingDraft, drawings, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe]);
+    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, drawingDraft, drawings, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
 
     useEffect(() => {
         if (!studyPaneOpen || !hasChartData) return;
@@ -937,6 +976,14 @@ export default function MarketStructureChart({
         setDragTarget(target);
     }
 
+    function setProfileToThousandBars() {
+        if (!bars.length) return;
+        const end = bars.length - 1;
+        const start = Math.max(0, end - 999);
+        setExtendProfileRight(false);
+        setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
+    }
+
     function setProfileToAllLoadedBars() {
         if (!bars.length) return;
         setExtendProfileRight(false);
@@ -954,7 +1001,7 @@ export default function MarketStructureChart({
 
     function resetChartViewAndObjects() {
         const end = bars.length - 1;
-        const start = Math.max(0, end - 119);
+        const start = Math.max(0, end - 999);
         setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
         setAnchorIndex(Math.max(0, end - 126));
         setDrawings([]);
@@ -1310,6 +1357,23 @@ export default function MarketStructureChart({
                     />
                 )}
 
+                {(chartLayers.footprint || chartLayers.tradeVolumeProfile) && (
+                    <CandleFootprintCanvasOverlay
+                        projectedBars={overlayLayout.footprintBars}
+                        projectedTradeVp={overlayLayout.tradeVpLayout}
+                        showFootprint={Boolean(chartLayers.footprint)}
+                        showTradeVp={Boolean(chartLayers.tradeVolumeProfile)}
+                        width={overlayLayout.width}
+                        height={overlayLayout.height}
+                        zoomMode={onChartFootprintZoom}
+                        onCycleZoomMode={() => setOnChartFootprintZoom((prev) => prev === 'AUTO' ? 'DETAILED' : prev === 'DETAILED' ? 'COMPACT' : prev === 'COMPACT' ? 'OVERVIEW' : 'AUTO')}
+                        tradeVpPlacement={tradeVpPlacement}
+                        onToggleTradeVpPlacement={() => setTradeVpPlacement((prev) => prev === 'RIGHT' ? 'LEFT' : 'RIGHT')}
+                        overlayOpacity={onChartFlowOpacity}
+                        onOverlayOpacityChange={setOnChartFlowOpacity}
+                    />
+                )}
+
                 {chartLayers.gammaRegime && <div className="pointer-events-none absolute inset-0 z-10">
                     <div className={cn('absolute inset-x-0 top-0 border-b border-emerald-400/25 bg-emerald-400/[0.045]', positiveGamma && 'bg-emerald-400/[0.075]')} style={{ height: Math.max(0, overlayLayout.flipY) }}><span className="absolute left-3 top-10 rounded border border-emerald-400/20 bg-[#07120f]/90 px-2 py-1 text-[10px] font-bold text-emerald-300">POSITIVE GAMMA · MEAN-REVERSION</span></div>
                     <div className={cn('absolute inset-x-0 bottom-0 border-t border-rose-400/20 bg-rose-400/[0.035]', !positiveGamma && 'bg-rose-400/[0.07]')} style={{ top: Math.max(0, overlayLayout.flipY) }}><span className="absolute bottom-8 left-3 rounded border border-rose-400/20 bg-[#140a0e]/90 px-2 py-1 text-[10px] font-bold text-rose-300">NEGATIVE GAMMA · EXPANSION</span></div>
@@ -1327,36 +1391,61 @@ export default function MarketStructureChart({
                     data-selected-bars={selectedBarCount}
                     data-start-index={profileStartIndex}
                     data-end-index={profileEndIndex}
+                    data-placement={profilePlacement}
+                    data-opacity={profileOpacityPercent}
                     data-left-coordinate={overlayLayout.profileLeftX ?? ''}
                     data-right-coordinate={overlayLayout.profileRightX ?? ''}
                 >
-                    {valueAreaTop !== null && <div className="pointer-events-none absolute inset-x-0 bg-sky-400/[0.045]" style={{ top: valueAreaTop, height: valueAreaHeight }} />}
-                    {profile.map((row) => {
-                        const y = overlayLayout.profileRows.find((position) => position.price === row.price)?.y;
-                        if (y === undefined) return null;
-                        const metric = profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume;
-                        const width = (metric / maxProfile) * profileWidthPercent;
-                        const inValueArea = profileLevels !== null && row.price >= profileLevels.val && row.price <= profileLevels.vah;
-                        const placementClass = profilePlacement === 'RIGHT' ? 'right-0 justify-end' : 'left-0 justify-start';
-                        if (profileVolumeMode === 'TOTAL') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', inValueArea ? 'bg-sky-300/75' : 'bg-sky-500/45')} /></div>;
-                        if (profileVolumeMode === 'DELTA') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', row.delta >= 0 ? inValueArea ? 'bg-cyan-300/80' : 'bg-cyan-500/50' : inValueArea ? 'bg-rose-300/80' : 'bg-rose-500/50')} /></div>;
-                        return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={inValueArea ? 'bg-rose-300/75' : 'bg-rose-500/45'} style={{ width: `${(1 - row.upShare) * 100}%` }} /><span className={inValueArea ? 'bg-cyan-300/80' : 'bg-cyan-500/55'} style={{ width: `${row.upShare * 100}%` }} /></div>;
-                    })}
+                    {valueAreaTop !== null && <div className="pointer-events-none absolute inset-x-0 bg-sky-400/[0.045]" style={{ top: valueAreaTop, height: valueAreaHeight, opacity: profileOpacityPercent / 100 }} />}
+                    <div className="pointer-events-none absolute inset-0" style={{ opacity: profileOpacityPercent / 100 }} data-testid="fixed-range-vp-bars">
+                        {profile.map((row) => {
+                            const y = overlayLayout.profileRows.find((position) => position.price === row.price)?.y;
+                            if (y === undefined) return null;
+                            const metric = profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume;
+                            const width = (metric / maxProfile) * profileWidthPercent;
+                            const inValueArea = profileLevels !== null && row.price >= profileLevels.val && row.price <= profileLevels.vah;
+                            const placementClass = profilePlacement === 'RIGHT' ? 'right-0 justify-end' : 'left-0 justify-start';
+                            if (profileVolumeMode === 'TOTAL') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', inValueArea ? 'bg-sky-300/85' : 'bg-sky-500/55')} /></div>;
+                            if (profileVolumeMode === 'DELTA') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', row.delta >= 0 ? inValueArea ? 'bg-cyan-300/90' : 'bg-cyan-500/60' : inValueArea ? 'bg-rose-300/90' : 'bg-rose-500/60')} /></div>;
+                            return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={inValueArea ? 'bg-rose-300/85' : 'bg-rose-500/55'} style={{ width: `${(1 - row.upShare) * 100}%` }} /><span className={inValueArea ? 'bg-cyan-300/90' : 'bg-cyan-500/65'} style={{ width: `${row.upShare * 100}%` }} /></div>;
+                        })}
+                    </div>
                     {[
                         ['VAH', profileLevels?.vah, overlayLayout.vahY, 'border-sky-300/50 text-sky-200'],
                         ['POC', profileLevels?.poc, overlayLayout.pocY, 'border-rose-300/70 text-rose-300'],
                         ['VAL', profileLevels?.val, overlayLayout.valY, 'border-sky-300/50 text-sky-200'],
-                    ].map(([label, price, y, classes]) => typeof y === 'number' && typeof price === 'number' ? <div key={String(label)} className={cn('pointer-events-none absolute inset-x-0 border-t', String(classes).split(' ')[0])} style={{ top: y }}><span className={cn('absolute right-1 -top-4 bg-[#08101a]/95 px-1 text-[8px] font-semibold', String(classes).split(' ')[1])}>{label} {Math.round(price).toLocaleString()}</span></div> : null)}
+                    ].map(([label, price, y, classes]) => typeof y === 'number' && typeof price === 'number' ? <div key={String(label)} className={cn('pointer-events-none absolute inset-x-0 border-t', String(classes).split(' ')[0])} style={{ top: y }}><span className={cn('absolute -top-4 bg-[#08101a]/95 px-1 text-[8px] font-semibold', profilePlacement === 'RIGHT' ? 'right-1' : 'left-1', String(classes).split(' ')[1])}>{label} {Math.round(price).toLocaleString()}</span></div> : null)}
                     {!objectLocked && <><button type="button" aria-label="Adjust volume profile start" onPointerDown={(event) => beginProfileDrag(event, 'range-start')} className="pointer-events-auto absolute -left-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>{!extendProfileRight && <button type="button" aria-label="Adjust volume profile end" onPointerDown={(event) => beginProfileDrag(event, 'range-end')} className="pointer-events-auto absolute -right-2 top-1/2 z-30 flex h-12 w-4 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded border border-cyan-300/50 bg-[#101924] text-cyan-200"><GripVertical className="size-3" /></button>}</>}
-                    <button
-                        type="button"
-                        title="Select or drag the fixed range volume profile"
-                        onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); }}
-                        onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
-                        className="pointer-events-auto absolute left-2 top-2 flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200"
-                    >
-                        <Move className="size-3" />FIXED RANGE VP · {selectedBarCount} BARS · {profileSourceLabel}
-                    </button>
+                    <div className="pointer-events-auto absolute left-2 top-2 flex items-center gap-1">
+                        <button
+                            type="button"
+                            title="Select or drag the fixed range volume profile"
+                            onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); }}
+                            onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
+                            className="flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200 hover:border-cyan-400/45"
+                        >
+                            <Move className="size-3" />FIXED RANGE VP · {selectedBarCount} BARS · {profileSourceLabel}
+                        </button>
+                        <button
+                            type="button"
+                            data-testid="vp-placement-toggle"
+                            title="Toggle Volume Profile Left / Right placement"
+                            onClick={(event) => { event.stopPropagation(); setProfilePlacement((prev) => prev === 'RIGHT' ? 'LEFT' : 'RIGHT'); }}
+                            className="rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] font-bold text-cyan-200 hover:bg-cyan-400/15"
+                        >
+                            {profilePlacement}
+                        </button>
+                        <button
+                            type="button"
+                            data-testid="vp-quick-settings-trigger"
+                            title="Configure Volume Profile Opacity, Side & Bars"
+                            onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); setSettingsOpen(true); }}
+                            className="flex items-center gap-1 rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] text-zinc-300 hover:bg-white/10"
+                        >
+                            <Settings className="size-2.5 text-cyan-300" />
+                            <span>{profileOpacityPercent}%</span>
+                        </button>
+                    </div>
                 </div>}
 
                 {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
@@ -1374,14 +1463,19 @@ export default function MarketStructureChart({
                         <Popover.Portal><Popover.Content side="bottom" align="center" sideOffset={8} className="z-50 w-72 rounded-md border border-[#33445a] bg-[#0b121c] p-3 text-[10px] text-zinc-300 shadow-lg">
                             {selectedObject === 'VP' ? <div className="space-y-3">
                                 <div className="flex items-center justify-between"><span className="font-semibold text-zinc-100">Fixed Range Volume Profile</span><span className="font-mono tabular-nums text-cyan-300">{selectedBarCount} bars</span></div>
-                                <div className="grid grid-cols-2 gap-2"><button type="button" onClick={setProfileToVisibleBars} className="rounded border border-[#33445a] px-2 py-1.5 hover:bg-white/5">Use visible range</button><button type="button" onClick={setProfileToAllLoadedBars} className="rounded border border-[#33445a] px-2 py-1.5 hover:bg-white/5">Use all loaded</button></div>
+                                <div className="grid grid-cols-3 gap-1.5">
+                                    <button type="button" onClick={setProfileToThousandBars} className="rounded border border-cyan-400/35 bg-cyan-400/10 px-1.5 py-1.5 font-semibold text-cyan-200 hover:bg-cyan-400/20">1,000 bars</button>
+                                    <button type="button" onClick={setProfileToVisibleBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">Visible range</button>
+                                    <button type="button" onClick={setProfileToAllLoadedBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">All loaded</button>
+                                </div>
                                 <label htmlFor="profile-rows" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Number of rows</span><select id="profile-rows" value={profileRowCount} onChange={(event) => setProfileRowCount(Number(event.target.value))} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value={24}>24</option><option value={48}>48</option><option value={72}>72</option><option value={100}>100</option></select></label>
                                 <label htmlFor="profile-volume-mode" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Volume</span><select id="profile-volume-mode" value={profileVolumeMode} onChange={(event) => setProfileVolumeMode(event.target.value as ProfileVolumeMode)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="TOTAL">Total</option><option value="UP_DOWN">Up / Down</option><option value="DELTA">Delta</option></select></label>
-                                <label htmlFor="profile-placement" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Placement</span><select id="profile-placement" value={profilePlacement} onChange={(event) => setProfilePlacement(event.target.value as ProfilePlacement)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="RIGHT">Right</option><option value="LEFT">Left</option></select></label>
+                                <label htmlFor="profile-placement" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Placement (Side)</span><select id="profile-placement" value={profilePlacement} onChange={(event) => setProfilePlacement(event.target.value as ProfilePlacement)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="RIGHT">Right-sided</option><option value="LEFT">Left-sided</option></select></label>
+                                <label htmlFor="profile-opacity" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Bar opacity</span><span className="font-mono tabular-nums text-zinc-200">{profileOpacityPercent}%</span></span><input id="profile-opacity" data-testid="vp-opacity-slider" type="range" min="10" max="100" step="5" value={profileOpacityPercent} onChange={(event) => setProfileOpacityPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
                                 <label htmlFor="profile-width" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Width (% of box)</span><span className="font-mono tabular-nums text-zinc-200">{profileWidthPercent}%</span></span><input id="profile-width" type="range" min="10" max="100" step="5" value={profileWidthPercent} onChange={(event) => setProfileWidthPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
                                 <label htmlFor="profile-value-area" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Value area volume</span><span className="font-mono tabular-nums text-zinc-200">{profileValueAreaPercent}%</span></span><input id="profile-value-area" type="range" min="50" max="99" step="1" value={profileValueAreaPercent} onChange={(event) => setProfileValueAreaPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
                                 <label className="flex items-center justify-between gap-3"><span className="text-zinc-400">Extend right with new bars</span><input type="checkbox" checked={extendProfileRight} onChange={(event) => setExtendProfileRight(event.target.checked)} className="size-4 accent-cyan-400" /></label>
-                                <p className="text-pretty text-[9px] leading-4 text-zinc-500">Source: {profileSourceLabel}. Live mode selects the finest bounded Binance interval below 5,000 intrabars. Up/down classification follows candle direction; the chart remains pannable through the profile.</p>
+                                <p className="text-pretty text-[9px] leading-4 text-zinc-500">Source: {profileSourceLabel}. Default span is 1,000 bars. Live mode selects the finest bounded Binance interval below 5,000 intrabars.</p>
                             </div> : <label className="flex items-center justify-between gap-3"><span>Deviation bands</span><input type="checkbox" checked={showAvwapBands} onChange={(event) => setShowAvwapBands(event.target.checked)} className="size-4 accent-cyan-400" /></label>}
                             <Popover.Arrow className="fill-[#33445a]" />
                         </Popover.Content></Popover.Portal>
