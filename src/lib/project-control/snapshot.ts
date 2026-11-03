@@ -22,13 +22,10 @@ export function buildProjectControlResponseV1(
     options: ProjectControlSnapshotOptions = {},
 ): ProjectControlResponseV1 {
     const generatedAt = options.generatedAt ?? new Date().toISOString();
-    const sourceBranch = options.sourceBranch
-        ?? process.env.VERCEL_GIT_COMMIT_REF
-        ?? 'codex/ux16.2-true-flow';
-    const sourceCommit = options.sourceCommit
-        ?? process.env.VERCEL_GIT_COMMIT_SHA
-        ?? process.env.UX16_SOURCE_COMMIT
-        ?? null;
+    const branchCandidate = (options.sourceBranch ?? process.env.VERCEL_GIT_COMMIT_REF ?? '').trim();
+    const sourceBranch = branchCandidate.length > 0 ? branchCandidate : 'main';
+    const commitCandidate = (options.sourceCommit ?? process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.UX16_SOURCE_COMMIT ?? '').trim();
+    const sourceCommit = commitCandidate.length >= 7 ? commitCandidate : null;
     const usageFiles = [codexUsageJson, geminiUsageJson, deepseekUsageJson, otherUsageJson]
         .map((file) => AgentUsageFileV1Schema.parse(file));
 
