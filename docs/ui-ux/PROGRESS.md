@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.9
+Version: 3.10
 Last updated: 2026-11-03
-Overall status: UX16.3 LIQUIDITY SURFACE V2 COMPLETE (60.0% IMPLEMENTED / 60.0% TESTED) · UX16.4 IN PROGRESS
-Current checkpoint: UX16.3 Liquidity Surface V2 verified with Playwright across 4 viewports; kicking off UX16.4 Imbalance and Liquidity Behavior
+Overall status: UX16.4 IMBALANCE AND LIQUIDITY BEHAVIOR COMPLETE (68.3% IMPLEMENTED / 68.3% TESTED) · UX16.5 IN PROGRESS
+Current checkpoint: UX16.4 Imbalance & Microstructure verified with Playwright across 4 viewports; kicking off UX16.5 Absorption and Acceptance
 
 ## Scope Statement
 
@@ -58,7 +58,8 @@ Observed UI limitations:
 | UX16.1 — Validated aggregate-trade capture | COMPLETE | Binance Spot aggTrade capture engine, buyer-maker classification, gap/reconnect boundaries |
 | UX16.2 — True flow & project-control dashboard | COMPLETE | Gap-safe trade CVD, footprint with semantic zoom, captured VP, /project-control dashboard; released to production on main |
 | UX16.3 — Liquidity Surface V2 | COMPLETE | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, neutral amber ramp, focused/full toggle, Playwright verified across 4 viewports |
-| UX16.4 — Imbalance and liquidity behavior | IN PROGRESS | Diagonal and stacked imbalance, order persistence, add/pull events, probable replenishment |
+| UX16.4 — Imbalance and liquidity behavior | COMPLETE | Diagonal and stacked imbalance, order persistence, add/pull events, probable replenishment; Playwright and Vitest verified across 4 viewports |
+| UX16.5 — Absorption and acceptance | IN PROGRESS | Absorption, acceptance, divergence and zones |
 
 ## UX0 Evidence
 
@@ -301,3 +302,26 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Full vitest suite (48 test files, 311 unit tests) and Playwright matrix all passing with 0 errors.
 - Milestone UX16.3 marked COMPLETE (review required by Architect).
 - Telemetry: 60.0% implemented, 60.0% tested, 6.7% accepted. Transitioning to UX16.4 Imbalance & Liquidity Behavior.
+
+### 2026-11-03 — UX16.4 Imbalance and Liquidity Behavior verified and marked COMPLETE
+
+- Implemented pure algorithmic microstructure calculation engine in `src/lib/orderflow/microstructure.ts` and contracts in `src/lib/orderflow/microstructure-contracts.ts`:
+  - Diagonal imbalance calculation: `buyRatio(i) = askExecuted(i) / bidExecuted(i - 1)`, `sellRatio(i) = bidExecuted(i) / askExecuted(i + 1)`.
+  - Non-negotiable research gates: default ratio >= 3.0, minimum dominant volume >= $50,000, minimum delta >= $25,000, zero-denominator suppression.
+  - Stacked imbalance zone detection: requires >= 3 contiguous price levels on the same side.
+  - Queue imbalance: windowed across 5 bps, 10 bps, and 25 bps depth slices.
+  - Order-flow imbalance (OFI): Cont-style best-book event contribution tracking.
+  - Liquidity persistence: continuous time-weighted tracking (elapsed milliseconds), not message count.
+  - Add and pull estimation: `estimatedPull = max(0, estimatedRemove - observedExecutionAgainstLevel)`, labelled `isEstimated: true`.
+  - Probable replenishment: execution against resting level followed by refill within time window; strictly labelled `PROBABLE_REPLENISHMENT`, never iceberg confirmed.
+- Integrated diagonal imbalance calculation into `deriveTrueFlowSnapshotV1()` and `FlowMode.tsx` Decision Dock display.
+- Integrated deterministic microstructure evidence converter into `DecisionDock.tsx`.
+- Tested with 12/12 passing unit tests in `src/lib/orderflow/microstructure.test.ts` and 49 passing test files (323 tests) repository-wide.
+- Implemented and verified Playwright acceptance suite `tests/ui/ux16-microstructure.pw.ts` across 4 viewports (1920×1080 Desktop, 1664×936 Compact, 1366×768 Laptop, 390×844 Mobile) with 0 horizontal overflow.
+- Visual acceptance artifacts captured and stored:
+  - `ux16-4-microstructure-desktop-1920x1080.png`
+  - `ux16-4-microstructure-compact-1664x936.png`
+  - `ux16-4-microstructure-laptop-1366x768.png`
+  - `ux16-4-microstructure-mobile-390x844.png`
+- Progress telemetry: Implemented progress increased to 68.3%, tested progress increased to 68.3%, accepted progress at 6.7%.
+- Advancing immediately to UX16.5 (Absorption and Acceptance).

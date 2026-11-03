@@ -1,3 +1,5 @@
+import { calculateDiagonalImbalance } from './microstructure';
+import type { ImbalanceConfigV1 } from './microstructure-contracts';
 import {
     FootprintBarV1Schema,
     FootprintCellV1Schema,
@@ -34,6 +36,7 @@ export interface TrueFlowOptions {
     interval: TrueFlowInterval;
     priceBucket: number;
     valueAreaFraction?: number;
+    imbalance?: Partial<ImbalanceConfigV1>;
 }
 
 interface SegmentInput {
@@ -205,6 +208,7 @@ function buildFootprintBars(
     interval: TrueFlowInterval,
     priceBucket: number,
     baseCoverage: CaptureCoverageV1,
+    imbalanceConfig?: Partial<ImbalanceConfigV1>,
 ) {
     const intervalMs = INTERVAL_MS[interval];
     return segments.flatMap((segment) => {
@@ -231,7 +235,7 @@ function buildFootprintBars(
                     minRunningDelta = Math.min(minRunningDelta, runningDelta);
                     maxRunningDelta = Math.max(maxRunningDelta, runningDelta);
                 }
-                const cells = [...cellGroups.entries()]
+                const rawCells = [...cellGroups.entries()]
                     .sort(([left], [right]) => left - right)
                     .map(([bucketIndex, cellTrades]) => {
                         const priceLow = bucketLow(bucketIndex, priceBucket);
@@ -248,6 +252,9 @@ function buildFootprintBars(
                             imbalanceRatio: null,
                         });
                     });
+                const cells = imbalanceConfig
+                    ? calculateDiagonalImbalance(rawCells, imbalanceConfig)
+                    : rawCells;
                 const totalNotionalUsd = cells.reduce((sum, cell) => sum + cell.totalNotionalUsd, 0);
                 const deltaNotionalUsd = cells.reduce((sum, cell) => sum + cell.deltaNotionalUsd, 0);
                 const poc = [...cells].sort((left, right) =>
@@ -370,7 +377,7 @@ export function deriveTrueFlowSnapshotV1(
         interval,
         priceBucket: options.priceBucket,
         cvdSegments: buildCvdSegments(segments, interval, coverage),
-        footprintBars: buildFootprintBars(segments, interval, options.priceBucket, coverage),
+        footprintBars: buildFootprintBars(segments, interval, options.priceBucket, coverage, options.imbalance),
         tradeVolumeProfile: buildTradeVolumeProfile(
             trades,
             options.priceBucket,

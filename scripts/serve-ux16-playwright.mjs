@@ -6,6 +6,9 @@ const nextCli = fileURLToPath(new URL('../node_modules/next/dist/bin/next', impo
 const environment = {
     ...process.env,
     NEXT_PUBLIC_UX16_CALM_WORKSPACE: 'true',
+    NEXT_PUBLIC_UX16_LIQUIDITY_SURFACE_V2: 'true',
+    NEXT_PUBLIC_UX16_FOOTPRINT: 'true',
+    NEXT_PUBLIC_UX16_SETUP_DOCK: 'true',
 };
 
 if (process.env.SKIP_BUILD !== 'true' || !fs.existsSync('.next/BUILD_ID')) {

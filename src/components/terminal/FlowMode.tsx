@@ -47,6 +47,11 @@ export default function FlowMode({
     const effectiveCvdUsd = latestSegment ? latestSegment.finalCumulativeDeltaNotionalUsd : currentCvdUsd;
     const effectiveFootprintStatus = trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 ? 'READY' : footprintStatus;
 
+    const imbalancedCellsCount = trueFlowSnapshot?.footprintBars.reduce(
+        (sum, bar) => sum + (bar.footprint?.cells ?? []).filter((c) => c.buyImbalance || c.sellImbalance).length,
+        0,
+    ) ?? 0;
+
     return (
         <div className={cn('space-y-2.5 p-3 font-sans text-[#D8DEE8]', className)} data-testid="flow-mode-container">
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3">
@@ -81,10 +86,17 @@ export default function FlowMode({
                             <span>TOTAL TRADES:</span>
                             <span className="text-[#D8DEE8]">{trueFlowSnapshot.totals.tradeCount}</span>
                         </div>
-                        <p className="mt-1 text-[8px] text-[#5C697A]">Trade-classified cells active. Diagonal imbalance disabled until UX16.4.</p>
+                        {imbalancedCellsCount > 0 ? (
+                            <div className="flex justify-between mt-0.5" data-testid="flow-imbalance-count">
+                                <span>DIAGONAL IMBALANCES:</span>
+                                <span className="font-bold text-[#E5A83B]">{imbalancedCellsCount} cells</span>
+                            </div>
+                        ) : (
+                            <p className="mt-1 text-[8px] text-[#5C697A]">Trade-classified cells active. Diagonal imbalance enabled (ratio ≥ 3.0, min $50k).</p>
+                        )}
                     </div>
                 ) : (
-                    <p className="mt-2 text-[9px] leading-relaxed text-[#8390A0]">Trade-classified footprint calculation begins in UX16.2. No bar imbalance is inferred from candles.</p>
+                    <p className="mt-2 text-[9px] leading-relaxed text-[#8390A0]">Trade-classified footprint calculation active in UX16.2+. No bar imbalance is inferred from candles.</p>
                 )}
             </div>
 
@@ -150,12 +162,15 @@ export default function FlowMode({
                     <span>{events.length} OBSERVED</span>
                 </div>
                 {events.length === 0 ? (
-                    <p className="mt-2 rounded border border-[#18212C] bg-[#070A0F] p-2 text-[9px] leading-relaxed text-[#8390A0]">No deterministic microstructure events. Aggregate-trade capture begins in UX16.1.</p>
+                    <p className="mt-2 rounded border border-[#18212C] bg-[#070A0F] p-2 text-[9px] leading-relaxed text-[#8390A0]">No active deterministic microstructure events in current window.</p>
                 ) : (
                     <div className="mt-2 space-y-1.5">
                         {events.map((event) => (
                             <div key={event.id} className="rounded border border-[#18212C] bg-[#070A0F] p-2 text-[9px]">
-                                <div className="flex justify-between gap-2 font-mono text-[8px]"><span>{event.kind}</span><span>{event.confidence}</span></div>
+                                <div className="flex justify-between gap-2 font-mono text-[8px]">
+                                    <span className="font-bold text-[#D8DEE8]">{event.kind}</span>
+                                    <span className="rounded bg-[#18212C] px-1 text-[#39A9F5]">{event.confidence}</span>
+                                </div>
                                 <div className="mt-1 text-[#8390A0]">{event.reasonCodes.join(' · ')}</div>
                             </div>
                         ))}

@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useMemo } from 'react';
 import { X, Activity } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
 import { useTerminalStore } from '../../lib/dashboard/store';
@@ -14,6 +14,12 @@ import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
 import { ORDERFLOW_SCHEMA_VERSION, type SetupAssessmentV1 } from '../../lib/orderflow/contracts';
 import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
+import {
+    convertMicrostructureToMarketEvidence,
+    detectStackedImbalances,
+    trackLiquidityPersistence,
+    type DepthObservation,
+} from '../../lib/orderflow/microstructure';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export interface DecisionDockProps {
@@ -116,6 +122,27 @@ export default function DecisionDock({
         dataQuality: unavailableCoverage,
         deterministicVersion: 'ux16.0-shell-only',
     };
+        const microstructureEvents = useMemo(() => {
+        if (!trueFlowSnapshot) return [];
+        const observations: DepthObservation[] = (liquidityFeed.frames || []).flatMap((frame) =>
+            (frame.levels || []).map((lvl) => ({
+                priceBucket: lvl.price,
+                side: lvl.side,
+                notionalUsd: lvl.notionalUsd,
+                timestamp: frame.eventTime,
+            }))
+        );
+        const persistence = trackLiquidityPersistence(observations);
+        const stacked = trueFlowSnapshot.footprintBars.flatMap((bar) =>
+            detectStackedImbalances(bar.footprint?.cells ?? [], bar.footprint?.openTime ?? 0)
+        );
+        return convertMicrostructureToMarketEvidence({
+            stackedZones: stacked,
+            persistentWalls: persistence,
+            coverage: trueFlowSnapshot.coverage,
+        });
+    }, [trueFlowSnapshot, liquidityFeed.frames]);
+
     const activeOverlayCount = Object.values(chartLayers).filter(Boolean).length;
 
     return (
@@ -181,7 +208,7 @@ export default function DecisionDock({
                                     footprintStatus="NOT_CONNECTED"
                                     cvdStatus="UNAVAILABLE"
                                     currentCvdUsd={null}
-                                    events={[]}
+                                    events={microstructureEvents}
                                     dataMode={orderflowMode}
                                     trueFlowSnapshot={trueFlowSnapshot}
                                 />
