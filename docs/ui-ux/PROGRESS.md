@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.7
+Version: 3.8
 Last updated: 2026-11-03
-Overall status: UX16.2 RELEASED TO PRODUCTION — UX16.3 READY TO START
-Current checkpoint: UX16.2 true-flow & project-control dashboard deployed to Vercel production on `main` at `371a4e2` (https://beatcoin-terminal.vercel.app)
+Overall status: UX16.3 LIQUIDITY SURFACE V2 IN PROGRESS (60.0% IMPLEMENTED / 60.0% TESTED)
+Current checkpoint: Timestamp-aligned depth projection, canvas amber sequential ramp, and density controls implemented on `agent/gemini-ux16.3-surface`
 
 ## Scope Statement
 
@@ -57,7 +57,7 @@ Observed UI limitations:
 | UX16.0 — Calm workspace baseline | COMPLETE | Approved Calm Analytical Instrument workspace foundation behind feature flag |
 | UX16.1 — Validated aggregate-trade capture | COMPLETE | Binance Spot aggTrade capture engine, buyer-maker classification, gap/reconnect boundaries |
 | UX16.2 — True flow & project-control dashboard | COMPLETE | Gap-safe trade CVD, footprint with semantic zoom, captured VP, /project-control dashboard; released to production on main |
-| UX16.3 — Liquidity Surface V2 | PLANNED | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, fixed price grid |
+| UX16.3 — Liquidity Surface V2 | IN PROGRESS | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, neutral amber ramp, focused/full toggle |
 
 ## UX0 Evidence
 
@@ -272,3 +272,17 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Assigned and attached persistent custom domain `beatcoin-terminal.vercel.app` alongside `btc-terminal-codex.vercel.app`.
 - Verified live HTTP 200 responses on `/`, `/project-control`, and `/api/project-control` with live telemetry.
 - Progress telemetry: 45.3% implemented, 45.3% tested, 7.5% accepted, 0 blocked tasks.
+
+### 2026-11-03 — UX16.3 Liquidity Surface V2 implementation checkpoint
+
+- Implemented `src/lib/binance/liquidity-surface-contracts.ts` defining `LiquidityDensityMode`, `LiquidityColorTheme`, `LiquiditySurfaceSettings`, and `ProjectedLiquiditySurfaceCell`.
+- Implemented `projectLiquiditySurfaceV2()` in `src/components/terminal/LiquidityHeatmapOverlay.tsx`:
+  - Maps depth X coordinates directly through chart event times (`timeToX`), eliminating the legacy 52% right-hand rectangular strip.
+  - Maps depth Y coordinates through active price scale (`priceToY`) dynamically during pan, zoom, and resize.
+  - Ensures sequence gaps produce honest visual whitespace without artificial continuity.
+  - Applies rolling robust quantile and `log1p` normalization.
+  - Replaces green/red styling with a neutral graphite-to-amber sequential ramp.
+  - Outlines persistent high-notional limit order walls.
+- Wired `MarketStructureChart.tsx` to pass `timeToX` and added an interactive `FOCUSED` vs `FULL` density mode toggle.
+- Verified with 6/6 passing unit tests in `src/components/terminal/liquidity-surface-v2.test.ts` and all 48 test files (311 tests) repository-wide.
+- Telemetry updated: Implemented progress increased from 45.3% to 60.0%, tested progress increased from 45.3% to 60.0%.

@@ -39,6 +39,7 @@ import LiquidityHeatmapOverlay, {
     projectLiquidityHeatmapFrames,
     type LiquidityHeatmapCell,
 } from './LiquidityHeatmapOverlay';
+import type { LiquidityDensityMode } from '../../lib/binance/liquidity-surface-contracts';
 import {
     applyDrawingDrag,
     cloneDrawing,
@@ -274,6 +275,7 @@ export default function MarketStructureChart({
     const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
     const [extendProfileRight, setExtendProfileRight] = useState(false);
     const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
+    const [liquidityDensityMode, setLiquidityDensityMode] = useState<LiquidityDensityMode>('FOCUSED');
     const [cvdResetMarkers, setCvdResetMarkers] = useState<Array<{ time: number; x: number }>>([]);
     const [profileQueryRange, setProfileQueryRange] = useState<{ startTimeSeconds: number; endTimeSeconds: number; displayBarSeconds: number } | null>(null);
     const [showAvwapBands, setShowAvwapBands] = useState(true);
@@ -715,6 +717,12 @@ export default function MarketStructureChart({
                         width: hostWidth,
                         height: hostHeight,
                         priceToY: coordinate,
+                        timeToX: (time: number) => {
+                            const coord = chart.timeScale().timeToCoordinate(time as DemoMarketBar['time']);
+                            return coord === null ? null : Number(coord);
+                        },
+                        timeframeSeconds: TIMEFRAME_SECONDS[timeframe],
+                        densityMode: liquidityDensityMode,
                     })
                     : [],
             });
@@ -1294,6 +1302,8 @@ export default function MarketStructureChart({
                         frameCount={liquidityFeed.coverage.frameCount}
                         warmupPercent={liquidityFeed.coverage.warmupPercent}
                         errorMessage={liquidityFeed.error?.message}
+                        densityMode={liquidityDensityMode}
+                        onToggleDensityMode={() => setLiquidityDensityMode((prev) => prev === 'FOCUSED' ? 'FULL' : 'FOCUSED')}
                     />
                 )}
 
