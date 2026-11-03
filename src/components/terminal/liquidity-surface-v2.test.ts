@@ -156,4 +156,28 @@ describe('UX16.3 Liquidity Surface V2 coordinate projection & acceptance', () =>
         expect(cellsWithTime.length).toBeGreaterThan(0);
         expect(cellsWithTime[0].x).toBe(100);
     });
+
+    it('re-projects different cell counts when projectLiquidityHeatmapFrames toggles densityMode FOCUSED vs FULL', () => {
+        const frames = [makeFrame(0, 1000, 68000)];
+        const focused = projectLiquidityHeatmapFrames(frames, {
+            width: 1000,
+            height: 600,
+            priceToY: mockPriceToY,
+            timeToX: mockTimeToX,
+            densityMode: 'FOCUSED',
+            minPercentile: 0.1,
+        });
+        const full = projectLiquidityHeatmapFrames(frames, {
+            width: 1000,
+            height: 600,
+            priceToY: mockPriceToY,
+            timeToX: mockTimeToX,
+            densityMode: 'FULL',
+            minPercentile: 0.1,
+        });
+
+        expect(full.length).toBeGreaterThan(focused.length);
+        expect(focused.some((c) => (c.price ?? 0) >= 68000 * 1.04)).toBe(false);
+        expect(full.some((c) => (c.price ?? 0) >= 68000 * 1.04)).toBe(true);
+    });
 });

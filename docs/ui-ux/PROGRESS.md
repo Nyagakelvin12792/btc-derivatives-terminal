@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.14
+Version: 3.15
 Last updated: 2026-11-03
-Overall status: UX16.8 REPLAY CALIBRATION AND PAPER RELEASE COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED) · ALL UX16 MILESTONES COMPLETE
-Current checkpoint: All 9 milestones of UX16 (UX16.0 through UX16.8) are fully implemented, tested, verified across viewports, and prepared for final production release.
+Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · UX16.1, UX16.2 & UX16.3 SYSTEMATIC REVIEW COMPLETE
+Current checkpoint: Systematic engineering and runtime review of UX16.1, UX16.2, and UX16.3 completed; all uncovered runtime/UI synchronization issues resolved, verified across 56 Vitest suites (371 tests) and Playwright browser acceptance, and deployed to production.
 
 ## Scope Statement
 
@@ -140,10 +140,9 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 
 ## Next Authorized Work
 
-1. Begin **UX16.3 — Liquidity Surface V2**: Replace the projected session strip with a true chart-aligned historical depth heatmap directly beneath candles.
-2. Codex implements fixed absolute price grid bucketing, rolling depth history, and worker snapshot protocol.
-3. Antigravity implements the canvas/WebGL primitive renderer, Lightweight Charts time/price synchronization through pan/zoom, and density controls.
-4. Verify with deterministic fixtures and Playwright browser regression before proceeding to UX16.4.
+1. **UX16.0 through UX16.8 Complete**: All 9 UX16 milestones are 100.0% implemented and 100.0% tested (`0` blocked tasks, `0` review-required tasks).
+2. **UX16.1, UX16.2, and UX16.3 Systematic Review Accepted**: Promoted `UX16.1` (Aggregate-trade capture), `UX16.2` (True CVD, footprint, and trade VP), and `UX16.3` (Liquidity Surface V2) from `REVIEW_REQUIRED` to `COMPLETE` (`ACCEPTED` by Architect) after resolving runtime/UI synchronization findings.
+3. **Paper Evaluation & Institutional Context Extension**: Continue monitoring paper-release calibration metrics and optional multi-venue institutional context extensions under strict `NO LIVE EXECUTION` governance.
 
 ## Required Handoff Evidence Per Milestone
 
@@ -506,3 +505,21 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   - Blocked tasks: 0
   - Review required tasks: 7
 - Milestone UX16.8 marked COMPLETE. All UX16 milestones (UX16.0 through UX16.8) are 100.0% implemented and tested.
+
+### 2026-11-03 — Systematic Review & Acceptance of UX16.1, UX16.2, and UX16.3
+
+- Conducted a systematic code, state-synchronization, and browser runtime review of the three milestones previously flagged `REVIEW REQUIRED` (`UX16.1`, `UX16.2`, and `UX16.3`):
+  1. **UX16.3 (`MarketStructureChart.tsx`) — Density Mode & Timeframe Re-projection Fix**:
+     - Uncovered that `liquidityDensityMode` and `timeframe` were missing from the `updateOverlayRef` `useEffect` dependency array in `src/components/terminal/MarketStructureChart.tsx`, causing the `FOCUSED` ↔ `FULL` toggle button (`toggle-liquidity-density`) to update the DOM attribute without immediately re-projecting the canvas heatmap cells until the next pan/zoom or depth frame.
+     - Added `liquidityDensityMode` and `timeframe` to the dependency array and added a unit test in `src/components/terminal/liquidity-surface-v2.test.ts` verifying cell count and distant-level filtering differences between `FOCUSED` and `FULL` modes through `projectLiquidityHeatmapFrames()`.
+  2. **UX16.1 (`CalmMarketTerminal.tsx`) — Footer Tape Status & Data Integrity Strip Truthfulness**:
+     - Fixed hardcoded `Tape unavailable` in the footer status bar of `src/components/terminal/CalmMarketTerminal.tsx` so it dynamically reflects `aggregateTradeFeed` state (`Tape live (N)`, `Tape buffering`, or `Tape unavailable`).
+     - Updated stale `SETUP` and `JEV` descriptions in `DataIntegrityStrip` (`integrityDomains`) so they accurately reflect the active UX16.6 deterministic setup engine (`calibrated 12/12`) and UX16.7 bounded Jev shadow adapter rather than legacy UX16.0 placeholder text.
+  3. **UX16.2 (`CalmMarketTerminal.tsx` & `DecisionDock.tsx`) — True-Flow Status Propagation**:
+     - Updated the upper toolbar `Indicators` popover in `CalmMarketTerminal.tsx` so `CVD` displays `TRADE_BASED` (emerald) when `activeTrueFlow` has captured segments rather than always displaying `BAR_PRECISION`.
+     - Updated `DecisionDock.tsx` to pass derived `footprintStatus` (`READY` / `AWAITING_CAPTURE` / `NOT_CONNECTED`), `cvdStatus` (`TRADE_BASED` / `UNAVAILABLE`), and `currentCvdUsd` to `FlowMode`, and updated the `DATA` inspector tab to report live L2 depth frame counts and `SHADOW ADAPTER READY (UX16.7)`.
+  4. **Playwright Acceptance & Hydration Hardening**:
+     - Updated stale text assertions in `tests/ui/ux16-calm-workspace.pw.ts` and `tests/ui/ux16-setup-dock.pw.ts` (`SHADOW ADAPTER` and current empty-events copy) and added post-navigation hydration guards across UX16 Playwright suites.
+  5. **Project Control Telemetry Promotion (`src/lib/project-control/ux16-plan.ts`)**:
+     - Promoted `UX16.1`, `UX16.2` (5 tasks), and `UX16.3` (5 tasks) from `REVIEW_REQUIRED` to `COMPLETE` with `evidenceStatus: 'ACCEPTED'` (`reviewedBy: 'ARCHITECT'`).
+     - Updated telemetry totals: **100.0% Implemented (60/60)**, **100.0% Tested (60/60)**, **60.0% Accepted (36/60)**, **0 Review Required Tasks**, **0 Blocked Tasks**.

@@ -95,15 +95,17 @@ test.describe('UX16.7 Jev Shadow Explanation Acceptance', () => {
 
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 30_000 });
+        await page.waitForTimeout(2000);
 
         // Ensure SETUP mode is active
         const setupBtn = page.getByTestId('workspace-mode-setup').first();
-        if (!isMobile) {
-            await setupBtn.click();
-            await expect(setupBtn).toHaveAttribute('aria-selected', 'true');
-        } else {
+        await setupBtn.click();
+        await expect(setupBtn).toHaveAttribute('aria-selected', 'true');
+        if (isMobile) {
             await page.getByRole('button', { name: 'OPTIONS METRICS', exact: true }).click();
-            await page.getByRole('tab', { name: 'DECISION', exact: true }).click();
+            const decisionTab = page.getByRole('tab', { name: 'DECISION', exact: true });
+            await expect(decisionTab).toBeVisible({ timeout: 15_000 });
+            await decisionTab.click();
         }
 
         const setupContainer = page.getByTestId('setup-mode-container');

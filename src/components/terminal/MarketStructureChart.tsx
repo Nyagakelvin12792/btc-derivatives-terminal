@@ -752,7 +752,7 @@ export default function MarketStructureChart({
             cancelAnimationFrame(frame);
             if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
         };
-    }, [anchorIndex, bars, callWall, chartLayers.liquidityHeatmap, drawingDraft, drawings, gammaFlip, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels]);
+    }, [anchorIndex, bars, callWall, chartLayers.liquidityHeatmap, drawingDraft, drawings, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe]);
 
     useEffect(() => {
         if (!studyPaneOpen || !hasChartData) return;

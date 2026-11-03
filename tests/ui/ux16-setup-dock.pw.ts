@@ -69,15 +69,17 @@ test.describe('UX16.6 Setup State Machine & Decision Dock Acceptance', () => {
 
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 30_000 });
+        await page.waitForTimeout(2000);
 
         // Ensure SETUP mode is active
         const setupBtn = page.getByTestId('workspace-mode-setup').first();
-        if (!isMobile) {
-            await setupBtn.click();
-            await expect(setupBtn).toHaveAttribute('aria-selected', 'true');
-        } else {
+        await setupBtn.click();
+        await expect(setupBtn).toHaveAttribute('aria-selected', 'true');
+        if (isMobile) {
             await page.getByRole('button', { name: 'OPTIONS METRICS', exact: true }).click();
-            await page.getByRole('tab', { name: 'DECISION', exact: true }).click();
+            const decisionTab = page.getByRole('tab', { name: 'DECISION', exact: true });
+            await expect(decisionTab).toBeVisible({ timeout: 15_000 });
+            await decisionTab.click();
         }
 
         const setupContainer = page.getByTestId('setup-mode-container');
@@ -115,7 +117,7 @@ test.describe('UX16.6 Setup State Machine & Decision Dock Acceptance', () => {
         const jevContainer = setupContainer.getByTestId('setup-jev-shadow-container');
         await expect(jevContainer).toBeVisible();
         await expect(jevContainer.getByText('JEV SHADOW EXPLANATION')).toBeVisible();
-        await expect(jevContainer.getByText('SHADOW DISABLED')).toBeVisible();
+        await expect(jevContainer.getByText('SHADOW ADAPTER')).toBeVisible();
 
         const artifactDir = path.resolve(process.cwd(), '.artifacts', 'ui-overhaul');
 

@@ -29,6 +29,7 @@ test.describe('UX16.3 Historical Liquidity Surface V2 Acceptance', () => {
 
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 30_000 });
+        await page.waitForTimeout(1500);
     });
 
     test('verifies liquidity surface overlay renders under candles with density toggle', async ({ page, isMobile }) => {

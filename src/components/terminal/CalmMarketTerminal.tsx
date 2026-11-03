@@ -446,16 +446,18 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                 schemaVersion: ORDERFLOW_SCHEMA_VERSION,
                 key: 'SETUP',
                 label: 'SETUP',
-                status: 'UNAVAILABLE',
-                detail: 'The deterministic setup engine is not enabled in UX16.0.',
-                coverage: offlineCoverage('ORDERFLOW_DERIVED', 'STRUCTURAL'),
+                status: dataMode === 'LIVE' && activeTrueFlow && activeTrueFlow.cvdSegments.length > 0 ? 'READY' : 'UNAVAILABLE',
+                detail: dataMode === 'LIVE' && activeTrueFlow && activeTrueFlow.cvdSegments.length > 0
+                    ? 'Deterministic 9-state setup engine active with live order-flow coverage (calibrated 12/12).'
+                    : 'Deterministic setup engine awaiting live order-flow coverage (calibrated 12/12).',
+                coverage: dataMode === 'LIVE' && activeTrueFlow ? activeTrueFlow.coverage : offlineCoverage('ORDERFLOW_DERIVED', 'STRUCTURAL'),
             },
             {
                 schemaVersion: ORDERFLOW_SCHEMA_VERSION,
                 key: 'JEV',
                 label: 'JEV',
                 status: 'SHADOW',
-                detail: 'Jev is disabled in the UI until the UX16.7 shadow-explanation checkpoint.',
+                detail: 'Bounded Jev shadow explanation adapter active in Setup Mode (read-only · cannot alter states).',
                 coverage: createCaptureCoverageV1({ ...offlineCoverage('ORDERFLOW_DERIVED', 'STRUCTURAL'), dataMode: 'SHADOW', source: 'UX16_FIXTURE' }),
             },
         ];
@@ -571,9 +573,11 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                             <Popover.Content sideOffset={6} className="z-50 w-56 rounded border border-[#18212C] bg-[#0C1118] p-2 shadow-xl">
                                 <div className="px-2 py-1 text-[9px] font-bold text-[#8390A0]">ORDER FLOW STUDIES</div>
                                 {ORDER_FLOW_TABS.map((study) => {
-                                    const state = study === 'CVD' || study === 'DELTA'
-                                        ? 'BAR_PRECISION'
-                                        : dataMode === 'DEMO' ? 'UNAVAILABLE' : liquidityFeed.sequence.state;
+                                    const state = study === 'CVD'
+                                        ? (activeTrueFlow && activeTrueFlow.cvdSegments.length > 0 ? 'TRADE_BASED' : 'BAR_PRECISION')
+                                        : study === 'DELTA'
+                                            ? 'BAR_PRECISION'
+                                            : dataMode === 'DEMO' ? 'UNAVAILABLE' : liquidityFeed.sequence.state;
                                     return (
                                         <button
                                             key={study}
@@ -582,7 +586,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             className="flex w-full items-center justify-between rounded px-2 py-2 text-left text-[10px] text-[#D8DEE8] hover:bg-white/5"
                                         >
                                             <span>{study}</span>
-                                            <span className={state === 'LIVE' ? 'text-[#2CC7A0]' : state === 'BAR_PRECISION' || state === 'BUFFERING' ? 'text-[#E6B450]' : 'text-[#5C697A]'}>{state}</span>
+                                            <span className={state === 'LIVE' || state === 'TRADE_BASED' ? 'text-[#2CC7A0]' : state === 'BAR_PRECISION' || state === 'BUFFERING' ? 'text-[#E6B450]' : 'text-[#5C697A]'}>{state}</span>
                                         </button>
                                     );
                                 })}
@@ -858,9 +862,20 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                             <span className={cn('size-1.5 rounded-full', deribitState === 'LIVE' ? 'bg-[#2CC7A0]' : deribitState === 'DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
                             Options {deribitState.toLowerCase()}
                         </span>
-                        <span className="hidden items-center gap-1 lg:flex">
-                            <span className={cn('size-1.5 rounded-full', marketFeed.state === 'LIVE' ? 'bg-[#2CC7A0]' : 'bg-[#39A9F5]')} />
-                            Tape unavailable
+                        <span className="hidden items-center gap-1 lg:flex" data-testid="footer-tape-status">
+                            <span className={cn(
+                                'size-1.5 rounded-full',
+                                dataMode === 'LIVE' && aggregateTradeFeed.capability === 'ENABLED' && aggregateTradeFeed.coverage.sequenceState === 'LIVE' && aggregateTradeFeed.stats.acceptedCount > 0
+                                    ? 'bg-[#2CC7A0]'
+                                    : dataMode === 'LIVE' && aggregateTradeFeed.capability === 'ENABLED'
+                                        ? 'bg-[#39A9F5]'
+                                        : 'bg-[#5C697A]',
+                            )} />
+                            {dataMode === 'LIVE' && aggregateTradeFeed.capability === 'ENABLED' && aggregateTradeFeed.stats.acceptedCount > 0
+                                ? `Tape ${aggregateTradeFeed.coverage.sequenceState.toLowerCase()} (${aggregateTradeFeed.stats.acceptedCount.toLocaleString()})`
+                                : dataMode === 'LIVE' && aggregateTradeFeed.capability === 'ENABLED' && aggregateTradeFeed.coverage.sequenceState === 'BUFFERING'
+                                    ? 'Tape buffering'
+                                    : 'Tape unavailable'}
                         </span>
                     </div>
                     <div className="flex items-center gap-3">

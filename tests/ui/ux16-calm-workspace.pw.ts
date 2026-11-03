@@ -112,7 +112,7 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         await expect(page.getByTestId('flow-events-container')).toBeVisible();
         await expect(flowContainer.getByText('UNAVAILABLE')).toBeVisible();
         await expect(flowContainer.getByText('0 OBSERVED')).toBeVisible();
-        await expect(flowContainer.getByText('No deterministic microstructure events. Aggregate-trade capture begins in UX16.1.')).toBeVisible();
+        await expect(flowContainer.getByText('No active deterministic microstructure events in current window.')).toBeVisible();
         await expect(flowContainer.getByText('PROBABLE_ABSORPTION')).toHaveCount(0);
         await expect(flowContainer.getByText('REPLENISHMENT')).toHaveCount(0);
         await expect(flowContainer.getByText('$12.40M')).toHaveCount(0);
@@ -139,7 +139,7 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         await expect(setupContainer.getByText('WATCH_LONG')).toHaveCount(0);
         const jevContainer = page.getByTestId('setup-jev-shadow-container');
         await expect(jevContainer).toBeVisible();
-        await expect(jevContainer.getByText('SHADOW DISABLED')).toBeVisible();
+        await expect(jevContainer.getByText('SHADOW ADAPTER')).toBeVisible();
 
         await page.screenshot({
             path: '.artifacts/ui-overhaul/ux16-setup-mode-1920x1080.png',

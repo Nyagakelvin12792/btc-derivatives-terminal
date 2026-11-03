@@ -160,10 +160,13 @@ test.describe('UX16.2 deterministic worker integration', () => {
 
             await page.goto('/', { waitUntil: 'domcontentloaded' });
             await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 30_000 });
+            await page.waitForTimeout(1500);
             await page.getByTestId('workspace-mode-flow').click();
             if (isMobile) {
                 await page.getByRole('button', { name: 'OPTIONS METRICS', exact: true }).click();
-                await page.getByRole('tab', { name: 'DECISION', exact: true }).click();
+                const decisionTab = page.getByRole('tab', { name: 'DECISION', exact: true });
+                await expect(decisionTab).toBeVisible({ timeout: 15_000 });
+                await decisionTab.click();
             }
             const flow = page.getByTestId('flow-mode-container');
             await expect(flow).toBeVisible();

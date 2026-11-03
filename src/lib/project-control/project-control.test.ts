@@ -38,7 +38,7 @@ describe('project-control contracts and calculations', () => {
         });
         expect(snapshot.totals.implementedWeight).toBeGreaterThan(snapshot.totals.acceptedWeight);
         expect(snapshot.totals.testedWeight).toBeGreaterThan(snapshot.totals.acceptedWeight);
-        expect(snapshot.totals.reviewRequiredTasks).toBeGreaterThan(0);
+        expect(snapshot.totals.reviewRequiredTasks).toBe(0);
     });
 
     it('retains committed task evidence when a local deployment SHA is unavailable', () => {
@@ -47,7 +47,7 @@ describe('project-control contracts and calculations', () => {
             .flatMap((milestone) => milestone.features)
             .flatMap((feature) => feature.tasks)
             .find((task) => task.id === 'UX16.2-CALC-01');
-        expect(current?.evidence.evidenceStatus).toBe('TESTED');
+        expect(current?.evidence.evidenceStatus).toBe('ACCEPTED');
         expect(current?.evidence.commit).toBe('447a9d2');
     });
 
@@ -119,6 +119,8 @@ describe('project-control contracts and calculations', () => {
         });
         expect(ProjectControlResponseV1Schema.parse(response)).toEqual(response);
         expect(response.usage.totals.runsWithUnreportedUsage).toBeGreaterThan(0);
-        expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.2')?.status).toBe('REVIEW_REQUIRED');
+        expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.1')?.status).toBe('COMPLETE');
+        expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.2')?.status).toBe('COMPLETE');
+        expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.3')?.status).toBe('COMPLETE');
     });
 });

@@ -340,9 +340,9 @@ export default function DecisionDock({
                                 <FlowMode
                                     liquidityStatus={dataMode === 'DEMO' ? 'OFFLINE' : liquidityFeed.paused ? 'PAUSED' : liquidityFeed.sequence.state}
                                     retainedFrames={dataMode === 'DEMO' ? 0 : liquidityFeed.frames.length}
-                                    footprintStatus="NOT_CONNECTED"
-                                    cvdStatus="UNAVAILABLE"
-                                    currentCvdUsd={null}
+                                    footprintStatus={trueFlowSnapshot ? (trueFlowSnapshot.footprintBars.length > 0 ? 'READY' : 'AWAITING_CAPTURE') : 'NOT_CONNECTED'}
+                                    cvdStatus={trueFlowSnapshot && trueFlowSnapshot.cvdSegments.length > 0 ? 'TRADE_BASED' : 'UNAVAILABLE'}
+                                    currentCvdUsd={trueFlowSnapshot?.cvdSegments.at(-1)?.finalCumulativeDeltaNotionalUsd ?? null}
                                     events={flowEvidence}
                                     dataMode={orderflowMode}
                                     trueFlowSnapshot={trueFlowSnapshot}
@@ -409,9 +409,9 @@ export default function DecisionDock({
                                     ['CVD / Tape Delta', trueFlowSnapshot && trueFlowSnapshot.cvdSegments.length > 0
                                         ? `TRADE CAPTURED · ${trueFlowSnapshot.cvdSegments.length} segment(s)`
                                         : 'UNAVAILABLE (no captured true-flow segment)'],
-                                    ['L2 Depth Reconstruction', dataMode === 'DEMO' ? 'UNAVAILABLE IN DEMO' : marketFeed.book ? marketFeed.state : 'OFFLINE'],
+                                    ['L2 Depth Reconstruction', dataMode === 'DEMO' ? 'UNAVAILABLE IN DEMO' : liquidityFeed.sequence.state !== 'OFFLINE' ? `${liquidityFeed.sequence.state} (${liquidityFeed.frames.length} frames)` : marketFeed.book ? marketFeed.state : 'OFFLINE'],
                                     ['Options Chain', isError && dataMode === 'LIVE' ? 'UNAVAILABLE' : data.dataMode],
-                                    ['Jev Intelligence', 'SHADOW STANDBY (UX16.7)'],
+                                    ['Jev Intelligence', 'SHADOW ADAPTER READY (UX16.7)'],
                                 ].map(([label, value]) => (
                                     <div key={label} className="flex items-start justify-between gap-3 py-2">
                                         <span className="text-[#8390A0]">{label}</span>
