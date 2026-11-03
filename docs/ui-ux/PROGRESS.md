@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.6
+Version: 3.7
 Last updated: 2026-11-03
-Overall status: UX16.2 ASSEMBLED AND TESTED — ARCHITECT REVIEW AND RELEASE IN PROGRESS
-Current checkpoint: UX16.2 calculation, presentation, independent oracle and project-control dashboard verified on `codex/ux16.2-true-flow`
+Overall status: UX16.2 RELEASED TO PRODUCTION — UX16.3 READY TO START
+Current checkpoint: UX16.2 true-flow & project-control dashboard deployed to Vercel production on `main` at `371a4e2` (https://beatcoin-terminal.vercel.app)
 
 ## Scope Statement
 
@@ -53,7 +53,11 @@ Observed UI limitations:
 | UX12 — Chart navigation and VP repair | COMPLETE | Persistent chart instance, viewport-preserving live updates, pannable overlay, 120-bar default, bounded 1s–1d intrabars, denser row allocation, and TradingView POC/VA rules |
 | UX13 — Linked pane and drawing repair | COMPLETE | Price-volume histogram removed; order-flow tabs moved below; price/CVD/Delta ranges and crosshairs synchronized; data-anchored drawings selectable, draggable, lockable, deletable, and restorable |
 | UX14 — Persistent flow dock and deep history | COMPLETE | Lower tabs remain visible while collapsed; clicking a tab reopens its pane; 10,000-bar paginated history; useful recent viewport; UTC day/week/month CVD anchors |
-| UX15 — Professional chart interaction and decision support | PLANNED | Six staged releases: defects/collapse; drawing/Fib; Long/Short/Risk; VP/AVWAP; heatmap/footprint; deterministic confluence/Jev shadow |
+| UX15 — Professional chart interaction and decision support | COMPLETE | Six staged releases: defects/collapse, drawing/Fib, Long/Short/Risk, VP/AVWAP, heatmap/footprint, deterministic confluence/Jev shadow |
+| UX16.0 — Calm workspace baseline | COMPLETE | Approved Calm Analytical Instrument workspace foundation behind feature flag |
+| UX16.1 — Validated aggregate-trade capture | COMPLETE | Binance Spot aggTrade capture engine, buyer-maker classification, gap/reconnect boundaries |
+| UX16.2 — True flow & project-control dashboard | COMPLETE | Gap-safe trade CVD, footprint with semantic zoom, captured VP, /project-control dashboard; released to production on main |
+| UX16.3 — Liquidity Surface V2 | PLANNED | Timestamp-aligned depth surface beneath candles, WebGL/canvas primitives, fixed price grid |
 
 ## UX0 Evidence
 
@@ -131,13 +135,10 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 
 ## Next Authorized Work
 
-1. Implement UX15.0 only: repair Liquidity layout, make the lower pane explicitly collapsible while retaining the bottom dock, correct drawing selection dismissal, and remove the duplicate drawing surface.
-2. Obtain browser and Architect acceptance for UX15.0 before starting the later chart-tool and market-data stages.
-3. Follow the staged plan in [UX15_IMPLEMENTATION_PLAN.md](./UX15_IMPLEMENTATION_PLAN.md); do not combine the heatmap, footprint, and Jev work into the defect-fix release.
-
-4. Architect performs UX9 acceptance and reviews the production-verified UX14 commits for merge to `main`.
-5. Define the typed Jev shadow contract described in UX15.6 before enabling any Jev opinion.
-6. Define a historical IV store and full-chain split call/put OI contract before enabling IV Rank or OI-wall claims.
+1. Begin **UX16.3 — Liquidity Surface V2**: Replace the projected session strip with a true chart-aligned historical depth heatmap directly beneath candles.
+2. Codex implements fixed absolute price grid bucketing, rolling depth history, and worker snapshot protocol.
+3. Antigravity implements the canvas/WebGL primitive renderer, Lightweight Charts time/price synchronization through pan/zoom, and density controls.
+4. Verify with deterministic fixtures and Playwright browser regression before proceeding to UX16.4.
 
 ## Required Handoff Evidence Per Milestone
 
@@ -261,3 +262,13 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - Added the read-only `/project-control` progress and usage/spend dashboard, including per-task evidence and explicit `UNREPORTED` cost states.
 - Verified 47 unit test files and 305 tests, TypeScript, scoped ESLint, production webpack build, and 38 UX16 browser tests with two intentional mobile skips.
 - UX16.2 remains shadow decision support and awaits Architect acceptance; no institutional identity claim or live execution was added.
+
+### 2026-11-03 — UX16.2 production release on Vercel (`371a4e2`)
+
+- Merged approved UX15 and verified UX16.2 release candidate into `371a4e2` and advanced `main`.
+- Pushed `main` and `codex/release-ux16.2` to GitHub `Nyagakelvin12792/btc-derivatives-terminal`.
+- Set production environment variable `NEXT_PUBLIC_UX16_CALM_WORKSPACE=true` on Vercel project `btc-terminal-codex`.
+- Deployed to Vercel production (`dpl_34QpkERrYewE8Dn77HXs2Poz2jg1`) with status `Ready`.
+- Assigned and attached persistent custom domain `beatcoin-terminal.vercel.app` alongside `btc-terminal-codex.vercel.app`.
+- Verified live HTTP 200 responses on `/`, `/project-control`, and `/api/project-control` with live telemetry.
+- Progress telemetry: 45.3% implemented, 45.3% tested, 7.5% accepted, 0 blocked tasks.
