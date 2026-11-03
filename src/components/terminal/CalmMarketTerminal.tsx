@@ -179,7 +179,6 @@ function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; da
 }
 
 export default function MarketTerminal({ data, isError, trueFlowSnapshot }: MarketTerminalProps) {
-    void trueFlowSnapshot;
     const [paletteOpen, setPaletteOpen] = useState(false);
     const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
@@ -238,7 +237,13 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         },
         maxClientFrames: 1_800,
     });
-    const aggregateTradeFeed = useBinanceAggregateTradeCapture(dataMode === 'LIVE');
+    const aggregateTradeFeed = useBinanceAggregateTradeCapture(dataMode === 'LIVE', {
+        trueFlowInterval: BINANCE_INTERVALS[timeframe],
+    });
+    const activeTrueFlow = trueFlowSnapshot
+        ?? (dataMode === 'LIVE' && aggregateTradeFeed.capability === 'ENABLED'
+            ? aggregateTradeFeed.trueFlow
+            : null);
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -400,7 +405,9 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                     ? 'Checking the shadow aggregate-trade capture capability.'
                     : aggregateTradeFeed.capability === 'ERROR'
                         ? aggregateTradeFeed.error?.message ?? 'Shadow aggregate-trade capture is unavailable.'
-                        : `Binance Spot aggregate trades; ${aggregateTradeFeed.stats.acceptedCount.toLocaleString()} captured; capture only, no derived CVD yet.`;
+                        : activeTrueFlow && activeTrueFlow.cvdSegments.length > 0
+                            ? `Binance Spot aggregate trades; ${aggregateTradeFeed.stats.acceptedCount.toLocaleString()} captured; true trade-derived CVD available with ${activeTrueFlow.cvdSegments.length} continuity segment(s).`
+                            : `Binance Spot aggregate trades; ${aggregateTradeFeed.stats.acceptedCount.toLocaleString()} captured; true-flow derivation awaiting valid coverage.`;
 
         return [
             {
@@ -452,7 +459,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                 coverage: createCaptureCoverageV1({ ...offlineCoverage('ORDERFLOW_DERIVED', 'STRUCTURAL'), dataMode: 'SHADOW', source: 'UX16_FIXTURE' }),
             },
         ];
-    }, [aggregateTradeFeed.capability, aggregateTradeFeed.coverage, aggregateTradeFeed.error, aggregateTradeFeed.stats.acceptedCount, data.dataMode, data.timestamp, dataMode, isError, liquidityFeed.coverage.endedAt, liquidityFeed.coverage.startedAt, liquidityFeed.sequence.gapCount, liquidityFeed.sequence.lastEventTime, liquidityFeed.sequence.state, marketFeed.lastEventAt, marketFeed.latencyMs, marketFeed.state, timeframe]);
+    }, [activeTrueFlow, aggregateTradeFeed.capability, aggregateTradeFeed.coverage, aggregateTradeFeed.error, aggregateTradeFeed.stats.acceptedCount, data.dataMode, data.timestamp, dataMode, isError, liquidityFeed.coverage.endedAt, liquidityFeed.coverage.startedAt, liquidityFeed.sequence.gapCount, liquidityFeed.sequence.lastEventTime, liquidityFeed.sequence.state, marketFeed.lastEventAt, marketFeed.latencyMs, marketFeed.state, timeframe]);
 
     return (
         <Tooltip.Provider delayDuration={300}>
@@ -795,6 +802,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             onSelectedDrawingChange={setSelectedDrawing}
                                             onRegisterPositionUpdater={handleRegisterPositionUpdater}
                                             riskSettings={riskSettings}
+                                            trueFlowSnapshot={activeTrueFlow}
                                         />
                                     </div>
                                 </div>
@@ -827,6 +835,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                         riskSettings={riskSettings}
                                         onSettingsChange={handleRiskSettingsChange}
                                         optionsContent={<OptionsContent metrics={metrics} data={data} isError={isError} />}
+                                        trueFlowSnapshot={activeTrueFlow}
                                     />
                                 </Panel>
                             </>
@@ -855,6 +864,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         </span>
                     </div>
                     <div className="flex items-center gap-3">
+                        <a href="/project-control" className="text-[#8390A0] hover:text-[#D8DEE8]">PROJECT CONTROL</a>
                         <span className="hidden sm:inline">UTC {utcNow}</span>
                         <span className="hidden lg:inline">Latency {marketFeed.latencyMs === null ? '—' : `${marketFeed.latencyMs} ms`}</span>
                         <button type="button" onClick={saveLayout} className="hover:text-[#D8DEE8] transition-colors">SAVE LAYOUT</button>
@@ -930,6 +940,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 riskSettings={riskSettings}
                                 onSettingsChange={handleRiskSettingsChange}
                                 optionsContent={<OptionsContent metrics={metrics} data={data} isError={isError} />}
+                                trueFlowSnapshot={activeTrueFlow}
                             />
                         </Dialog.Content>
                     </Dialog.Portal>

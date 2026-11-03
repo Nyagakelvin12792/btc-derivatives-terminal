@@ -7,7 +7,7 @@ const environment = {
     NEXT_PUBLIC_UX16_CALM_WORKSPACE: 'true',
 };
 
-const build = spawnSync(process.execPath, [nextCli, 'build'], {
+const build = spawnSync(process.execPath, [nextCli, 'build', '--webpack'], {
     cwd: process.cwd(),
     env: environment,
     stdio: 'inherit',

@@ -171,6 +171,9 @@ export const AgentUsageRunV1Schema = z.object({
     sourceReference: nullableText,
     notes: z.array(z.string().trim().min(1).max(500)).max(32),
 }).strict().superRefine((value, context) => {
+    if (value.providerReportedCostUsd !== null && value.calculatedCostUsd !== null) {
+        context.addIssue({ code: 'custom', message: 'A usage run cannot count both reported and calculated cost', path: ['calculatedCostUsd'] });
+    }
     if (value.costStatus === 'PROVIDER_REPORTED' && value.providerReportedCostUsd === null) {
         context.addIssue({ code: 'custom', message: 'Provider-reported cost requires an amount', path: ['providerReportedCostUsd'] });
     }

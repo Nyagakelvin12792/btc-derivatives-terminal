@@ -13,8 +13,10 @@ export function buildUsageSpendSnapshotV1(input: {
     budgets?: AgentBudgetV1[];
 }): UsageSpendSnapshotV1 {
     const runs: AgentUsageRunV1[] = input.usageFiles.flatMap((file) => AgentUsageFileV1Schema.parse(file).runs);
-    const providerReportedSpendUsd = runs.reduce((sum, run) => sum + (run.providerReportedCostUsd ?? 0), 0);
-    const calculatedSpendUsd = runs.reduce((sum, run) => sum + (run.calculatedCostUsd ?? 0), 0);
+    const providerReportedSpendUsd = runs.reduce((sum, run) =>
+        sum + (run.costStatus === 'PROVIDER_REPORTED' ? run.providerReportedCostUsd ?? 0 : 0), 0);
+    const calculatedSpendUsd = runs.reduce((sum, run) =>
+        sum + (run.costStatus === 'CALCULATED' ? run.calculatedCostUsd ?? 0 : 0), 0);
     return UsageSpendSnapshotV1Schema.parse({
         schemaVersion: 'agent-usage-v1',
         generatedAt: input.generatedAt,

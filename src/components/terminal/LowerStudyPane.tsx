@@ -7,7 +7,6 @@ import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import { cn } from '../../lib/ui/cn';
 import LiquidityPanel, { formatCompactUsd } from './LiquidityPanel';
 import type { OrderFlowStudy } from './LowerStudyDock';
-import TrueCvdPane from './TrueCvdPane';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export type CvdAnchorOption = 'AUTO' | CvdAnchor;
@@ -215,7 +214,9 @@ export default function LowerStudyPane({
     const sourceDescription = dataMode === 'LIVE'
         ? activeStudy === 'BOOK' || activeStudy === 'LIQUIDITY'
             ? 'Binance Spot L2 · top 20 depth'
-            : 'Binance aggressor volume · bar precision'
+            : activeStudy === 'CVD' && trueFlowSnapshot
+                ? 'Binance Spot aggregate trades · current continuity segment'
+                : 'Binance aggressor volume · bar precision'
         : 'demo fixture';
 
     return (
@@ -268,7 +269,7 @@ export default function LowerStudyPane({
                             {formatCompactUsd(lastDelta)}
                         </span>
                     )}
-                    {activeStudy === 'CVD' && (
+                    {activeStudy === 'CVD' && !trueFlowSnapshot && (
                         <label className="hidden shrink-0 items-center gap-1 rounded border border-[#223042] bg-[#070c13] px-1.5 py-0.5 text-zinc-500 sm:flex">
                             <span>Anchor</span>
                             <select
@@ -319,27 +320,25 @@ export default function LowerStudyPane({
 
             <div className="relative min-h-0 flex-1 overflow-hidden">
                 {activeStudy === 'CVD' && (
-                    trueFlowSnapshot ? (
-                        <TrueCvdPane snapshot={trueFlowSnapshot} showProvenance={false} />
-                    ) : (
-                        <>
+                    <>
+                        <div
+                            ref={cvdHostRef}
+                            className="size-full"
+                            role="img"
+                            aria-label={trueFlowSnapshot
+                                ? 'Captured trade cumulative volume delta for the current continuity segment'
+                                : `${dataMode === 'LIVE' ? 'Live bar-derived' : 'Demo'} cumulative volume delta candles`}
+                        />
+                        {cvdResetMarkers.map((marker) => (
                             <div
-                                ref={cvdHostRef}
-                                className="size-full"
-                                role="img"
-                                aria-label={`${dataMode === 'LIVE' ? 'Live' : 'Demo'} cumulative volume delta candles`}
-                            />
-                            {cvdResetMarkers.map((marker) => (
-                                <div
-                                    key={marker.time}
-                                    className="pointer-events-none absolute inset-y-0 z-20 border-l border-dashed border-zinc-400/55"
-                                    style={{ left: marker.x }}
-                                >
-                                    <span className="absolute left-1 top-2 whitespace-nowrap text-[8px] text-zinc-500">Reset</span>
-                                </div>
-                            ))}
-                        </>
-                    )
+                                key={marker.time}
+                                className="pointer-events-none absolute inset-y-0 z-20 border-l border-dashed border-zinc-400/55"
+                                style={{ left: marker.x }}
+                            >
+                                <span className="absolute left-1 top-2 whitespace-nowrap text-[8px] text-zinc-500">Reset</span>
+                            </div>
+                        ))}
+                    </>
                 )}
                 {activeStudy === 'DELTA' && (
                     <div

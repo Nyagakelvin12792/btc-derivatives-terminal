@@ -5,6 +5,9 @@ import { Activity, BarChart2, Layers, Waves } from 'lucide-react';
 import type { CaptureCoverageV1, MarketEvidenceV1 } from '../../lib/orderflow/contracts';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import { cn } from '../../lib/ui/cn';
+import TrueCvdPane from './TrueCvdPane';
+import FootprintChartOverlay from './FootprintChartOverlay';
+import CapturedVolumeProfileOverlay from './CapturedVolumeProfileOverlay';
 
 export interface FlowModeProps {
     liquidityStatus: 'LIVE' | 'BUFFERING' | 'PAUSED' | 'OFFLINE' | 'GAP' | 'STALE';
@@ -39,8 +42,9 @@ export default function FlowMode({
     trueFlowSnapshot,
     className,
 }: FlowModeProps) {
-    const effectiveCvdStatus = trueFlowSnapshot ? 'TRADE_BASED' : cvdStatus;
-    const effectiveCvdUsd = trueFlowSnapshot ? trueFlowSnapshot.totals.deltaNotionalUsd : currentCvdUsd;
+    const latestSegment = trueFlowSnapshot?.cvdSegments.at(-1);
+    const effectiveCvdStatus = latestSegment ? 'TRADE_BASED' : cvdStatus;
+    const effectiveCvdUsd = latestSegment ? latestSegment.finalCumulativeDeltaNotionalUsd : currentCvdUsd;
     const effectiveFootprintStatus = trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 ? 'READY' : footprintStatus;
 
     return (
@@ -90,9 +94,9 @@ export default function FlowMode({
                     <span data-testid="flow-cvd-status">{effectiveCvdStatus}</span>
                 </div>
                 <div className="mt-2 font-mono text-lg font-black text-[#D8DEE8]" data-testid="flow-cvd-value">{compactUsd(effectiveCvdUsd)}</div>
-                {trueFlowSnapshot ? (
+                {latestSegment ? (
                     <div className="mt-1 font-mono text-[8px] text-[#5C697A]">
-                        {trueFlowSnapshot.cvdSegments.length} isolated {trueFlowSnapshot.cvdSegments.length === 1 ? 'segment' : 'segments'} (boundaries strictly unbridged)
+                        Current segment; {trueFlowSnapshot?.cvdSegments.length} isolated {trueFlowSnapshot?.cvdSegments.length === 1 ? 'segment' : 'segments'} (boundaries unbridged)
                     </div>
                 ) : (
                     <p className="mt-1 text-[9px] text-[#5C697A]">True trade-based CVD requires the aggregate-trade capture milestone.</p>
@@ -119,6 +123,25 @@ export default function FlowMode({
                         </div>
                     </div>
                 </div>
+            )}
+
+            {trueFlowSnapshot && trueFlowSnapshot.cvdSegments.length > 0 && (
+                <details className="rounded border border-[#18212C] bg-[#0C1118]" data-testid="flow-true-cvd-details">
+                    <summary className="cursor-pointer px-3 py-2 font-mono text-[9px] font-semibold text-[#D8DEE8]">Inspect captured CVD segments</summary>
+                    <div className="h-64 border-t border-[#18212C]"><TrueCvdPane snapshot={trueFlowSnapshot} showProvenance={false} /></div>
+                </details>
+            )}
+            {trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 && (
+                <details className="rounded border border-[#18212C] bg-[#0C1118]" data-testid="flow-footprint-details">
+                    <summary className="cursor-pointer px-3 py-2 font-mono text-[9px] font-semibold text-[#D8DEE8]">Inspect captured footprint</summary>
+                    <div className="h-72 border-t border-[#18212C]"><FootprintChartOverlay bars={trueFlowSnapshot.footprintBars} /></div>
+                </details>
+            )}
+            {trueFlowSnapshot && trueFlowSnapshot.tradeVolumeProfile.rows.length > 0 && (
+                <details className="rounded border border-[#18212C] bg-[#0C1118]" data-testid="flow-trade-vp-details">
+                    <summary className="cursor-pointer px-3 py-2 font-mono text-[9px] font-semibold text-[#D8DEE8]">Inspect captured trade profile</summary>
+                    <div className="h-72 border-t border-[#18212C]"><CapturedVolumeProfileOverlay profile={trueFlowSnapshot.tradeVolumeProfile} /></div>
+                </details>
             )}
 
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-events-container">

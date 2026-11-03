@@ -57,6 +57,7 @@ describe('UX16.2 Child B: Project-Control Dashboard Components', () => {
             expect(html).toContain(`data-testid="milestone-card-${milestone0.id.toLowerCase()}"`);
             expect(html).toContain(milestone0.title);
             expect(html).toContain(`data-testid="milestone-status-${milestone0.id.toLowerCase()}"`);
+            expect(html).toContain(`data-testid="milestone-tested-${milestone0.id.toLowerCase()}"`);
         });
 
         it('returns appropriate badge styling for each work status', () => {

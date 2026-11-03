@@ -5,7 +5,7 @@ const baseUse = typeof baseConfig.use === 'object' ? baseConfig.use : {};
 
 export default defineConfig({
     ...baseConfig,
-    testMatch: '**/ux16-*.pw.ts',
+    testMatch: ['**/ux16-*.pw.ts', '**/project-control-dashboard.pw.ts'],
     webServer: {
         command: 'node scripts/serve-ux16-playwright.mjs',
         url: 'http://127.0.0.1:3011',

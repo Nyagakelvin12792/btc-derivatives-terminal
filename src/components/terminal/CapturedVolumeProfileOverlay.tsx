@@ -61,12 +61,14 @@ export default function CapturedVolumeProfileOverlay({
         switch (coverageKind) {
             case 'CAPTURED_EXACT':
                 return {
-                    label: 'CAPTURED EXACT (0 gaps)',
+                    label: 'CAPTURED EXACT',
                     classes: 'border-[#2CC7A0]/40 bg-[#2CC7A0]/10 text-[#2CC7A0]',
                 };
             case 'CAPTURED_WITH_GAPS':
                 return {
-                    label: `CAPTURED WITH GAPS (${profile.coverage.gapCount} gaps)`,
+                    label: profile.coverage.gapCount > 0
+                        ? `CAPTURED WITH GAPS (${profile.coverage.gapCount} missing-range break${profile.coverage.gapCount === 1 ? '' : 's'})`
+                        : 'CAPTURED WITH CONTINUITY BREAK',
                     classes: 'border-[#F06152]/40 bg-[#F06152]/10 text-[#F06152]',
                 };
             case 'MIXED_APPROXIMATE':

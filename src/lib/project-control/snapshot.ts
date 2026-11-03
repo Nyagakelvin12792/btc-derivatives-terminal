@@ -37,7 +37,7 @@ export function buildProjectControlResponseV1(
             generatedAt,
             sourceBranch,
             sourceCommit,
-            milestones: buildUx16Milestones(sourceCommit),
+            milestones: buildUx16Milestones(),
         }),
         usage: buildUsageSpendSnapshotV1({
             generatedAt,

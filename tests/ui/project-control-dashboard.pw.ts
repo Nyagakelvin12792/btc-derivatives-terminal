@@ -67,16 +67,24 @@ test.describe('Project-Control Dashboard Acceptance', () => {
         await expect(page.getByTestId('calculated-spend-amount')).toBeVisible();
         await expect(page.getByTestId('unreported-runs-count')).toBeVisible();
 
-        // Verify agent runs table
-        const runsTable = page.getByTestId('agent-runs-table');
-        if (await runsTable.isVisible().catch(() => false)) {
-            // Confirm subscription run displays INCLUDED/UNREPORTED and NOT $0.00
-            const codexCostCell = page.getByTestId('run-cost-ux16-2-codex-batch-1');
-            if (await codexCostCell.isVisible().catch(() => false)) {
-                await expect(codexCostCell).toHaveText('INCLUDED/UNREPORTED');
-                await expect(codexCostCell).not.toHaveText('$0.00');
-            }
-        }
+        // The committed usage ledger contains these runs. Missing cells are a
+        // failed acceptance test, not a reason to skip the assertion.
+        await expect(page.getByTestId('agent-runs-table')).toBeVisible();
+        const codexCostCell = page.getByTestId('run-cost-ux16-2-codex-batch-1');
+        await expect(codexCostCell).toHaveText('INCLUDED/UNREPORTED');
+        await expect(codexCostCell).not.toHaveText('$0.00');
+        await expect(page.getByTestId('run-cost-ux16-2-deepseek-validation-draft')).toHaveText('UNREPORTED');
+
+        await page.getByTestId('spend-filter-agent').selectOption('DEEPSEEK');
+        await expect(page.getByTestId('run-cost-ux16-2-deepseek-validation-draft')).toBeVisible();
+        await expect(codexCostCell).toHaveCount(0);
+        await page.getByTestId('spend-filter-agent').selectOption('ALL');
+        await page.getByTestId('spend-filter-provider').selectOption('OpenCode/DeepSeek');
+        await expect(page.getByTestId('run-cost-ux16-2-deepseek-validation-draft')).toBeVisible();
+        await page.getByTestId('spend-filter-provider').selectOption('ALL');
+        await page.getByTestId('spend-filter-task').selectOption('UX16.2-VALIDATION-04');
+        await expect(page.getByTestId('run-cost-ux16-2-deepseek-validation-draft')).toBeVisible();
+        await page.getByTestId('spend-filter-task').selectOption('ALL');
 
         // Capture spend view screenshot
         const artifactDir = path.resolve(process.cwd(), '.artifacts', 'ui-overhaul');
@@ -84,6 +92,16 @@ test.describe('Project-Control Dashboard Acceptance', () => {
             path: path.join(artifactDir, 'project-control-spend-1920x1080.png'),
             fullPage: false,
         });
+    });
+
+    test('rejects malformed dashboard telemetry', async ({ page }) => {
+        await page.route('**/api/project-control', (route) => route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ progress: { totals: { implementedPercent: 100 } }, usage: {} }),
+        }));
+        await page.getByTestId('refresh-telemetry-button').click();
+        await expect(page.getByText('Project-control telemetry failed schema validation')).toBeVisible();
     });
 
     test('verifies search and agent filters interactively', async ({ page }) => {

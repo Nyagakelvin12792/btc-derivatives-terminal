@@ -311,7 +311,7 @@ test.describe('UX16.1 Aggregate-Trade Capture Acceptance', () => {
         await openTradePopover(page);
         const detail = page.getByTestId('data-integrity-detail-trades');
         await expect(detail).toContainText(/2 captured/i);
-        await expect(detail).toContainText(/capture only, no derived CVD yet/i);
+        await expect(detail).toContainText(/true-flow derivation awaiting valid coverage/i);
         await expect(page.getByTestId('data-integrity-popover-trades')).toContainText('BINANCE_SPOT');
         await expect(page.getByTestId('data-integrity-popover-trades')).toContainText('TRADE');
 

@@ -238,7 +238,7 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             const html = renderToStaticMarkup(<CapturedVolumeProfileOverlay profile={snapshot.tradeVolumeProfile} />);
 
             expect(html).toContain('data-testid="captured-volume-profile-overlay"');
-            expect(html).toContain('CAPTURED EXACT (0 gaps)');
+            expect(html).toContain('CAPTURED EXACT');
             expect(html).toContain('data-testid="profile-poc-tag"');
             expect(html).toContain('data-testid="profile-vah-tag"');
             expect(html).toContain('data-testid="profile-val-tag"');
@@ -248,7 +248,7 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             const snapshot = createTestSnapshot(true);
             const html = renderToStaticMarkup(<CapturedVolumeProfileOverlay profile={snapshot.tradeVolumeProfile} />);
 
-            expect(html).toContain('CAPTURED WITH GAPS (1 gaps)');
+            expect(html).toContain('CAPTURED WITH GAPS (1 missing-range break)');
         });
     });
 

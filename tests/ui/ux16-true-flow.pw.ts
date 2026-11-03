@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test';
 import * as path from 'path';
+import { buildOracleCapture, oracleScenario } from '../../src/lib/orderflow/true-flow-oracle.test-data';
+import { deriveTrueFlowSnapshotV1 } from '../../src/lib/orderflow/true-flow';
 
 test.describe('UX16.2 True Flow Presentation & Semantic Zoom Acceptance', () => {
     test.beforeEach(async ({ page }) => {
@@ -20,18 +22,18 @@ test.describe('UX16.2 True Flow Presentation & Semantic Zoom Acceptance', () => 
         await page.goto('/', { waitUntil: 'domcontentloaded' });
         await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 30_000 });
 
-        // Ensure DEMO mode is deterministic
-        const demoButton = page.getByRole('button', { name: '● DEMO', exact: true }).first();
-        const liveButton = page.getByRole('button', { name: '● LIVE', exact: true }).first();
-        await page.waitForTimeout(500);
-        if (await liveButton.isVisible().catch(() => false)) {
-            await liveButton.click();
-        }
-        await expect(demoButton).toBeVisible({ timeout: 20_000 });
     });
 
     test('verifies FLOW mode presentation without false READY or live CVD claims', async ({ page, isMobile }) => {
         test.setTimeout(120_000);
+        const modeButton = page.locator('footer').getByRole('button', { name: /DEMO|LIVE/ });
+        await expect(modeButton).toBeVisible({ timeout: 20_000 });
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            if ((await modeButton.textContent())?.includes('DEMO')) break;
+            await modeButton.click();
+            await page.waitForTimeout(300);
+        }
+        await expect(modeButton).toContainText('DEMO');
 
         // 1. Switch to FLOW mode if not already active
         const flowModeBtn = page.getByTestId('workspace-mode-flow').first();
@@ -101,4 +103,83 @@ test.describe('UX16.2 True Flow Presentation & Semantic Zoom Acceptance', () => 
             fullPage: false,
         });
     });
+});
+
+test.describe('UX16.2 deterministic worker integration', () => {
+    test.describe.configure({ timeout: 120_000 });
+
+    for (const [scenarioId, expectedBadge] of [
+        ['S01', 'CAPTURED EXACT'],
+        ['S03', 'CAPTURED WITH CONTINUITY BREAK'],
+    ] as const) {
+        test(`${scenarioId} connects the captured snapshot to Flow inspection`, async ({ page, isMobile }) => {
+            const scenario = oracleScenario(scenarioId);
+            const capture = buildOracleCapture(scenario);
+            capture.coverage.dataMode = 'LIVE';
+            capture.coverage.source = 'BINANCE_SPOT';
+            const snapshot = deriveTrueFlowSnapshotV1(capture, {
+                interval: scenario.interval,
+                priceBucket: scenario.priceBucket,
+                valueAreaFraction: 0.7,
+            });
+
+            await page.addInitScript((fixture) => {
+                localStorage.setItem('btc-terminal-ui-v1', JSON.stringify({
+                    state: { dataMode: 'LIVE', activeWorkspace: 'MARKET STRUCTURE', workspaceMode: 'FLOW' },
+                    version: 1,
+                }));
+                const NativeWorker = window.Worker;
+                class FixtureWorker {
+                    onmessage: ((event: MessageEvent) => void) | null = null;
+                    onerror: ((event: ErrorEvent) => void) | null = null;
+                    postMessage(command: { type?: string }): void {
+                        if (command.type !== 'START') return;
+                        window.setTimeout(() => {
+                            this.onmessage?.(new MessageEvent('message', { data: {
+                                type: 'STATUS', connected: true, reconnectAttempt: 0,
+                                retainedTradeCount: fixture.totals.tradeCount,
+                                lastAggregateTradeId: fixture.totals.tradeCount,
+                                coverage: fixture.coverage,
+                                stats: { acceptedCount: fixture.totals.tradeCount, duplicateCount: 0, outOfOrderCount: 0, invalidCount: 0, reconnectCount: 0 },
+                            } }));
+                            this.onmessage?.(new MessageEvent('message', { data: { type: 'TRUE_FLOW_SNAPSHOT', snapshot: fixture } }));
+                        }, 10);
+                    }
+                    terminate(): void {}
+                }
+                window.Worker = function WorkerFixture(url: string | URL, options?: WorkerOptions): Worker {
+                    if (options?.name === 'binance-aggregate-trade-capture') return new FixtureWorker() as unknown as Worker;
+                    return new NativeWorker(url, options);
+                } as unknown as typeof Worker;
+            }, snapshot);
+            await page.route('**/api/orderflow/config', (route) => route.fulfill({
+                status: 200,
+                contentType: 'application/json',
+                body: JSON.stringify({ schemaVersion: 1, enabled: true, dataMode: 'SHADOW', source: 'BINANCE_SPOT', symbol: 'BTCUSDT' }),
+            }));
+
+            await page.goto('/', { waitUntil: 'domcontentloaded' });
+            await expect(page.getByRole('button', { name: 'OPTIONS METRICS', exact: true })).toBeVisible({ timeout: 30_000 });
+            await page.getByTestId('workspace-mode-flow').click();
+            if (isMobile) {
+                await page.getByRole('button', { name: 'OPTIONS METRICS', exact: true }).click();
+                await page.getByRole('tab', { name: 'DECISION', exact: true }).click();
+            }
+            const flow = page.getByTestId('flow-mode-container');
+            await expect(flow).toBeVisible();
+            await expect(page.getByTestId('flow-cvd-status')).toHaveText('TRADE_BASED');
+            await expect(page.getByTestId('flow-footprint-status')).toHaveText('READY');
+
+            await page.getByTestId('flow-footprint-details').locator('summary').click();
+            await expect(page.getByTestId('footprint-chart-overlay')).toBeVisible();
+            const cellsBefore = await page.locator('[data-testid^="footprint-cell-"]').count();
+            expect(cellsBefore).toBeGreaterThan(0);
+            await page.getByTestId('footprint-zoom-compact').click();
+            await expect(page.getByText('GEOMETRY ONLY (LABELS HIDDEN)')).toBeVisible();
+            expect(await page.locator('[data-testid^="footprint-cell-"]').count()).toBe(cellsBefore);
+
+            await page.getByTestId('flow-trade-vp-details').locator('summary').click();
+            await expect(page.getByTestId('captured-profile-coverage-badge')).toHaveText(expectedBadge);
+        });
+    }
 });

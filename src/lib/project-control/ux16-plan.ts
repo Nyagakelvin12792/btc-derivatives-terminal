@@ -7,7 +7,7 @@ import {
     type WorkStatus,
 } from './contracts';
 
-const UPDATED_AT = '2026-10-30T00:00:00.000Z';
+const UPDATED_AT = '2026-11-02T00:00:00.000Z';
 
 interface TaskInput {
     id: string;
@@ -80,34 +80,32 @@ function milestone(
     });
 }
 
-export function buildUx16Milestones(sourceCommit: string | null): MilestoneProgressV1[] {
-    const currentEvidence: EvidenceStatus = sourceCommit ? 'TESTED' : 'UNVERIFIED';
-    const currentTests: ProjectTaskV1['evidence']['tests'] = sourceCommit
-        ? [{
+export function buildUx16Milestones(): MilestoneProgressV1[] {
+    const contractCommit = '447a9d2';
+    const runtimeCommit = 'dea002c';
+    const currentEvidence: EvidenceStatus = 'TESTED';
+    const currentTests: ProjectTaskV1['evidence']['tests'] = [{
             id: 'ux16-2-true-flow-focused',
             command: 'npx vitest run src/lib/orderflow/true-flow.test.ts && npx tsc --noEmit',
             result: 'PASS',
             passed: 7,
             failed: 0,
             skipped: 0,
-            executedAt: UPDATED_AT,
-            commit: sourceCommit,
+            executedAt: '2026-10-30T00:00:00.000Z',
+            commit: contractCommit,
             artifactPaths: [],
-        }]
-        : [];
-    const runtimeTests: ProjectTaskV1['evidence']['tests'] = sourceCommit
-        ? [{
+        }];
+    const runtimeTests: ProjectTaskV1['evidence']['tests'] = [{
             id: 'ux16-2-runtime-focused',
             command: 'npx vitest run true-flow-session, aggregate-trade-runtime, worker-protocol, feed-state, and true-flow suites; npx tsc --noEmit',
             result: 'PASS',
             passed: 20,
             failed: 0,
             skipped: 0,
-            executedAt: UPDATED_AT,
-            commit: sourceCommit,
+            executedAt: '2026-10-30T00:00:00.000Z',
+            commit: runtimeCommit,
             artifactPaths: [],
-        }]
-        : [];
+        }];
 
     return [
         milestone('UX16.0', 'Calm analytical workspace shell', 'COMPLETE', 'CALM_SHELL', 'Calm shell', [
@@ -138,7 +136,7 @@ export function buildUx16Milestones(sourceCommit: string | null): MilestoneProgr
                 description: 'Derive gap-safe CVD segments, footprint cells and captured-trade VP from one classified tape.',
                 owner: 'CODEX', status: 'REVIEW_REQUIRED', weight: 4,
                 acceptanceCriteria: ['Tape, CVD, footprint and VP totals reconcile exactly.', 'CVD resets across gaps.', 'UX16.4 imbalance remains disabled.'],
-                branch: 'codex/ux16.2-true-flow', commit: sourceCommit, evidenceStatus: currentEvidence, tests: currentTests,
+                branch: 'codex/ux16.2-true-flow', commit: contractCommit, evidenceStatus: currentEvidence, tests: currentTests,
             }),
             task({
                 id: 'UX16.2-RUNTIME-02', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
@@ -146,7 +144,7 @@ export function buildUx16Milestones(sourceCommit: string | null): MilestoneProgr
                 description: 'Maintain bounded derived snapshots without shrinking session totals when raw tape retention rolls.',
                 owner: 'CODEX', status: 'REVIEW_REQUIRED', weight: 4, dependsOn: ['UX16.2-CALC-01'],
                 acceptanceCriteria: ['Worker emits bounded canonical snapshots.', 'Rolling tape eviction does not reduce session aggregates.'],
-                branch: 'codex/ux16.2-true-flow', commit: sourceCommit, evidenceStatus: currentEvidence, tests: runtimeTests,
+                branch: 'codex/ux16.2-true-flow', commit: runtimeCommit, evidenceStatus: currentEvidence, tests: runtimeTests,
             }),
             task({
                 id: 'UX16.2-UI-03', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
@@ -160,9 +158,10 @@ export function buildUx16Milestones(sourceCommit: string | null): MilestoneProgr
                 id: 'UX16.2-VALIDATION-04', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',
                 title: 'Independent oracle and reconciliation suite',
                 description: 'Hand-calculated fixtures and adversarial gap/reconnect tests independent of production calculations.',
-                owner: 'DEEPSEEK', supportingAgents: ['CODEX'], status: 'IN_PROGRESS', weight: 2, dependsOn: ['UX16.2-CALC-01'],
+                owner: 'DEEPSEEK', supportingAgents: ['CODEX'], status: 'REVIEW_REQUIRED', weight: 2, dependsOn: ['UX16.2-CALC-01'],
                 acceptanceCriteria: ['Oracle totals match canonical output.', 'Duplicates and rejected events never affect totals.'],
-                branch: 'agent/deepseek-ux16.2-validation',
+                branch: 'agent/deepseek-ux16.2-validation', commit: '9da7073', evidenceStatus: 'TESTED',
+                tests: [{ id: 'ux16-2-oracle-suite', command: 'npx vitest run true-flow-reconciliation.test.ts true-flow-boundaries.test.ts', result: 'PASS', passed: 21, failed: 0, skipped: 0, executedAt: UPDATED_AT, commit: '9da7073', artifactPaths: [] }],
             }),
             task({
                 id: 'UX16.2-ACCEPT-05', milestoneId: 'UX16.2', featureId: 'TRUE_FLOW',

@@ -14,6 +14,7 @@ import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
 import { ORDERFLOW_SCHEMA_VERSION, type SetupAssessmentV1 } from '../../lib/orderflow/contracts';
 import { createCaptureCoverageV1 } from '../../lib/orderflow/provenance';
+import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export interface DecisionDockProps {
     metrics: {
@@ -41,6 +42,7 @@ export interface DecisionDockProps {
     riskSettings: PositionRiskSettings;
     onSettingsChange: (settings: PositionRiskSettings) => void;
     optionsContent: React.ReactNode;
+    trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
 }
 
 export default function DecisionDock({
@@ -56,6 +58,7 @@ export default function DecisionDock({
     riskSettings,
     onSettingsChange,
     optionsContent,
+    trueFlowSnapshot,
 }: DecisionDockProps) {
     const {
         workspaceMode,
@@ -180,6 +183,7 @@ export default function DecisionDock({
                                     currentCvdUsd={null}
                                     events={[]}
                                     dataMode={orderflowMode}
+                                    trueFlowSnapshot={trueFlowSnapshot}
                                 />
                             )}
                             {workspaceMode === 'SETUP' && (
@@ -231,7 +235,9 @@ export default function DecisionDock({
                                     ['Data Feed Mode', dataMode],
                                     ['Timestamp', timestamp],
                                     ['Spot Price Candles', dataMode === 'DEMO' ? 'DEMO FIXTURE' : marketFeed.state],
-                                    ['CVD / Tape Delta', 'UNAVAILABLE (UX16.1 capture required)'],
+                                    ['CVD / Tape Delta', trueFlowSnapshot && trueFlowSnapshot.cvdSegments.length > 0
+                                        ? `TRADE CAPTURED · ${trueFlowSnapshot.cvdSegments.length} segment(s)`
+                                        : 'UNAVAILABLE (no captured true-flow segment)'],
                                     ['L2 Depth Reconstruction', dataMode === 'DEMO' ? 'UNAVAILABLE IN DEMO' : marketFeed.book ? marketFeed.state : 'OFFLINE'],
                                     ['Options Chain', isError && dataMode === 'LIVE' ? 'UNAVAILABLE' : data.dataMode],
                                     ['Jev Intelligence', 'SHADOW STANDBY (UX16.7)'],

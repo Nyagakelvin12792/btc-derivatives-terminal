@@ -60,10 +60,10 @@ export default function ProjectMilestoneCard({
 
     const allTasks = milestone.features.flatMap((f) => f.tasks);
     const totalWeight = allTasks.reduce((sum, t) => sum + t.weight, 0);
-    const completeWeight = allTasks
-        .filter((t) => t.status === 'COMPLETE')
+    const testedWeight = allTasks
+        .filter((t) => t.evidence.evidenceStatus === 'TESTED' || t.evidence.evidenceStatus === 'ACCEPTED')
         .reduce((sum, t) => sum + t.weight, 0);
-    const milestonePercent = totalWeight > 0 ? Math.round((completeWeight / totalWeight) * 100) : 0;
+    const milestonePercent = totalWeight > 0 ? Math.round((testedWeight / totalWeight) * 100) : 0;
 
     return (
         <div
@@ -108,7 +108,7 @@ export default function ProjectMilestoneCard({
                         {badge.label}
                     </span>
 
-                    <span className="font-bold text-[#D8DEE8]">{milestonePercent}%</span>
+                    <span className="font-bold text-[#D8DEE8]" data-testid={`milestone-tested-${milestone.id.toLowerCase()}`}>{milestonePercent}% tested</span>
 
                     <span className="text-[#8390A0]">
                         {isExpanded ? '▲' : '▼'}

@@ -29,7 +29,7 @@ describe('project-control contracts and calculations', () => {
     });
 
     it('derives implemented, tested, and accepted progress separately', () => {
-        const milestones = buildUx16Milestones('abcdef1234567');
+        const milestones = buildUx16Milestones();
         const snapshot = buildProjectProgressSnapshotV1({
             generatedAt: NOW,
             sourceBranch: 'codex/ux16.2-true-flow',
@@ -41,14 +41,14 @@ describe('project-control contracts and calculations', () => {
         expect(snapshot.totals.reviewRequiredTasks).toBeGreaterThan(0);
     });
 
-    it('does not count the active task locally when no commit is reported', () => {
-        const milestones = buildUx16Milestones(null);
+    it('retains committed task evidence when a local deployment SHA is unavailable', () => {
+        const milestones = buildUx16Milestones();
         const current = milestones
             .flatMap((milestone) => milestone.features)
             .flatMap((feature) => feature.tasks)
             .find((task) => task.id === 'UX16.2-CALC-01');
-        expect(current?.evidence.evidenceStatus).toBe('UNVERIFIED');
-        expect(current?.evidence.commit).toBeNull();
+        expect(current?.evidence.evidenceStatus).toBe('TESTED');
+        expect(current?.evidence.commit).toBe('447a9d2');
     });
 
     it('keeps unreported subscription usage out of known spend', () => {
@@ -94,6 +94,21 @@ describe('project-control contracts and calculations', () => {
         expect(snapshot.totals.knownSpendUsd).toBe(0.03);
         expect(snapshot.totals.providerReportedSpendUsd).toBe(0.01);
         expect(snapshot.totals.calculatedSpendUsd).toBe(0.02);
+    });
+
+    it('rejects a run that would count both provider and calculated cost', () => {
+        const record = {
+            schemaVersion: 'agent-usage-v1', agent: 'DEEPSEEK', runs: [{
+                id: 'double-count', taskId: 'UX16.2-VALIDATION-04', agent: 'DEEPSEEK',
+                provider: 'DeepSeek', model: 'test', billingMode: 'API_METERED',
+                startedAt: NOW, completedAt: NOW, elapsedMs: 100,
+                inputTokens: 100, cachedInputTokens: 0, outputTokens: 100, reasoningTokens: null, toolCalls: 1,
+                providerReportedCostUsd: 0.01, calculatedCostUsd: 0.01,
+                costStatus: 'PROVIDER_REPORTED', pricing: null,
+                usageSource: 'API_RESPONSE', sourceReference: 'provider receipt', notes: [],
+            }],
+        };
+        expect(() => AgentUsageFileV1Schema.parse(record)).toThrow();
     });
 
     it('builds a schema-valid dashboard response with truthful unknown usage', () => {

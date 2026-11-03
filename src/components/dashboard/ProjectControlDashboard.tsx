@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useCallback, useEffect, useState } from 'react';
-import type { ProjectControlResponseV1 } from '../../lib/project-control/contracts';
+import { ProjectControlResponseV1Schema, type ProjectControlResponseV1 } from '../../lib/project-control/contracts';
 import { cn } from '../../lib/ui/cn';
 import ProjectMilestoneCard from './ProjectMilestoneCard';
 import ProjectTaskTable from './ProjectTaskTable';
@@ -40,8 +40,9 @@ export default function ProjectControlDashboard({
             if (!res.ok) {
                 throw new Error(`HTTP ${res.status}: ${res.statusText}`);
             }
-            const json = (await res.json()) as ProjectControlResponseV1;
-            setData(json);
+            const parsed = ProjectControlResponseV1Schema.safeParse(await res.json());
+            if (!parsed.success) throw new Error('Project-control telemetry failed schema validation');
+            setData(parsed.data);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch project-control telemetry');
         } finally {
@@ -55,11 +56,13 @@ export default function ProjectControlDashboard({
             fetch('/api/project-control', { headers: { 'Cache-Control': 'no-store' } })
                 .then((res) => {
                     if (!res.ok) throw new Error(`HTTP ${res.status}: ${res.statusText}`);
-                    return res.json() as Promise<ProjectControlResponseV1>;
+                    return res.json() as Promise<unknown>;
                 })
                 .then((json) => {
+                    const parsed = ProjectControlResponseV1Schema.safeParse(json);
+                    if (!parsed.success) throw new Error('Project-control telemetry failed schema validation');
                     if (!isCancelled) {
-                        setData(json);
+                        setData(parsed.data);
                         setLoading(false);
                     }
                 })
@@ -127,6 +130,11 @@ export default function ProjectControlDashboard({
             className={cn('space-y-4 font-sans text-[#D8DEE8]', className)}
             data-testid="project-control-dashboard"
         >
+            {error && (
+                <div role="alert" className="rounded border border-[#F06152]/40 bg-[#F06152]/10 px-3 py-2 font-mono text-[9px] text-[#F06152]">
+                    {error}. Showing the last validated snapshot.
+                </div>
+            )}
             {/* Header: Project Info & Separated Completion Percentages */}
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-4">
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[#18212C] pb-3">
@@ -249,7 +257,7 @@ export default function ProjectControlDashboard({
                     )}
                     data-testid="tab-spend"
                 >
-                    SPEND &amp; TELEMETRY (${usage.totals.knownSpendUsd.toFixed(2)})
+                    SPEND &amp; TELEMETRY (known ${usage.totals.knownSpendUsd.toFixed(2)} · {usage.totals.runsWithUnreportedUsage + usage.totals.runsWithUnknownCost} unreported)
                 </button>
             </div>
 

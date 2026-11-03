@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import type { AgentUsageRunV1, UsageSpendSnapshotV1 } from '../../lib/project-control/contracts';
 import { cn } from '../../lib/ui/cn';
 
@@ -42,6 +42,22 @@ function formatCostOrStatus(run: AgentUsageRunV1): { text: string; isAmount: boo
 
 export default function SpendSummaryCard({ usage, className }: SpendSummaryCardProps) {
     const { totals, budgets, runs } = usage;
+    const [agentFilter, setAgentFilter] = useState('ALL');
+    const [providerFilter, setProviderFilter] = useState('ALL');
+    const [modelFilter, setModelFilter] = useState('ALL');
+    const [taskFilter, setTaskFilter] = useState('ALL');
+    const options = useMemo(() => ({
+        agents: [...new Set(runs.map((run) => run.agent))].sort(),
+        providers: [...new Set(runs.map((run) => run.provider))].sort(),
+        models: [...new Set(runs.map((run) => run.model))].sort(),
+        tasks: [...new Set(runs.map((run) => run.taskId))].sort(),
+    }), [runs]);
+    const visibleRuns = useMemo(() => runs.filter((run) =>
+        (agentFilter === 'ALL' || run.agent === agentFilter)
+        && (providerFilter === 'ALL' || run.provider === providerFilter)
+        && (modelFilter === 'ALL' || run.model === modelFilter)
+        && (taskFilter === 'ALL' || run.taskId === taskFilter)
+    ), [agentFilter, modelFilter, providerFilter, runs, taskFilter]);
 
     // Filter budgets that have an actual numerical budget set
     const activeBudgets = useMemo(() => {
@@ -80,11 +96,11 @@ export default function SpendSummaryCard({ usage, className }: SpendSummaryCardP
                 </div>
 
                 <div className="rounded border border-[#18212C] bg-[#0C1118] p-3 font-mono">
-                    <span className="text-[9px] text-[#8390A0]">UNREPORTED RUNS</span>
+                    <span className="text-[9px] text-[#8390A0]">UNKNOWN / UNREPORTED RUNS</span>
                     <div className="mt-1 text-lg font-black text-[#E5A83B]" data-testid="unreported-runs-count">
                         {totals.runsWithUnreportedUsage + totals.runsWithUnknownCost}
                     </div>
-                    <span className="text-[8px] text-[#5C697A]">Preserved as UNREPORTED</span>
+                    <span className="text-[8px] text-[#5C697A]">Excluded from known spend</span>
                 </div>
             </div>
 
@@ -115,12 +131,35 @@ export default function SpendSummaryCard({ usage, className }: SpendSummaryCardP
             <div className="overflow-hidden rounded border border-[#18212C] bg-[#0C1118]">
                 <div className="flex items-center justify-between border-b border-[#18212C] bg-[#070A0F] px-3 py-2 font-mono text-[9px]">
                     <span className="font-bold text-[#D8DEE8]">AGENT RUNS & USAGE TELEMETRY</span>
-                    <span className="text-[#8390A0]">{runs.length} {runs.length === 1 ? 'run' : 'runs'} recorded</span>
+                    <span className="text-[#8390A0]">{visibleRuns.length} of {runs.length} runs</span>
                 </div>
 
-                {runs.length === 0 ? (
+                <div className="grid gap-2 border-b border-[#18212C] p-3 font-mono text-[9px] sm:grid-cols-2 xl:grid-cols-4">
+                    {([
+                        ['Agent', agentFilter, setAgentFilter, options.agents, 'spend-filter-agent'],
+                        ['Provider', providerFilter, setProviderFilter, options.providers, 'spend-filter-provider'],
+                        ['Model', modelFilter, setModelFilter, options.models, 'spend-filter-model'],
+                        ['Task', taskFilter, setTaskFilter, options.tasks, 'spend-filter-task'],
+                    ] as const).map(([label, value, setter, choices, testId]) => (
+                        <label key={label} className="flex flex-col gap-1 text-[#8390A0]">
+                            <span>{label}</span>
+                            <select
+                                aria-label={`Filter spend by ${label.toLowerCase()}`}
+                                data-testid={testId}
+                                value={value}
+                                onChange={(event) => setter(event.target.value)}
+                                className="min-w-0 rounded border border-[#263346] bg-[#070A0F] px-2 py-1 text-[#D8DEE8] outline-none focus-visible:border-[#39A9F5]"
+                            >
+                                <option value="ALL">All</option>
+                                {choices.map((choice) => <option key={choice} value={choice}>{choice}</option>)}
+                            </select>
+                        </label>
+                    ))}
+                </div>
+
+                {visibleRuns.length === 0 ? (
                     <div className="p-4 text-center font-mono text-[10px] text-[#8390A0]">
-                        No agent telemetry runs recorded yet.
+                        No runs match the selected filters.
                     </div>
                 ) : (
                     <div className="overflow-x-auto">
@@ -134,10 +173,11 @@ export default function SpendSummaryCard({ usage, className }: SpendSummaryCardP
                                     <th className="px-2 py-1.5">BILLING</th>
                                     <th className="px-2 py-1.5 text-right">TOKENS (IN/OUT)</th>
                                     <th className="px-3 py-1.5 text-right">COST STATUS</th>
+                                    <th className="px-3 py-1.5">PRICING SOURCE</th>
                                 </tr>
                             </thead>
                             <tbody className="divide-y divide-[#18212C]/40 text-[#8390A0]">
-                                {runs.map((run) => {
+                                {visibleRuns.map((run) => {
                                     const costDisplay = formatCostOrStatus(run);
                                     return (
                                         <tr key={run.id} className="hover:bg-white/[0.02]">
@@ -160,6 +200,13 @@ export default function SpendSummaryCard({ usage, className }: SpendSummaryCardP
                                                 >
                                                     {costDisplay.text}
                                                 </span>
+                                            </td>
+                                            <td className="px-3 py-1.5">
+                                                {run.pricing?.sourceUrl ? (
+                                                    <a href={run.pricing.sourceUrl} target="_blank" rel="noopener noreferrer" className="text-[#39A9F5] underline-offset-2 hover:underline">
+                                                        {new Date(run.pricing.effectiveAt).toLocaleDateString()} source
+                                                    </a>
+                                                ) : <span className="text-[#5C697A]">Unreported</span>}
                                             </td>
                                         </tr>
                                     );

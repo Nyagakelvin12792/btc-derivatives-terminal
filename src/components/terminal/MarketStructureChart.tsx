@@ -20,6 +20,8 @@ import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
+import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
+import { isCvdBar, projectCapturedCvdToChartTimes, type FlowCvdPoint } from './true-cvd-chart-data';
 import { useBinanceVolumeProfile } from '../../lib/binance/use-volume-profile';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
@@ -87,15 +89,6 @@ type HistogramSeriesApi = ISeriesApi<'Histogram'>;
 type ProfileVolumeMode = 'TOTAL' | 'UP_DOWN' | 'DELTA';
 type ProfilePlacement = 'LEFT' | 'RIGHT';
 
-interface FlowCvdBar {
-    time: DemoMarketBar['time'];
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    reset?: boolean;
-}
-
 interface ProfileRange {
     startTime: number;
     endTime: number;
@@ -114,6 +107,7 @@ interface MarketStructureChartProps {
     onSelectedDrawingChange?: (drawing: DrawingObject | null) => void;
     onRegisterPositionUpdater?: (updater: ((prices: PositionPrices) => void) | null) => void;
     riskSettings?: PositionRiskSettings;
+    trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
 }
 
 interface OverlayLevel {
@@ -232,6 +226,7 @@ export default function MarketStructureChart({
     onSelectedDrawingChange,
     onRegisterPositionUpdater,
     riskSettings: propRiskSettings,
+    trueFlowSnapshot,
 }: MarketStructureChartProps) {
     const workspaceContainerRef = useRef<HTMLDivElement>(null);
     const chartHostRef = useRef<HTMLDivElement>(null);
@@ -252,7 +247,7 @@ export default function MarketStructureChart({
     const priceLinesRef = useRef<IPriceLine[]>([]);
     const profileRef = useRef<ReturnType<typeof createDemoVolumeProfile>>([]);
     const barsRef = useRef<DemoMarketBar[]>([]);
-    const cvdBarsRef = useRef<FlowCvdBar[]>([]);
+    const cvdBarsRef = useRef<FlowCvdPoint[]>([]);
     const deltaBarsRef = useRef<Array<{ time: DemoMarketBar['time']; value: number }>>([]);
     const updateOverlayRef = useRef<() => void>(() => undefined);
     const overlayFrameRef = useRef<number | null>(null);
@@ -418,10 +413,30 @@ export default function MarketStructureChart({
         if (timeframe === '4H') return 'UTC_WEEK';
         return 'UTC_DAY';
     }, [cvdAnchor, timeframe]);
-    const cvdBars = useMemo<FlowCvdBar[]>(() => dataMode === 'DEMO'
-        ? createDemoCvd(bars).map((bar, index) => ({ ...bar, reset: index === 0 }))
-        : buildCvdBars(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) })), resolvedCvdAnchor), [bars, dataMode, resolvedCvdAnchor]);
-    const deltaBars = useMemo(() => dataMode === 'DEMO' ? cvdBars.map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' })) : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
+    const hasTrueCvd = dataMode === 'LIVE'
+        && trueFlowSnapshot !== null
+        && trueFlowSnapshot !== undefined
+        && trueFlowSnapshot.interval === timeframe.toLowerCase()
+        && trueFlowSnapshot.cvdSegments.length > 0;
+    const cvdBars = useMemo<FlowCvdPoint[]>(() => {
+        if (dataMode === 'DEMO') return createDemoCvd(bars).map((bar, index) => ({ ...bar, reset: index === 0 }));
+        if (hasTrueCvd && trueFlowSnapshot) {
+            return projectCapturedCvdToChartTimes(bars.map((bar) => bar.time), trueFlowSnapshot);
+        }
+        return buildCvdBars(bars.map((bar) => ({
+            ...bar,
+            closeTime: 0,
+            quoteVolume: 0,
+            trades: 0,
+            takerBuyVolume: bar.takerBuyVolume ?? 0,
+            takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)),
+            delta: bar.delta ?? 0,
+            time: Number(bar.time),
+        })), resolvedCvdAnchor);
+    }, [bars, dataMode, hasTrueCvd, resolvedCvdAnchor, trueFlowSnapshot]);
+    const deltaBars = useMemo(() => dataMode === 'DEMO'
+        ? cvdBars.filter(isCvdBar).map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' }))
+        : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
     const liquidityLevels = useMemo(() => selectLiquidityLevels(marketFeed.book), [marketFeed.book]);
     const rangeStartIndex = range ? nearestBarIndex(bars, range.startTime) : 0;
     const rangeEndIndex = range ? nearestBarIndex(bars, range.endTime) : Math.max(0, bars.length - 1);
@@ -475,7 +490,9 @@ export default function MarketStructureChart({
             .slice(0, 2);
     }, [callWall, data.confluenceLevels, dataMode, gammaFlip, putWall, spot]);
     const lastBar = hoverBar ?? bars.at(-1) ?? null;
-    const lastCvd = cvdBars.at(-1)?.close ?? 0;
+    const lastCvd = hasTrueCvd
+        ? trueFlowSnapshot?.cvdSegments.at(-1)?.finalCumulativeDeltaNotionalUsd ?? 0
+        : cvdBars.findLast(isCvdBar)?.close ?? 0;
     const lastDelta = deltaBars.at(-1)?.value ?? 0;
     const maxProfile = Math.max(...profile.map((row) => profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume), 1);
     const profileSourceLabel = dataMode === 'LIVE'
@@ -562,7 +579,7 @@ export default function MarketStructureChart({
             }
             crosshairSyncRef.current = true;
             const cvdPoint = cvdBarsRef.current.find((bar) => Number(bar.time) === Number(param.time));
-            if (cvdPoint && cvdSeriesRef.current && cvdChartRef.current) {
+            if (cvdPoint && isCvdBar(cvdPoint) && cvdSeriesRef.current && cvdChartRef.current) {
                 cvdChartRef.current.setCrosshairPosition(cvdPoint.close, param.time, cvdSeriesRef.current);
             }
             const deltaPoint = deltaBarsRef.current.find((bar) => Number(bar.time) === Number(param.time));
@@ -773,7 +790,7 @@ export default function MarketStructureChart({
             const updateResetMarkers = () => {
                 const width = cvdHostRef.current?.clientWidth ?? 0;
                 const markers = cvdBarsRef.current.slice(1).flatMap((bar) => {
-                    if (!bar.reset) return [];
+                    if (!isCvdBar(bar) || !bar.reset) return [];
                     const coordinate = chart.timeScale().timeToCoordinate(bar.time);
                     if (coordinate === null || coordinate < 0 || coordinate > width) return [];
                     return [{ time: Number(bar.time), x: Number(coordinate) }];
@@ -1570,6 +1587,7 @@ export default function MarketStructureChart({
                     onCvdAnchorChange={setCvdAnchor}
                     onResizeHeight={handleResizeStudyPane}
                     onResetChartAndObjects={resetChartViewAndObjects}
+                    trueFlowSnapshot={hasTrueCvd ? trueFlowSnapshot : null}
                 />
             )}
 
