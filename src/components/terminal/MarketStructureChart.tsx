@@ -35,6 +35,14 @@ import {
 } from '../../lib/ui/market-fixtures';
 import { buildAvwapPrefixSums, computeAvwapFromPrefixSums } from '../../lib/indicators/avwap-prefix-sums';
 import {
+    loadPersistedAvwapSettings,
+    savePersistedAvwapSettings,
+    DEFAULT_AVWAP_SETTINGS,
+    type AvwapSettings,
+    type AvwapAnchorMode,
+    type AvwapPriceSource,
+} from '../../lib/indicators/avwap-settings';
+import {
     avwapReducer,
     findNearestBarIndexByTime,
     loadPersistedAvwapAnchor,
@@ -335,6 +343,8 @@ export default function MarketStructureChart({
     const [cvdResetMarkers, setCvdResetMarkers] = useState<Array<{ time: number; x: number }>>([]);
     const [profileQueryRange, setProfileQueryRange] = useState<{ startTimeSeconds: number; endTimeSeconds: number; displayBarSeconds: number } | null>(null);
     const [showAvwapBands, setShowAvwapBands] = useState(true);
+    const [avwapSettings, setAvwapSettings] = useState<AvwapSettings>(() => loadPersistedAvwapSettings());
+    const [isAvwapHovered, setIsAvwapHovered] = useState<boolean>(false);
     const [selectedObject, setSelectedObject] = useState<'VP' | 'AVWAP' | null>(null);
     const [objectLocked, setObjectLocked] = useState(false);
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -511,6 +521,47 @@ export default function MarketStructureChart({
     const activeAnchorTime = avwapConfig.provisionalTime ?? avwapConfig.anchorTime;
     const anchorIndex = useMemo(() => {
         if (!bars.length) return 0;
+        const mode = avwapSettings.anchorMode;
+        if (mode === 'SWING_LOW') {
+            const end = bars.length - 1;
+            const start = Math.max(0, end - 60);
+            let minLow = Infinity;
+            let minIdx = Math.max(0, end - 35);
+            for (let i = start; i <= end - 5; i++) {
+                if (bars[i].low < minLow) {
+                    minLow = bars[i].low;
+                    minIdx = i;
+                }
+            }
+            return minIdx;
+        }
+        if (mode === 'SWING_HIGH') {
+            const end = bars.length - 1;
+            const start = Math.max(0, end - 60);
+            let maxHigh = -Infinity;
+            let maxIdx = Math.max(0, end - 35);
+            for (let i = start; i <= end - 5; i++) {
+                if (bars[i].high > maxHigh) {
+                    maxHigh = bars[i].high;
+                    maxIdx = i;
+                }
+            }
+            return maxIdx;
+        }
+        if (mode === 'SESSION_OPEN') {
+            const latestBar = bars[bars.length - 1];
+            const latestDayStart = Math.floor(Number(latestBar.time) / 86400) * 86400;
+            return findNearestBarIndexByTime(bars, latestDayStart);
+        }
+        if (mode === 'WEEK_OPEN') {
+            const latestBar = bars[bars.length - 1];
+            const d = new Date(Number(latestBar.time) * 1000);
+            const dayOfWeek = d.getUTCDay();
+            const daysSinceMonday = (dayOfWeek + 6) % 7;
+            const mondayMs = d.getTime() - daysSinceMonday * 86400 * 1000;
+            const mondayStartSec = Math.floor(mondayMs / (86400 * 1000)) * 86400;
+            return findNearestBarIndexByTime(bars, mondayStartSec);
+        }
         if (activeAnchorTime === 0) {
             const end = bars.length - 1;
             const start = Math.max(0, end - 60);
@@ -525,11 +576,17 @@ export default function MarketStructureChart({
             return minIdx;
         }
         return findNearestBarIndexByTime(bars, activeAnchorTime);
-    }, [bars, activeAnchorTime]);
+    }, [bars, activeAnchorTime, avwapSettings.anchorMode]);
 
     // O(N) precomputed prefix sums table + O(1) per bar evaluation
-    const avwapPrefixSums = useMemo(() => buildAvwapPrefixSums(bars), [bars]);
-    const avwapBands = useMemo(() => computeAvwapFromPrefixSums(avwapPrefixSums, anchorIndex, bars), [avwapPrefixSums, anchorIndex, bars]);
+    const avwapPrefixSums = useMemo(() => buildAvwapPrefixSums(bars, avwapSettings.priceSource), [bars, avwapSettings.priceSource]);
+    const avwapBands = useMemo(() => computeAvwapFromPrefixSums(
+        avwapPrefixSums,
+        anchorIndex,
+        bars,
+        avwapSettings.band1.multiplier,
+        avwapSettings.bandMode
+    ), [avwapPrefixSums, anchorIndex, bars, avwapSettings.band1.multiplier, avwapSettings.bandMode]);
     const selectedStartTime = bars[profileStartIndex] ? Number(bars[profileStartIndex].time) : null;
     const selectedEndTime = bars[profileEndIndex] ? Number(bars[profileEndIndex].time) : null;
 
@@ -1900,7 +1957,36 @@ export default function MarketStructureChart({
                     </div>
                 )}
 
-                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && overlayLayout.anchorX >= 0 && overlayLayout.anchorX <= (chartHostRef.current?.clientWidth || 800) && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={beginAvwapDrag} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
+                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && overlayLayout.anchorX >= 0 && overlayLayout.anchorX <= (chartHostRef.current?.clientWidth || 800) && (
+                    <div
+                        className="group absolute z-40"
+                        style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }}
+                        onMouseEnter={() => setIsAvwapHovered(true)}
+                        onMouseLeave={() => setIsAvwapHovered(false)}
+                    >
+                        <button
+                            type="button"
+                            aria-label="Move anchored VWAP anchor"
+                            onClick={(event) => {
+                                event.stopPropagation();
+                                setSelectedObject('AVWAP');
+                                setSelectedDrawingId(null);
+                            }}
+                            onPointerDown={beginAvwapDrag}
+                            className="flex size-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full bg-transparent p-0 transition-transform active:scale-95"
+                            title="Drag to re-anchor AVWAP (click for settings)"
+                        >
+                            <span className="flex size-2.5 items-center justify-center rounded-full border border-sky-400 bg-[#081320] shadow-[0_0_8px_rgba(56,189,248,0.5)] group-hover:scale-125 transition-transform">
+                                <span className="size-1 rounded-full bg-sky-300" />
+                            </span>
+                        </button>
+                        {(selectedObject === 'AVWAP' || isAvwapHovered) && (
+                            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-0.5 text-[8.5px] font-medium text-sky-200 shadow-md backdrop-blur">
+                                AVWAP · {avwapSettings.anchorMode.replace('_', ' ')}
+                            </span>
+                        )}
+                    </div>
+                )}
 
                 {selectedObject && ((selectedObject === 'VP' && chartLayers.volumeProfile) || (selectedObject === 'AVWAP' && chartLayers.avwap)) && <div
                     className="absolute left-1/2 top-11 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg"
@@ -1928,7 +2014,125 @@ export default function MarketStructureChart({
                                 <label htmlFor="profile-value-area" className="block"><span className="mb-1 flex justify-between text-zinc-400"><span>Value area volume</span><span className="font-mono tabular-nums text-zinc-200">{profileValueAreaPercent}%</span></span><input id="profile-value-area" type="range" min="50" max="99" step="1" value={profileValueAreaPercent} onChange={(event) => setProfileValueAreaPercent(Number(event.target.value))} className="w-full accent-cyan-400" /></label>
                                 <label className="flex items-center justify-between gap-3"><span className="text-zinc-400">Extend right with new bars</span><input type="checkbox" checked={extendProfileRight} onChange={(event) => setExtendProfileRight(event.target.checked)} className="size-4 accent-cyan-400" /></label>
                                 <p className="text-pretty text-[9px] leading-4 text-zinc-500">Source: {profileSourceLabel}. Default span is 1,000 bars. Live mode selects the finest bounded Binance interval below 5,000 intrabars.</p>
-                            </div> : <label className="flex items-center justify-between gap-3"><span>Deviation bands</span><input type="checkbox" checked={showAvwapBands} onChange={(event) => setShowAvwapBands(event.target.checked)} className="size-4 accent-cyan-400" /></label>}
+                            </div> : (
+                                <div className="space-y-3">
+                                    <div className="flex items-center justify-between">
+                                        <span className="font-semibold text-zinc-100">Anchored VWAP Settings</span>
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                setAvwapSettings(DEFAULT_AVWAP_SETTINGS);
+                                                savePersistedAvwapSettings(DEFAULT_AVWAP_SETTINGS);
+                                            }}
+                                            className="text-[9px] text-cyan-400 hover:underline"
+                                        >
+                                            Reset
+                                        </button>
+                                    </div>
+                                    <div>
+                                        <span className="text-[9px] text-zinc-400 mb-1 block">Anchor Mode</span>
+                                        <div className="grid grid-cols-3 gap-1">
+                                            {[
+                                                { id: 'SWING_LOW', label: 'Swing Low' },
+                                                { id: 'SWING_HIGH', label: 'Swing High' },
+                                                { id: 'SESSION_OPEN', label: 'Session' },
+                                                { id: 'WEEK_OPEN', label: 'Week' },
+                                                { id: 'MANUAL', label: 'Manual' },
+                                            ].map((opt) => (
+                                                <button
+                                                    key={opt.id}
+                                                    type="button"
+                                                    onClick={() => {
+                                                        const next = { ...avwapSettings, anchorMode: opt.id as AvwapAnchorMode };
+                                                        setAvwapSettings(next);
+                                                        savePersistedAvwapSettings(next);
+                                                    }}
+                                                    className={`rounded border px-1 py-1 text-center font-medium transition-colors ${
+                                                        avwapSettings.anchorMode === opt.id
+                                                            ? 'border-cyan-400/50 bg-cyan-500/20 text-cyan-200'
+                                                            : 'border-[#33445a] hover:bg-white/5 text-zinc-400'
+                                                    }`}
+                                                >
+                                                    {opt.label}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <label htmlFor="avwap-price-source" className="grid grid-cols-[1fr_112px] items-center gap-3">
+                                        <span className="text-zinc-400">Price Source</span>
+                                        <select
+                                            id="avwap-price-source"
+                                            value={avwapSettings.priceSource}
+                                            onChange={(e) => {
+                                                const next = { ...avwapSettings, priceSource: e.target.value as AvwapPriceSource };
+                                                setAvwapSettings(next);
+                                                savePersistedAvwapSettings(next);
+                                            }}
+                                            className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2 text-zinc-200"
+                                        >
+                                            <option value="HLC3">HLC3 (Typical)</option>
+                                            <option value="HL2">HL2 (Median)</option>
+                                            <option value="OHLC4">OHLC4</option>
+                                            <option value="CLOSE">Close</option>
+                                            <option value="OPEN">Open</option>
+                                        </select>
+                                    </label>
+                                    <div className="border-t border-[#223042] pt-2 space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <span className="text-zinc-300 font-medium">StdDev Bands</span>
+                                            <input
+                                                type="checkbox"
+                                                checked={avwapSettings.bandsEnabled}
+                                                onChange={(e) => {
+                                                    const next = { ...avwapSettings, bandsEnabled: e.target.checked };
+                                                    setAvwapSettings(next);
+                                                    savePersistedAvwapSettings(next);
+                                                    setShowAvwapBands(e.target.checked);
+                                                }}
+                                                className="size-4 accent-cyan-400"
+                                            />
+                                        </div>
+                                        {avwapSettings.bandsEnabled && (
+                                            <div className="space-y-2 text-[9px]">
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-zinc-400">Band 1 (±{avwapSettings.band1.multiplier}σ)</span>
+                                                    <input
+                                                        type="number"
+                                                        min="0.5"
+                                                        max="5.0"
+                                                        step="0.5"
+                                                        value={avwapSettings.band1.multiplier}
+                                                        onChange={(e) => {
+                                                            const val = parseFloat(e.target.value) || 1.0;
+                                                            const next = { ...avwapSettings, band1: { ...avwapSettings.band1, multiplier: val } };
+                                                            setAvwapSettings(next);
+                                                            savePersistedAvwapSettings(next);
+                                                        }}
+                                                        className="w-16 rounded border border-[#33445a] bg-[#080d14] px-1.5 py-0.5 font-mono text-zinc-200"
+                                                    />
+                                                </div>
+                                                <div className="flex items-center justify-between gap-2">
+                                                    <span className="text-zinc-400">Band 2 (±{avwapSettings.band2.multiplier}σ)</span>
+                                                    <input
+                                                        type="number"
+                                                        min="1.0"
+                                                        max="5.0"
+                                                        step="0.5"
+                                                        value={avwapSettings.band2.multiplier}
+                                                        onChange={(e) => {
+                                                            const val = parseFloat(e.target.value) || 2.0;
+                                                            const next = { ...avwapSettings, band2: { ...avwapSettings.band2, multiplier: val } };
+                                                            setAvwapSettings(next);
+                                                            savePersistedAvwapSettings(next);
+                                                        }}
+                                                        className="w-16 rounded border border-[#33445a] bg-[#080d14] px-1.5 py-0.5 font-mono text-zinc-200"
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                             <Popover.Arrow className="fill-[#33445a]" />
                         </Popover.Content></Popover.Portal>
                     </Popover.Root>

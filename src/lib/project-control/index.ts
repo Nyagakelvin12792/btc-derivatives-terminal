@@ -6,3 +6,4 @@ export * from './snapshot';
 export * from './ux16-plan';
 export * from './ux17-plan';
 export * from './ux18-plan';
+export * from './ux19-plan';

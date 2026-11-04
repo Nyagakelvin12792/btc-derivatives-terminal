@@ -62,8 +62,9 @@ export default function FixedRangeVolumeProfileCanvas({
 
         const rowHeight = Math.max(1, profileRowHeight);
         const halfRow = rowHeight / 2;
-        // Cap profile histogram width to at most 22% of box width or 165px so candles are never buried
-        const maxBarWidth = Math.min((width * profileWidthPercent) / 100, Math.min(width * 0.22, 165));
+        // Institutional proportional width scaling (10% to 100% of container width)
+        const clampedWidthPercent = Math.max(10, Math.min(100, profileWidthPercent));
+        const maxBarWidth = (width * clampedWidthPercent) / 100;
         const isRight = profilePlacement === 'RIGHT';
 
         for (let i = 0; i < profile.length; i++) {

@@ -1,5 +1,6 @@
 import type { LineData, UTCTimestamp } from 'lightweight-charts';
 import type { DemoAvwapBands, DemoMarketBar } from '../ui/market-fixtures';
+import { getBarPriceBySource, type AvwapPriceSource } from './avwap-settings';
 
 export interface AvwapPrefixSums {
     cumV: Float64Array;
@@ -7,13 +8,17 @@ export interface AvwapPrefixSums {
     cumP2V: Float64Array;
     times: UTCTimestamp[];
     length: number;
+    priceSource: AvwapPriceSource;
 }
 
 /**
- * Precomputes analytical prefix sums for typical price and volume in O(N).
+ * Precomputes analytical prefix sums for price and volume in O(N).
  * Enables computing AVWAP and standard deviation bands from ANY anchor index in O(1) per bar.
  */
-export function buildAvwapPrefixSums(bars: readonly DemoMarketBar[]): AvwapPrefixSums {
+export function buildAvwapPrefixSums(
+    bars: readonly DemoMarketBar[],
+    priceSource: AvwapPriceSource = 'HLC3'
+): AvwapPrefixSums {
     const len = bars.length;
     const cumV = new Float64Array(len);
     const cumPV = new Float64Array(len);
@@ -26,12 +31,12 @@ export function buildAvwapPrefixSums(bars: readonly DemoMarketBar[]): AvwapPrefi
 
     for (let i = 0; i < len; i++) {
         const bar = bars[i];
-        const typical = (bar.high + bar.low + bar.close) / 3;
+        const price = getBarPriceBySource(bar, priceSource);
         const v = bar.volume;
 
         runningV += v;
-        runningPV += typical * v;
-        runningP2V += typical * typical * v;
+        runningPV += price * v;
+        runningP2V += price * price * v;
 
         cumV[i] = runningV;
         cumPV[i] = runningPV;
@@ -39,17 +44,19 @@ export function buildAvwapPrefixSums(bars: readonly DemoMarketBar[]): AvwapPrefi
         times[i] = bar.time;
     }
 
-    return { cumV, cumPV, cumP2V, times, length: len };
+    return { cumV, cumPV, cumP2V, times, length: len, priceSource };
 }
 
 /**
- * Computes center AVWAP, +1σ upper band, and -1σ lower band in O(N - anchorIndex)
+ * Computes center AVWAP and standard deviation or percentage bands in O(N - anchorIndex)
  * using the precomputed prefix sums table with zero inner-loop re-multiplications.
  */
 export function computeAvwapFromPrefixSums(
     prefixSums: AvwapPrefixSums,
     anchorIndex: number,
-    bars?: readonly DemoMarketBar[]
+    bars?: readonly DemoMarketBar[],
+    bandMultiplier = 1.0,
+    bandMode: 'STD_DEV' | 'PERCENTAGE' = 'STD_DEV'
 ): DemoAvwapBands {
     const len = prefixSums.length;
     if (len === 0) {
@@ -75,14 +82,19 @@ export function computeAvwapFromPrefixSums(
         const p2v = prefixSums.cumP2V[i] - baseP2V;
 
         if (v <= 0) {
-            const fallbackPrice = bars ? (bars[i].high + bars[i].low + bars[i].close) / 3 : 0;
+            const fallbackPrice = bars ? getBarPriceBySource(bars[i], prefixSums.priceSource) : 0;
             center[outIdx] = { time: t, value: fallbackPrice };
             upper[outIdx] = { time: t, value: fallbackPrice };
             lower[outIdx] = { time: t, value: fallbackPrice };
         } else {
             const mean = pv / v;
-            const variance = Math.max(0, p2v / v - mean * mean);
-            const deviation = Math.sqrt(variance);
+            let deviation: number;
+            if (bandMode === 'PERCENTAGE') {
+                deviation = mean * (bandMultiplier / 100);
+            } else {
+                const variance = Math.max(0, p2v / v - mean * mean);
+                deviation = Math.sqrt(variance) * bandMultiplier;
+            }
 
             center[outIdx] = { time: t, value: mean };
             upper[outIdx] = { time: t, value: mean + deviation };

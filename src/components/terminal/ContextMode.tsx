@@ -3,6 +3,7 @@
 import React from 'react';
 import { Target, Compass, Clock, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
+import { JevAdvisoryPanel } from './JevAdvisoryPanel';
 
 export interface ContextModeProps {
     spotPrice: number;
@@ -147,18 +148,20 @@ export default function ContextMode({
                 </div>
             </div>
 
-            {/* Jev Shadow Status */}
-            <div className="rounded border border-[#18212C] bg-[#0C1118] p-3 font-mono">
-                <div className="flex items-center justify-between">
-                    <span className="text-[9px] font-bold text-[#E6B450]">JEV SHADOW OPINION</span>
-                    <span className="rounded border border-[#18212C] bg-[#070A0F] px-1.5 py-0.5 text-[8px] font-bold text-[#8390A0]">
-                        UNAVAILABLE
-                    </span>
-                </div>
-                <p className="mt-1.5 font-sans text-pretty text-[10px] leading-relaxed text-[#8390A0]">
-                    The repository exposes no Jev response contract to this frontend. No AI opinion is invented.
-                </p>
-            </div>
+            {/* Jev Structured Advisory Decision Framework (UX19.6) */}
+            <JevAdvisoryPanel
+                marketState={{
+                    currentPrice: spotPrice,
+                    callWall,
+                    putWall,
+                    gammaFlip,
+                    gammaRegime: gammaRegime === 'POSITIVE' ? 'LONG_GAMMA_MEAN_REVERTING' : 'SHORT_GAMMA_EXPANSION',
+                    avwapPrice,
+                    vpPoc: volumeProfilePoc,
+                    vpVah: volumeProfileVah,
+                    vpVal: volumeProfileVal,
+                }}
+            />
 
             {/* Attention Budget Status */}
             <div className="flex items-center justify-between rounded border border-[#18212C] bg-[#070A0F] px-3 py-2 font-mono text-[8px] text-[#5C697A]">

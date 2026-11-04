@@ -123,7 +123,7 @@ export const ProjectProgressSnapshotV1Schema = z.object({
     generatedAt: z.string().datetime(),
     sourceBranch: z.string().trim().min(1).max(200),
     sourceCommit: nullableCommit,
-    milestones: z.array(MilestoneProgressV1Schema).min(1).max(32),
+    milestones: z.array(MilestoneProgressV1Schema).min(1).max(64),
     totals: ProjectProgressTotalsV1Schema,
 }).strict();
 export type ProjectProgressSnapshotV1 = z.infer<typeof ProjectProgressSnapshotV1Schema>;
