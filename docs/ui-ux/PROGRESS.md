@@ -1,8 +1,8 @@
 # UI/UX Overhaul Progress
 
-Version: 3.19
+Version: 3.20
 Last updated: 2026-11-04
-Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · MULTI-APPROACH VP, TRADING SESSIONS OVERLAY, 1:1 PRICE SCALE SYNC & CYBERNETIC CHART LOADER
+Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · MULTI-APPROACH VP AUTO-PLACEMENT FIX & CLAMPED VIEWPORT HUD
 Current checkpoint: Multi-approach Volume Profile (Daily VP, Weekly VP, Previous Session VP, and Free Hold manual VP), TradingView-style Trading Sessions indicator (Asia, London, New York, and LDN/NY Overlap boxes with high/low bounds), 1:1 vertical price scale synchronization between left footprint pane and candlestick chart with interactive axis dragging/scaling, and sleek cybernetic radar chart loading animation.
 
 ## Scope Statement
@@ -549,3 +549,29 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
   - Upgraded `Number of rows` in Fixed Range Volume Profile settings to support `24`, `48`, `72`, `100`, `250`, `500`, and **`1000` rows** (defaulting to **`1000` rows**) with `O(1)` indexed row projection.
   - Removed the visible `<GripVertical />` pill buttons on the Volume Profile borders and replaced them with clean, hover-sensitive resize (`cursor-ew-resize`) and drag (`cursor-move`) boundary zones.
   - Removed the duplicate right-axis `T-POC / T-VAH / T-VAL` Trade Volume Profile overlay from the main candlestick chart.
+
+### 2026-11-04 — Multi-Approach Volume Profile Auto-Placement Fix & Clamped Viewport HUD
+
+- **Root Cause Resolution for VP Auto-Placement**:
+  - Eliminated the initial-load effect in `MarketStructureChart.tsx` that was forcing a 1,000-bar span across the entire screen from `bars.length - 1000` to `bars.length - 1`.
+  - Configured `vpApproachMode` to default to **`DAILY`** (Current Day UTC session: `00:00:00 UTC` to current candle), neatly framing the active trading day without stretching across ancient history.
+  - Implemented session-aware dynamic tracking:
+    - **`DAILY`**: Auto-tracks incoming live bars while keeping `startTime` locked to `00:00:00 UTC` today.
+    - **`WEEKLY`**: Locks `startTime` to Monday `00:00:00 UTC` of the current week and tracks live bars.
+    - **`PREV_SESSION`**: Locks strictly to yesterday's complete session (`00:00:00` to `23:59:59 UTC`).
+    - **`FREE_HOLD`**: Preserves whatever manual range the user sets, drags, or resizes, defaulting to recent 60 visible bars if unset (never 1,000 bars unless explicitly chosen).
+- **Clamped Viewport HUD Positioning (Guaranteed Visibility)**:
+  - Extracted the VP floating HUD out of the profile bounding container (`div style={{ left: profileLeft }}`) to prevent controls from being pushed off-screen when the profile start coordinate is negative.
+  - Positioned the HUD directly in the chart container with horizontal viewport clamping:
+    `left: Math.max(12, Math.min((width - 390), profileLeft ?? 12))`.
+  - The HUD and 1-click mode switcher (`DAILY` / `WEEKLY` / `PREV` / `FREE` / `FIT VIEW`) are guaranteed to remain 100% visible and interactive at all times regardless of pan or zoom state.
+- **Top Header Study Bar Mode Integration**:
+  - Wired `vpApproachMode` and `setVpApproachMode` into Zustand `useTerminalStore` with localStorage persistence (`btc-terminal-ui-v1`).
+  - Added interactive mode buttons (`DAILY` | `WEEKLY` | `PREV` | `FREE`) directly into the top Study Chips bar in both `LegacyMarketTerminal.tsx` and `CalmMarketTerminal.tsx`.
+- **Aesthetic Balancing & Bar Width Clamping**:
+  - Clamped `maxBarWidth` in `FixedRangeVolumeProfileCanvas.tsx` to a maximum of 320px or 45% of the profile area to ensure histogram bars never overpower or obscure candlestick price action.
+  - Lowered default `profileOpacityPercent` from 75% to 45% for a clean, translucent TradingView/ATAS aesthetic.
+- **Verification**:
+  - Vitest test suite passing (21/21 tests in `ux16-true-flow.test.tsx`).
+  - TypeScript type check passing with 0 errors (`npx tsc --noEmit`).
+  - Next.js production build passing in 41s (`npm run build`).

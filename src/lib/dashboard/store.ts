@@ -88,6 +88,8 @@ export interface TerminalState {
         sessions?: boolean;
     };
     toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
+    vpApproachMode: 'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD';
+    setVpApproachMode: (mode: 'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD') => void;
     resetWorkspaceUi: () => void;
 }
 
@@ -177,6 +179,8 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
             [layer]: !(state.chartLayers[layer] ?? defaultChartLayers[layer]),
         },
     })),
+    vpApproachMode: 'DAILY',
+    setVpApproachMode: (mode) => set({ vpApproachMode: mode }),
     resetWorkspaceUi: () => set({
         workspaceMode: 'CONTEXT',
         inspectorOpen: true,
@@ -186,6 +190,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         dteFilter: 'ALL',
         optionsDisplay: 'GEX',
         chartLayers: defaultChartLayers,
+        vpApproachMode: 'DAILY',
     }),
 }), {
     name: 'btc-terminal-ui-v1',
@@ -201,5 +206,6 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         dteFilter: state.dteFilter,
         optionsDisplay: state.optionsDisplay,
         chartLayers: state.chartLayers,
+        vpApproachMode: state.vpApproachMode,
     }),
 }));

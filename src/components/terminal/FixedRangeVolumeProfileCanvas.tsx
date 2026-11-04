@@ -61,7 +61,7 @@ export default function FixedRangeVolumeProfileCanvas({
 
         const rowHeight = Math.max(1, profileRowHeight);
         const halfRow = rowHeight / 2;
-        const maxBarWidth = (width * profileWidthPercent) / 100;
+        const maxBarWidth = Math.min((width * profileWidthPercent) / 100, Math.min(width * 0.45, 320));
         const isRight = profilePlacement === 'RIGHT';
 
         for (let i = 0; i < profile.length; i++) {

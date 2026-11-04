@@ -23,6 +23,7 @@ import TradingSessionsOverlay from './TradingSessionsOverlay';
 import TerminalChartLoader from './TerminalChartLoader';
 import { createDemoMarketBars } from '../../lib/ui/market-fixtures';
 import FlowMode from './FlowMode';
+import { useTerminalStore } from '../../lib/dashboard/store';
 
 const BASE_TIME = Date.UTC(2026, 9, 30, 12, 0, 0);
 
@@ -460,6 +461,44 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             expect(html).toContain('₿');
             expect(html).toContain('CALIBRATING BTC TERMINAL WORKSPACE');
             expect(html).toContain('LIVE');
+        });
+    });
+
+    describe('Multi-Approach Volume Profile (Daily, Weekly, Prev Session, Free Hold)', () => {
+        it('persists and updates vpApproachMode across modes', () => {
+            const store = useTerminalStore.getState();
+            expect(store.vpApproachMode).toBeDefined();
+
+            store.setVpApproachMode('DAILY');
+            expect(useTerminalStore.getState().vpApproachMode).toBe('DAILY');
+
+            store.setVpApproachMode('WEEKLY');
+            expect(useTerminalStore.getState().vpApproachMode).toBe('WEEKLY');
+
+            store.setVpApproachMode('PREV_SESSION');
+            expect(useTerminalStore.getState().vpApproachMode).toBe('PREV_SESSION');
+
+            store.setVpApproachMode('FREE_HOLD');
+            expect(useTerminalStore.getState().vpApproachMode).toBe('FREE_HOLD');
+        });
+
+        it('computes daily and weekly bar boundaries accurately from unix timestamps', () => {
+            const demoBars = createDemoMarketBars(78000, 400, 900); // 15m bars
+            expect(demoBars.length).toBe(400);
+
+            const lastBarSec = Number(demoBars[demoBars.length - 1].time);
+            const startOfDaySec = Math.floor(lastBarSec / 86400) * 86400;
+
+            const d = new Date(lastBarSec * 1000);
+            const dayOfWeek = (d.getUTCDay() + 6) % 7;
+            const startOfWeekSec = Math.floor((lastBarSec - dayOfWeek * 86400) / 86400) * 86400;
+
+            expect(startOfDaySec).toBeGreaterThan(0);
+            expect(startOfWeekSec).toBeLessThanOrEqual(startOfDaySec);
+
+            // Daily bar slice should never span 1,000 bars
+            const dailyBars = demoBars.filter((b) => Number(b.time) >= startOfDaySec);
+            expect(dailyBars.length).toBeLessThanOrEqual(96);
         });
     });
 });

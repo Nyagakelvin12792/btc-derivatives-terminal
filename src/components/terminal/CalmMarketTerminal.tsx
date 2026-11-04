@@ -225,6 +225,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         chartLayers,
         toggleChartLayer,
         resetWorkspaceUi,
+        vpApproachMode,
+        setVpApproachMode,
     } = useTerminalStore();
     const marketFeed = useBinanceMarketFeed(BINANCE_INTERVALS[timeframe], dataMode === 'LIVE');
     const liquidityFeed = useBinanceLiquidityHeatmap(dataMode === 'LIVE', {
@@ -690,7 +692,27 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 {/* Study Chips Bar */}
                                 <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#18212C] bg-[#090D14] px-2">
                                     <StudyChip label="Left Footprint Pane" visible={chartLayers.leftExecutionPane !== false} onToggle={() => toggleChartLayer('leftExecutionPane')} description="Synchronized left execution pane with Skeleton Candles, Bid×Ask Footprint, Colored Delta Ladder, and Heatmap + Imbalance." />
-                                    <StudyChip label="Fixed Range VP" visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Selected-range profile (1,000 bars & 1,000 rows default) with POC, VAH, VAL, opacity slider, and Left/Right placement." />
+                                    <StudyChip label={chartLayers.volumeProfile ? `Fixed Range VP (${vpApproachMode === 'PREV_SESSION' ? 'PREV' : vpApproachMode === 'FREE_HOLD' ? 'FREE' : vpApproachMode})` : 'Fixed Range VP'} visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Multi-approach volume profile (Daily, Weekly, Prev Session, Free Hold) with POC, VAH, VAL, opacity slider, and Left/Right placement." />
+                                      {chartLayers.volumeProfile && (
+                                          <div className="flex items-center gap-0.5 rounded border border-[#18212C] bg-[#0C1118] p-0.5" data-testid="header-vp-approach-buttons">
+                                              {(['DAILY', 'WEEKLY', 'PREV_SESSION', 'FREE_HOLD'] as const).map((mode) => (
+                                                  <button
+                                                      key={mode}
+                                                      type="button"
+                                                      onClick={() => setVpApproachMode(mode)}
+                                                      title={`Switch to ${mode} Volume Profile`}
+                                                      className={cn(
+                                                          'rounded px-1.5 py-0.5 font-mono text-[8px] font-bold transition-colors',
+                                                          vpApproachMode === mode
+                                                              ? 'bg-[#39A9F5]/20 text-[#39A9F5] ring-1 ring-[#39A9F5]/40'
+                                                              : 'text-[#8390A0] hover:text-[#D8DEE8]'
+                                                      )}
+                                                  >
+                                                      {mode === 'PREV_SESSION' ? 'PREV' : mode === 'FREE_HOLD' ? 'FREE' : mode}
+                                                  </button>
+                                              ))}
+                                          </div>
+                                      )}
                                     <StudyChip label="AVWAP · Swing Low" visible={chartLayers.avwap} onToggle={() => toggleChartLayer('avwap')} description="Anchored VWAP with draggable candle anchor and standard-deviation bands." />
                                     <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
                                     <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />

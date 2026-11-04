@@ -286,11 +286,10 @@ export default function MarketStructureChart({
     const [profileRowCount, setProfileRowCount] = useState(1000);
     const [profileWidthPercent, setProfileWidthPercent] = useState(40);
     const [profileValueAreaPercent, setProfileValueAreaPercent] = useState(70);
-    const [profileOpacityPercent, setProfileOpacityPercent] = useState(75);
+    const [profileOpacityPercent, setProfileOpacityPercent] = useState(45);
     const [profileVolumeMode, setProfileVolumeMode] = useState<ProfileVolumeMode>('UP_DOWN');
     const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
     const [extendProfileRight, setExtendProfileRight] = useState(false);
-    const [vpApproachMode, setVpApproachMode] = useState<'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD'>('FREE_HOLD');
     const [isManualVpPlacement, setIsManualVpPlacement] = useState<boolean>(false);
     const [onChartFootprintZoom, setOnChartFootprintZoom] = useState<'AUTO' | FootprintZoomLevel>('AUTO');
     const [tradeVpPlacement, setTradeVpPlacement] = useState<ProfilePlacement>('RIGHT');
@@ -420,6 +419,8 @@ export default function MarketStructureChart({
         toggleChartLayer,
         setActiveOrderFlowStudy,
         setStudyPaneOpen,
+        vpApproachMode,
+        setVpApproachMode,
     } = useTerminalStore();
 
     const handleResizeStudyPane = useCallback((nextHeight: number) => {
@@ -538,25 +539,69 @@ export default function MarketStructureChart({
         profileRef.current = profile;
     }, [bars, cvdBars, deltaBars, profile]);
 
-    useEffect(() => {
-        if (bars.length < (dataMode === 'LIVE' ? 50 : 2) || profileContextRef.current === chartContextKey) return;
-        profileContextRef.current = chartContextKey;
-        if (isManualVpPlacement && range) return;
-        const end = bars.length - 1;
-        const start = Math.max(0, end - 999);
-        setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
-        setAnchorIndex(Math.max(0, end - 126));
-    }, [bars, chartContextKey, dataMode, isManualVpPlacement, range]);
+    const calculateRangeForApproach = useCallback((mode: 'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD', currentBars: DemoMarketBar[]): ProfileRange | null => {
+        if (!currentBars.length) return null;
+        const nowSec = Number(currentBars[currentBars.length - 1].time);
+        if (mode === 'DAILY') {
+            const startOfDaySec = Math.floor(nowSec / 86400) * 86400;
+            return { startTime: startOfDaySec, endTime: nowSec };
+        }
+        if (mode === 'WEEKLY') {
+            const d = new Date(nowSec * 1000);
+            const dayOfWeek = (d.getUTCDay() + 6) % 7; // Monday = 0
+            const startOfWeekSec = Math.floor((nowSec - dayOfWeek * 86400) / 86400) * 86400;
+            return { startTime: startOfWeekSec, endTime: nowSec };
+        }
+        if (mode === 'PREV_SESSION') {
+            const startOfTodaySec = Math.floor(nowSec / 86400) * 86400;
+            const startOfYesterdaySec = startOfTodaySec - 86400;
+            const endOfYesterdaySec = startOfTodaySec - 1;
+            return { startTime: startOfYesterdaySec, endTime: endOfYesterdaySec };
+        }
+        // FREE_HOLD: sensible recent 60 bars (NOT 1000 bars!)
+        const end = currentBars.length - 1;
+        const start = Math.max(0, end - 60);
+        return { startTime: Number(currentBars[start].time), endTime: Number(currentBars[end].time) };
+    }, []);
 
     useEffect(() => {
-        if (!range || bars.length < 1_000 || isManualVpPlacement) return;
-        const currentStartIdx = nearestBarIndex(bars, range.startTime);
-        const currentEndIdx = nearestBarIndex(bars, range.endTime);
-        if (currentEndIdx - currentStartIdx + 1 === 120 && currentEndIdx === bars.length - 1) {
-            const newStart = Math.max(0, bars.length - 1_000);
-            setRange({ startTime: Number(bars[newStart].time), endTime: Number(bars[bars.length - 1].time) });
+        if (!bars.length) return;
+        const nowSec = Number(bars[bars.length - 1].time);
+
+        if (vpApproachMode === 'DAILY') {
+            const startOfDaySec = Math.floor(nowSec / 86400) * 86400;
+            setRange((prev) => {
+                if (prev && prev.startTime === startOfDaySec && prev.endTime === nowSec) return prev;
+                return { startTime: startOfDaySec, endTime: nowSec };
+            });
+        } else if (vpApproachMode === 'WEEKLY') {
+            const d = new Date(nowSec * 1000);
+            const dayOfWeek = (d.getUTCDay() + 6) % 7;
+            const startOfWeekSec = Math.floor((nowSec - dayOfWeek * 86400) / 86400) * 86400;
+            setRange((prev) => {
+                if (prev && prev.startTime === startOfWeekSec && prev.endTime === nowSec) return prev;
+                return { startTime: startOfWeekSec, endTime: nowSec };
+            });
+        } else if (vpApproachMode === 'PREV_SESSION') {
+            const startOfTodaySec = Math.floor(nowSec / 86400) * 86400;
+            const startOfYesterdaySec = startOfTodaySec - 86400;
+            const endOfYesterdaySec = startOfTodaySec - 1;
+            setRange((prev) => {
+                if (prev && prev.startTime === startOfYesterdaySec && prev.endTime === endOfYesterdaySec) return prev;
+                return { startTime: startOfYesterdaySec, endTime: endOfYesterdaySec };
+            });
+        } else if (vpApproachMode === 'FREE_HOLD') {
+            if (!range) {
+                const end = bars.length - 1;
+                const start = Math.max(0, end - 60);
+                setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
+            } else if (extendProfileRight) {
+                setRange((prev) => prev ? { ...prev, endTime: nowSec } : prev);
+            }
         }
-    }, [bars, range, isManualVpPlacement]);
+        const endIdx = bars.length - 1;
+        setAnchorIndex(Math.max(0, endIdx - 126));
+    }, [bars, calculateRangeForApproach, extendProfileRight, vpApproachMode, range]);
 
     useEffect(() => {
         if (!chartHostRef.current || !hasChartData) return;
@@ -1119,29 +1164,13 @@ export default function MarketStructureChart({
 
     const handleSelectVpApproach = useCallback((mode: 'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD') => {
         setVpApproachMode(mode);
+        setIsManualVpPlacement(true);
         if (!bars.length) return;
-        const nowSec = Number(bars[bars.length - 1].time);
-
-        if (mode === 'DAILY') {
-            const startOfDaySec = Math.floor(nowSec / 86400) * 86400;
-            setRange({ startTime: startOfDaySec, endTime: nowSec });
-            setIsManualVpPlacement(true);
-        } else if (mode === 'WEEKLY') {
-            const d = new Date(nowSec * 1000);
-            const dayOfWeek = (d.getUTCDay() + 6) % 7;
-            const startOfWeekSec = Math.floor((nowSec - dayOfWeek * 86400) / 86400) * 86400;
-            setRange({ startTime: startOfWeekSec, endTime: nowSec });
-            setIsManualVpPlacement(true);
-        } else if (mode === 'PREV_SESSION') {
-            const startOfTodaySec = Math.floor(nowSec / 86400) * 86400;
-            const startOfYesterdaySec = startOfTodaySec - 86400;
-            const endOfYesterdaySec = startOfTodaySec - 1;
-            setRange({ startTime: startOfYesterdaySec, endTime: endOfYesterdaySec });
-            setIsManualVpPlacement(true);
-        } else if (mode === 'FREE_HOLD') {
-            setIsManualVpPlacement(true);
+        const newRange = calculateRangeForApproach(mode, bars);
+        if (newRange) {
+            setRange(newRange);
         }
-    }, [bars]);
+    }, [bars, calculateRangeForApproach, setVpApproachMode]);
 
     const handleFitVpToVisibleViewport = useCallback(() => {
         if (!bars.length || !priceChartRef.current) return;
@@ -1637,8 +1666,19 @@ export default function MarketStructureChart({
                             />
                         </>
                     )}
-                    <div className="pointer-events-auto absolute left-2 top-2 z-30 flex items-center gap-1">
-                        <div className="flex items-center gap-0.5 rounded border border-cyan-400/20 bg-[#070e17]/95 p-0.5" data-testid="vp-approach-buttons">
+                </div>}
+
+                {chartLayers.volumeProfile && (
+                    <div
+                        className="pointer-events-auto absolute top-2 z-30 flex items-center gap-1"
+                        style={{
+                            left: profileLeft !== null
+                                ? Math.max(12, Math.min((overlayLayout.width || 800) - 390, profileLeft))
+                                : 12,
+                        }}
+                        data-testid="vp-floating-hud"
+                    >
+                        <div className="flex items-center gap-0.5 rounded border border-cyan-400/25 bg-[#070e17]/95 p-0.5 shadow-md" data-testid="vp-approach-buttons">
                             {(['DAILY', 'WEEKLY', 'PREV_SESSION', 'FREE_HOLD'] as const).map((mode) => (
                                 <button
                                     key={mode}
@@ -1647,10 +1687,10 @@ export default function MarketStructureChart({
                                     title={`Switch to ${mode} Volume Profile`}
                                     onClick={(e) => { e.stopPropagation(); handleSelectVpApproach(mode); }}
                                     className={cn(
-                                        'rounded px-1.5 py-0.5 font-mono text-[8px] font-bold transition-colors',
+                                        'rounded px-1.5 py-0.5 font-mono text-[8.5px] font-bold transition-colors',
                                         vpApproachMode === mode
-                                            ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400/40'
-                                            : 'text-zinc-400 hover:text-zinc-200',
+                                            ? 'bg-cyan-500/25 text-cyan-300 ring-1 ring-cyan-400/50'
+                                            : 'text-zinc-400 hover:text-zinc-200 hover:bg-white/5',
                                     )}
                                 >
                                     {mode === 'PREV_SESSION' ? 'PREV' : mode === 'FREE_HOLD' ? 'FREE' : mode}
@@ -1662,7 +1702,7 @@ export default function MarketStructureChart({
                             data-testid="vp-fit-viewport-btn"
                             title="Fit Volume Profile to visible chart viewport"
                             onClick={(e) => { e.stopPropagation(); handleFitVpToVisibleViewport(); }}
-                            className="rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] font-bold text-cyan-300 hover:bg-cyan-400/15"
+                            className="rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8.5px] font-bold text-cyan-300 hover:bg-cyan-400/15 shadow-md"
                         >
                             FIT VIEW
                         </button>
@@ -1671,16 +1711,16 @@ export default function MarketStructureChart({
                             title="Hover and drag to move Volume Profile, or click for controls"
                             onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); }}
                             onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
-                            className="flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200 hover:border-cyan-400/45"
+                            className="flex cursor-move items-center gap-1 rounded border border-cyan-400/25 bg-[#09101a]/95 px-2 py-1 text-[8.5px] font-semibold text-cyan-200 hover:border-cyan-400/45 shadow-md"
                         >
-                            {vpApproachMode} VP · {selectedBarCount} BARS · {profileRowCount} ROWS
+                            {vpApproachMode} VP · {selectedBarCount} BARS
                         </button>
                         <button
                             type="button"
                             data-testid="vp-placement-toggle"
                             title="Toggle Volume Profile Left / Right placement"
                             onClick={(event) => { event.stopPropagation(); setProfilePlacement((prev) => prev === 'RIGHT' ? 'LEFT' : 'RIGHT'); }}
-                            className="rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] font-bold text-cyan-200 hover:bg-cyan-400/15"
+                            className="rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8.5px] font-bold text-cyan-200 hover:bg-cyan-400/15 shadow-md"
                         >
                             {profilePlacement}
                         </button>
@@ -1689,13 +1729,13 @@ export default function MarketStructureChart({
                             data-testid="vp-quick-settings-trigger"
                             title="Configure Volume Profile Rows (1,000), Opacity, Side & Bars"
                             onClick={(event) => { event.stopPropagation(); setSelectedObject('VP'); setSelectedDrawingId(null); setSettingsOpen(true); }}
-                            className="flex items-center gap-1 rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] text-zinc-300 hover:bg-white/10"
+                            className="flex items-center gap-1 rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8.5px] text-zinc-300 hover:bg-white/10 shadow-md"
                         >
                             <Settings className="size-2.5 text-cyan-300" />
                             <span>{profileOpacityPercent}%</span>
                         </button>
                     </div>
-                </div>}
+                )}
 
                 {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
 
