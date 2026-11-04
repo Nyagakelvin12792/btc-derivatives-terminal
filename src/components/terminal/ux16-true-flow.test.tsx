@@ -355,9 +355,30 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             expect(html).toContain('data-testid="left-footprint-execution-pane"');
             expect(html).toContain('data-testid="exec-mode-footprint"');
             expect(html).toContain('data-testid="exec-mode-delta-ladder"');
+            expect(html).toContain('data-testid="exec-mode-candle-vp"');
             expect(html).toContain('data-testid="exec-mode-heatmap-imbalance"');
             expect(html).toContain('data-testid="exec-zoom-in"');
             expect(html).toContain('data-testid="exec-zoom-out"');
+            expect(html).toContain('data-testid="exec-sync-toggle"');
+        });
+
+        it('synchronizes skeleton execution bars with visible logical range when synced', () => {
+            const demoBars = createDemoMarketBars(77900, 50, 60);
+            const snapshot = createTestSnapshot(false);
+            const { executionBars } = buildSkeletonExecutionBars(
+                demoBars,
+                10,
+                60,
+                snapshot,
+                [],
+                14,
+                { from: 10, to: 18 },
+                true
+            );
+
+            expect(executionBars.length).toBeLessThanOrEqual(10);
+            expect(executionBars[0].vahPrice).toBeGreaterThanOrEqual(executionBars[0].valPrice);
+            expect(executionBars[0].maxLevelVolume).toBeGreaterThan(0);
         });
     });
 });

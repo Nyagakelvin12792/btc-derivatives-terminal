@@ -1,9 +1,9 @@
 # UI/UX Overhaul Progress
 
-Version: 3.17
+Version: 3.18
 Last updated: 2026-11-04
-Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · DUAL-PANE ATAS SKELETON FOOTPRINT / DELTA LADDER & 1,000-ROW VOLUME PROFILE COMPLETE
-Current checkpoint: Added synchronized Left Skeleton Footprint / Colored Delta Ladder / Heatmap+Imbalance execution pane (`LeftFootprintExecutionPane.tsx`), upgraded Fixed Range Volume Profile to 1,000 rows & 1,000 bars default with hover-sensitive resize/drag boundaries (removed bulky grip buttons), and removed the duplicate right-axis Trade VP overlay.
+Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · BIDIRECTIONAL CROSSHAIR & NAVIGATION SYNC, CANDLE VP MODE & HARDWARE-ACCELERATED VOLUME PROFILE
+Current checkpoint: Fully synchronized bidirectional crosshairs between left footprint execution pane and main chart/CVD, enabled full drag/zoom navigation sync on left skeleton pane, implemented CANDLE VP intra-candle volume profile histogram with POC & Value Area (VAH/VAL), and eliminated chart drag lag using single-frame animation scheduling and HTML5 Canvas FixedRangeVolumeProfile.
 
 ## Scope Statement
 

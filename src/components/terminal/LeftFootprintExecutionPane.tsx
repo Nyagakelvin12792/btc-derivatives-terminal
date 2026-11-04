@@ -1,13 +1,13 @@
 'use client';
 
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Columns2, Eye, Flame, Layers, Lock, Unlock, ZoomIn, ZoomOut } from 'lucide-react';
+import { BarChart3, Columns2, Eye, Flame, Layers, Lock, RefreshCw, Unlock, ZoomIn, ZoomOut } from 'lucide-react';
 import type { DemoMarketBar } from '../../lib/ui/market-fixtures';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import type { LiquidityHeatmapFrame } from '../../lib/binance/types';
 import { cn } from '../../lib/ui/cn';
 
-export type LeftExecutionViewMode = 'FOOTPRINT' | 'DELTA_LADDER' | 'HEATMAP_IMBALANCE';
+export type LeftExecutionViewMode = 'FOOTPRINT' | 'DELTA_LADDER' | 'CANDLE_VP' | 'HEATMAP_IMBALANCE';
 
 export interface SkeletonExecutionCell {
     price: number;
@@ -30,6 +30,9 @@ export interface SkeletonExecutionBar {
     volume: number;
     delta: number;
     pocPrice: number;
+    vahPrice: number;
+    valPrice: number;
+    maxLevelVolume: number;
     source: 'LIVE_TAPE' | 'INTRABAR_PROFILE';
     cells: SkeletonExecutionCell[];
 }
@@ -39,9 +42,12 @@ export interface LeftFootprintExecutionPaneProps {
     timeframeSeconds: number;
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
     liquidityFrames?: LiquidityHeatmapFrame[];
+    visibleLogicalRange?: { from: number; to: number } | null;
     hoveredPrice: number | null;
     hoveredTime?: number | null;
-    onHoverPriceChange?: (price: number | null, time: number | null) => void;
+    onHoverCrosshair?: (point: { price: number | null; time: number | null }) => void;
+    onPanRange?: (deltaBars: number) => void;
+    onZoomBars?: (deltaZoom: number) => void;
     onClosePane?: () => void;
     className?: string;
 }
@@ -62,10 +68,32 @@ export function buildSkeletonExecutionBars(
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null,
     liquidityFrames?: LiquidityHeatmapFrame[],
     ladderRowsTarget = 14,
+    visibleLogicalRange?: { from: number; to: number } | null,
+    syncWithMain = true,
 ): { executionBars: SkeletonExecutionBar[]; bucketStep: number; minPrice: number; maxPrice: number } {
-    const slice = bars.slice(-Math.max(4, visibleBarCount));
-    if (!slice.length) {
+    if (!bars.length) {
         return { executionBars: [], bucketStep: 10, minPrice: 0, maxPrice: 0 };
+    }
+
+    let slice: DemoMarketBar[];
+    if (syncWithMain && visibleLogicalRange && Number.isFinite(visibleLogicalRange.from) && Number.isFinite(visibleLogicalRange.to)) {
+        const rawFrom = Math.max(0, Math.floor(visibleLogicalRange.from));
+        const rawTo = Math.min(bars.length - 1, Math.ceil(visibleLogicalRange.to));
+        const count = rawTo - rawFrom + 1;
+        if (count <= visibleBarCount) {
+            slice = bars.slice(rawFrom, rawTo + 1);
+        } else {
+            // Main chart is zoomed out to many bars: show the focus window at the visible edge
+            const end = rawTo + 1;
+            const start = Math.max(0, end - visibleBarCount);
+            slice = bars.slice(start, end);
+        }
+    } else {
+        slice = bars.slice(-Math.max(4, visibleBarCount));
+    }
+
+    if (!slice.length) {
+        slice = bars.slice(-Math.max(4, visibleBarCount));
     }
 
     const bucketStep = choosePriceBucketStep(slice, ladderRowsTarget);
@@ -140,7 +168,6 @@ export function buildSkeletonExecutionBars(
 
             prices.forEach((p, idx) => {
                 const share = weights[idx] / weightSum;
-                // Bias upper rungs toward buyer aggression on up-bars or seller absorption at highs
                 const relPos = prices.length > 1 ? idx / (prices.length - 1) : 0.5;
                 const buyBias = isBull ? 0.38 + relPos * 0.32 : 0.62 - relPos * 0.32;
                 const levelVol = bar.volume * share;
@@ -200,6 +227,36 @@ export function buildSkeletonExecutionBars(
             };
         });
 
+        // Compute Value Area (70% volume) for this individual candle
+        let barTotalVol = 0;
+        let barMaxVol = 1e-6;
+        for (const c of cells) {
+            barTotalVol += c.totalVolume;
+            if (c.totalVolume > barMaxVol) barMaxVol = c.totalVolume;
+        }
+
+        const sortedByPriceAsc = [...cells].sort((a, b) => a.price - b.price);
+        const pocAscIdx = sortedByPriceAsc.findIndex((c) => c.price === pocPrice);
+        let includedVol = sortedByPriceAsc[pocAscIdx]?.totalVolume ?? 0;
+        let lowVaIdx = pocAscIdx >= 0 ? pocAscIdx : 0;
+        let highVaIdx = pocAscIdx >= 0 ? pocAscIdx : 0;
+        const targetVa = barTotalVol * 0.7;
+
+        while (includedVol < targetVa && (lowVaIdx > 0 || highVaIdx < sortedByPriceAsc.length - 1)) {
+            const prevVol = lowVaIdx > 0 ? sortedByPriceAsc[lowVaIdx - 1].totalVolume : -1;
+            const nextVol = highVaIdx < sortedByPriceAsc.length - 1 ? sortedByPriceAsc[highVaIdx + 1].totalVolume : -1;
+            if (nextVol >= prevVol && highVaIdx < sortedByPriceAsc.length - 1) {
+                highVaIdx++;
+                includedVol += sortedByPriceAsc[highVaIdx].totalVolume;
+            } else if (lowVaIdx > 0) {
+                lowVaIdx--;
+                includedVol += sortedByPriceAsc[lowVaIdx].totalVolume;
+            } else {
+                break;
+            }
+        }
+        const valPrice = sortedByPriceAsc[lowVaIdx]?.price ?? bar.low;
+        const vahPrice = sortedByPriceAsc[highVaIdx]?.price ?? bar.high;
         const totalDelta = cells.reduce((sum, c) => sum + c.delta, 0);
 
         return {
@@ -211,6 +268,9 @@ export function buildSkeletonExecutionBars(
             volume: bar.volume,
             delta: totalDelta,
             pocPrice,
+            vahPrice,
+            valPrice,
+            maxLevelVolume: barMaxVol,
             source,
             cells,
         };
@@ -245,8 +305,12 @@ export default function LeftFootprintExecutionPane({
     timeframeSeconds,
     trueFlowSnapshot,
     liquidityFrames,
+    visibleLogicalRange,
     hoveredPrice,
-    onHoverPriceChange,
+    hoveredTime,
+    onHoverCrosshair,
+    onPanRange,
+    onZoomBars,
     onClosePane,
     className,
 }: LeftFootprintExecutionPaneProps) {
@@ -254,9 +318,14 @@ export default function LeftFootprintExecutionPane({
     const hostRef = useRef<HTMLDivElement | null>(null);
     const [viewMode, setViewMode] = useState<LeftExecutionViewMode>('FOOTPRINT');
     const [visibleBarsCount, setVisibleBarsCount] = useState<number>(10);
-    const [lockCrosshair, setLockCrosshair] = useState<boolean>(true);
+    const [syncWithMain, setSyncWithMain] = useState<boolean>(true);
     const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 520, height: 460 });
     const [localHover, setLocalHover] = useState<{ x: number; y: number; price: number; barTime: number | null } | null>(null);
+
+    // Drag-to-pan tracking state
+    const isDraggingRef = useRef<boolean>(false);
+    const dragStartXRef = useRef<number>(0);
+    const dragAccumulatedBarsRef = useRef<number>(0);
 
     useEffect(() => {
         const el = hostRef.current;
@@ -272,8 +341,17 @@ export default function LeftFootprintExecutionPane({
     }, []);
 
     const { executionBars, bucketStep, minPrice, maxPrice } = useMemo(
-        () => buildSkeletonExecutionBars(bars, visibleBarsCount, timeframeSeconds, trueFlowSnapshot, liquidityFrames, 14),
-        [bars, liquidityFrames, timeframeSeconds, trueFlowSnapshot, visibleBarsCount],
+        () => buildSkeletonExecutionBars(
+            bars,
+            visibleBarsCount,
+            timeframeSeconds,
+            trueFlowSnapshot,
+            liquidityFrames,
+            14,
+            visibleLogicalRange,
+            syncWithMain,
+        ),
+        [bars, liquidityFrames, syncWithMain, timeframeSeconds, trueFlowSnapshot, visibleBarsCount, visibleLogicalRange],
     );
 
     const imbalanceCount = useMemo(
@@ -338,7 +416,7 @@ export default function LeftFootprintExecutionPane({
             ctx.fillText(p.toFixed(0), plotW + 6, y);
         }
 
-        // Global max cell volume & delta across visible bars for proportional bar scaling
+        // Global max cell volume & delta across visible bars
         let globalMaxVol = 1e-6;
         let globalMaxAbsDelta = 1e-6;
         for (const bar of executionBars) {
@@ -348,13 +426,13 @@ export default function LeftFootprintExecutionPane({
             }
         }
 
-        // Render each Skeleton Candle + Footprint / Delta Ladder / Heatmap column
+        // Render each Skeleton Candle + View Mode
         executionBars.forEach((bar, idx) => {
             const centerX = (idx + 0.5) * colW;
             const colLeft = idx * colW + 3;
             const colRight = (idx + 1) * colW - 3;
             const innerW = Math.max(16, colRight - colLeft);
-            const halfW = (innerW - 8) / 2; // Leave 8px center channel for the Skeleton Candle spine/body
+            const halfW = (innerW - 8) / 2;
 
             const isBull = bar.close >= bar.open;
             const spineColor = isBull ? '#27d3aa' : '#ef5d73';
@@ -385,15 +463,15 @@ export default function LeftFootprintExecutionPane({
                     const sellBarW = Math.max(2, sellFrac * halfW);
                     const buyBarW = Math.max(2, buyFrac * halfW);
 
-                    // Subtle row background
+                    // Row background
                     ctx.fillStyle = 'rgba(13, 20, 30, 0.78)';
                     ctx.fillRect(colLeft, top, innerW, h);
 
-                    // Left Sell bar (grows left from center spine)
+                    // Left Sell bar
                     ctx.fillStyle = cell.sellImbalance ? 'rgba(240, 97, 82, 0.55)' : 'rgba(239, 93, 115, 0.28)';
                     ctx.fillRect(centerX - 4 - sellBarW, top + 1, sellBarW, h - 2);
 
-                    // Right Buy bar (grows right from center spine)
+                    // Right Buy bar
                     ctx.fillStyle = cell.buyImbalance ? 'rgba(44, 199, 160, 0.55)' : 'rgba(39, 211, 170, 0.28)';
                     ctx.fillRect(centerX + 4, top + 1, buyBarW, h - 2);
 
@@ -418,7 +496,6 @@ export default function LeftFootprintExecutionPane({
                         : `rgba(239, 93, 115, ${alpha.toFixed(2)})`;
                     ctx.fillRect(colLeft, top + 0.5, innerW, h - 1);
 
-                    // Proportional delta bar fill from center spine
                     const barFillW = deltaFrac * halfW;
                     ctx.fillStyle = cell.delta >= 0 ? 'rgba(44, 199, 160, 0.45)' : 'rgba(240, 97, 82, 0.45)';
                     if (cell.delta >= 0) {
@@ -433,13 +510,41 @@ export default function LeftFootprintExecutionPane({
                         ctx.fillStyle = cell.delta >= 0 ? '#D4FFF2' : '#FFD9DE';
                         ctx.fillText(formatSignedDelta(cell.delta), centerX, cy + 0.5);
                     }
+                } else if (viewMode === 'CANDLE_VP') {
+                    // CANDLE_VP: Intra-bar Volume Profile Histogram inside this individual candle
+                    const volFrac = Math.min(1, cell.totalVolume / Math.max(bar.maxLevelVolume, 1e-6));
+                    const vpBarW = Math.max(2, volFrac * (innerW - 4));
+                    const inVa = cell.price >= bar.valPrice && cell.price <= bar.vahPrice;
+
+                    // Row background
+                    ctx.fillStyle = inVa ? 'rgba(57, 169, 245, 0.12)' : 'rgba(13, 20, 30, 0.72)';
+                    ctx.fillRect(colLeft, top, innerW, h);
+
+                    // Intra-bar profile histogram: two-tone buy/sell
+                    const upShare = cell.totalVolume > 0 ? cell.buyVolume / cell.totalVolume : 0.5;
+                    const buyW = vpBarW * upShare;
+                    const sellW = vpBarW * (1 - upShare);
+
+                    // Buy portion (emerald)
+                    ctx.fillStyle = inVa ? 'rgba(44, 199, 160, 0.72)' : 'rgba(39, 211, 170, 0.42)';
+                    ctx.fillRect(colLeft + 2, top + 1, buyW, h - 2);
+
+                    // Sell portion (rose)
+                    ctx.fillStyle = inVa ? 'rgba(240, 97, 82, 0.72)' : 'rgba(239, 93, 115, 0.42)';
+                    ctx.fillRect(colLeft + 2 + buyW, top + 1, sellW, h - 2);
+
+                    if (innerW >= 40 && h >= 10) {
+                        ctx.font = `${cell.isPoc ? 'bold ' : ''}9.5px "JetBrains Mono", monospace`;
+                        ctx.textAlign = 'right';
+                        ctx.fillStyle = inVa ? '#FFFFFF' : '#A0AEC0';
+                        ctx.fillText(formatQty(cell.totalVolume), colRight - 4, cy + 0.5);
+                    }
                 } else {
-                    // HEATMAP_IMBALANCE mode: Resting Liquidity Heatmap + Stacked Imbalance Markers
+                    // HEATMAP_IMBALANCE mode: Resting Liquidity Heatmap + Stacked Imbalances
                     const heatAlpha = 0.08 + cell.heatIntensity * 0.58;
                     ctx.fillStyle = `rgba(229, 168, 59, ${heatAlpha.toFixed(2)})`;
                     ctx.fillRect(colLeft, top + 0.5, innerW, h - 1);
 
-                    // Imbalance directional highlight
                     if (cell.buyImbalance) {
                         ctx.fillStyle = 'rgba(44, 199, 160, 0.48)';
                         ctx.fillRect(centerX + 3, top + 1, halfW, h - 2);
@@ -461,7 +566,7 @@ export default function LeftFootprintExecutionPane({
                     }
                 }
 
-                // Golden POC Box around the highest-volume cell in the bar
+                // Golden POC Box around highest-volume cell in this candle
                 if (cell.isPoc) {
                     ctx.strokeStyle = '#E5A83B';
                     ctx.lineWidth = 1.5;
@@ -469,8 +574,7 @@ export default function LeftFootprintExecutionPane({
                 }
             }
 
-            // 2. Render the ATAS-style "Skeleton Candle" along the central spine of the bar
-            // Thin vertical wick from High to Low
+            // 2. Render the ATAS-style "Skeleton Candle" down the central spine of the bar
             ctx.strokeStyle = spineColor;
             ctx.lineWidth = 1.5;
             ctx.beginPath();
@@ -478,9 +582,9 @@ export default function LeftFootprintExecutionPane({
             ctx.lineTo(centerX, lowY);
             ctx.stroke();
 
-            // Hollow / thin-framed Skeleton Candle Body between Open and Close (6px wide along the spine)
+            // Hollow 6px Skeleton Candle Body between Open and Close
             const skeletonBodyW = 6;
-            ctx.fillStyle = isBull ? 'rgba(39, 211, 170, 0.25)' : 'rgba(239, 93, 115, 0.25)';
+            ctx.fillStyle = isBull ? 'rgba(39, 211, 170, 0.28)' : 'rgba(239, 93, 115, 0.28)';
             ctx.fillRect(centerX - skeletonBodyW / 2, bodyTop, skeletonBodyW, bodyH);
             ctx.strokeStyle = spineColor;
             ctx.lineWidth = 1.4;
@@ -509,12 +613,12 @@ export default function LeftFootprintExecutionPane({
         ctx.lineTo(width, topPad + plotH);
         ctx.stroke();
 
-        // Synchronized Horizontal Price Crosshair (from either left pane hover or main chart hover)
-        const activePrice = localHover?.price ?? (lockCrosshair ? hoveredPrice : null);
+        // 4. Synchronized Horizontal Crosshair (Price Line & Axis Tag)
+        const activePrice = localHover?.price ?? (syncWithMain ? hoveredPrice : null);
         if (activePrice !== null && activePrice >= minPrice && activePrice <= maxPrice) {
             const cy = priceToY(activePrice);
             ctx.save();
-            ctx.strokeStyle = 'rgba(57, 169, 245, 0.75)';
+            ctx.strokeStyle = 'rgba(57, 169, 245, 0.85)';
             ctx.lineWidth = 1;
             ctx.setLineDash([4, 3]);
             ctx.beginPath();
@@ -532,11 +636,47 @@ export default function LeftFootprintExecutionPane({
             ctx.restore();
         }
 
-        // Convert mouse Y for hover handler
+        // 5. Synchronized Vertical Crosshair (Time Line on Matching Bar)
+        const activeTime = localHover?.barTime ?? (syncWithMain ? (hoveredTime ?? null) : null);
+        if (typeof activeTime === 'number') {
+            const matchIdx = executionBars.findIndex((b) => Math.abs(b.time - activeTime) <= timeframeSeconds * 0.7);
+            if (matchIdx >= 0) {
+                const cx = (matchIdx + 0.5) * colW;
+                ctx.save();
+                ctx.strokeStyle = 'rgba(57, 169, 245, 0.65)';
+                ctx.lineWidth = 1;
+                ctx.setLineDash([3, 3]);
+                ctx.beginPath();
+                ctx.moveTo(cx, topPad);
+                ctx.lineTo(cx, topPad + plotH + bottomFooterH);
+                ctx.stroke();
+                ctx.restore();
+            }
+        }
+
         (canvas as HTMLCanvasElement & { __yToPrice?: (y: number) => number }).__yToPrice = yToPrice;
 
         ctx.restore();
-    }, [bucketStep, dimensions, executionBars, hoveredPrice, localHover, lockCrosshair, maxPrice, minPrice, viewMode]);
+    }, [
+        bucketStep,
+        dimensions,
+        executionBars,
+        hoveredPrice,
+        hoveredTime,
+        localHover,
+        maxPrice,
+        minPrice,
+        syncWithMain,
+        timeframeSeconds,
+        viewMode,
+    ]);
+
+    function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+        isDraggingRef.current = true;
+        dragStartXRef.current = event.clientX;
+        dragAccumulatedBarsRef.current = 0;
+        event.currentTarget.setPointerCapture(event.pointerId);
+    }
 
     function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
         const canvas = canvasRef.current as (HTMLCanvasElement & { __yToPrice?: (y: number) => number }) | null;
@@ -544,21 +684,56 @@ export default function LeftFootprintExecutionPane({
         const rect = canvas.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
+
+        if (isDraggingRef.current) {
+            const dx = event.clientX - dragStartXRef.current;
+            const plotW = Math.max(60, dimensions.width - 58);
+            const colW = plotW / Math.max(1, executionBars.length);
+            const barShift = -Math.round(dx / Math.max(12, colW));
+
+            if (barShift !== 0 && barShift !== dragAccumulatedBarsRef.current) {
+                const delta = barShift - dragAccumulatedBarsRef.current;
+                dragAccumulatedBarsRef.current = barShift;
+                onPanRange?.(delta);
+            }
+            return;
+        }
+
         const rawPrice = canvas.__yToPrice(y);
         const snappedPrice = Math.round(rawPrice / bucketStep) * bucketStep;
         const plotW = Math.max(60, dimensions.width - 58);
         const colIdx = Math.min(executionBars.length - 1, Math.max(0, Math.floor((x / plotW) * executionBars.length)));
         const barTime = executionBars[colIdx]?.time ?? null;
+
         setLocalHover({ x, y, price: snappedPrice, barTime });
-        if (lockCrosshair) {
-            onHoverPriceChange?.(snappedPrice, barTime);
+        if (syncWithMain) {
+            onHoverCrosshair?.({ price: snappedPrice, time: barTime });
+        }
+    }
+
+    function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+        isDraggingRef.current = false;
+        try {
+            event.currentTarget.releasePointerCapture(event.pointerId);
+        } catch {
+            // ignore
         }
     }
 
     function handlePointerLeave() {
+        if (isDraggingRef.current) return;
         setLocalHover(null);
-        if (lockCrosshair) {
-            onHoverPriceChange?.(null, null);
+        if (syncWithMain) {
+            onHoverCrosshair?.({ price: null, time: null });
+        }
+    }
+
+    function handleWheel(event: React.WheelEvent<HTMLCanvasElement>) {
+        event.preventDefault();
+        const zoomDelta = event.deltaY < 0 ? -1 : 1;
+        setVisibleBarsCount((c) => Math.max(4, Math.min(30, c + zoomDelta)));
+        if (syncWithMain && onZoomBars) {
+            onZoomBars(zoomDelta);
         }
     }
 
@@ -572,12 +747,16 @@ export default function LeftFootprintExecutionPane({
             data-view-mode={viewMode}
             data-visible-bars={visibleBarsCount}
             data-bucket-step={bucketStep}
+            data-sync-with-main={syncWithMain}
         >
             <canvas
                 ref={canvasRef}
-                className="absolute inset-0 size-full cursor-crosshair"
+                className="absolute inset-0 size-full cursor-crosshair select-none"
+                onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
                 onPointerLeave={handlePointerLeave}
+                onWheel={handleWheel}
             />
 
             {/* Top Execution Controls Bar */}
@@ -587,6 +766,7 @@ export default function LeftFootprintExecutionPane({
                         type="button"
                         data-testid="exec-mode-footprint"
                         onClick={() => setViewMode('FOOTPRINT')}
+                        title="ATAS Bid x Ask Footprint Clusters"
                         className={cn(
                             'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
                             viewMode === 'FOOTPRINT'
@@ -601,6 +781,7 @@ export default function LeftFootprintExecutionPane({
                         type="button"
                         data-testid="exec-mode-delta-ladder"
                         onClick={() => setViewMode('DELTA_LADDER')}
+                        title="Colored Net Delta Ladder per Price Level"
                         className={cn(
                             'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
                             viewMode === 'DELTA_LADDER'
@@ -613,8 +794,24 @@ export default function LeftFootprintExecutionPane({
                     </button>
                     <button
                         type="button"
+                        data-testid="exec-mode-candle-vp"
+                        onClick={() => setViewMode('CANDLE_VP')}
+                        title="Intra-Bar Volume Profile Histogram per Candle with POC & Value Area"
+                        className={cn(
+                            'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
+                            viewMode === 'CANDLE_VP'
+                                ? 'bg-[#A855F7]/20 text-[#C084FC] ring-1 ring-[#A855F7]/40'
+                                : 'text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]',
+                        )}
+                    >
+                        <BarChart3 className="size-3" />
+                        <span>CANDLE VP</span>
+                    </button>
+                    <button
+                        type="button"
                         data-testid="exec-mode-heatmap-imbalance"
                         onClick={() => setViewMode('HEATMAP_IMBALANCE')}
+                        title="Resting Liquidity Depth Heatmap + Stacked Imbalances"
                         className={cn(
                             'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
                             viewMode === 'HEATMAP_IMBALANCE'
@@ -645,7 +842,10 @@ export default function LeftFootprintExecutionPane({
                             type="button"
                             title="Zoom in (fewer, wider skeleton candles)"
                             data-testid="exec-zoom-in"
-                            onClick={() => setVisibleBarsCount((c) => Math.max(5, c - 2))}
+                            onClick={() => {
+                                setVisibleBarsCount((c) => Math.max(4, c - 2));
+                                if (syncWithMain && onZoomBars) onZoomBars(-1);
+                            }}
                             className="p-1 text-[#8390A0] hover:text-white"
                         >
                             <ZoomIn className="size-3" />
@@ -655,7 +855,10 @@ export default function LeftFootprintExecutionPane({
                             type="button"
                             title="Zoom out (more skeleton candles)"
                             data-testid="exec-zoom-out"
-                            onClick={() => setVisibleBarsCount((c) => Math.min(22, c + 2))}
+                            onClick={() => {
+                                setVisibleBarsCount((c) => Math.min(30, c + 2));
+                                if (syncWithMain && onZoomBars) onZoomBars(1);
+                            }}
                             className="p-1 text-[#8390A0] hover:text-white"
                         >
                             <ZoomOut className="size-3" />
@@ -664,16 +867,18 @@ export default function LeftFootprintExecutionPane({
 
                     <button
                         type="button"
-                        title={lockCrosshair ? 'Price crosshair synced with main candlestick chart' : 'Price crosshair unlocked'}
-                        onClick={() => setLockCrosshair((v) => !v)}
+                        data-testid="exec-sync-toggle"
+                        title={syncWithMain ? 'Synced with main candlestick chart (Click to decouple)' : 'Independent navigation (Click to sync with main)'}
+                        onClick={() => setSyncWithMain((v) => !v)}
                         className={cn(
-                            'rounded border p-1',
-                            lockCrosshair
+                            'flex items-center gap-1 rounded border px-1.5 py-1',
+                            syncWithMain
                                 ? 'border-[#39A9F5]/40 bg-[#39A9F5]/15 text-[#39A9F5]'
                                 : 'border-[#18212C] text-[#8390A0]',
                         )}
                     >
-                        {lockCrosshair ? <Lock className="size-3" /> : <Unlock className="size-3" />}
+                        <RefreshCw className={cn('size-2.5', syncWithMain && 'text-[#39A9F5]')} />
+                        <span className="text-[8px] font-bold">{syncWithMain ? 'SYNCED' : 'UNSYNC'}</span>
                     </button>
 
                     {onClosePane && (

@@ -45,6 +45,7 @@ import CandleFootprintCanvasOverlay, {
     type ProjectedTradeVpLayout,
 } from './CandleFootprintCanvasOverlay';
 import LeftFootprintExecutionPane from './LeftFootprintExecutionPane';
+import FixedRangeVolumeProfileCanvas from './FixedRangeVolumeProfileCanvas';
 import type { FootprintZoomLevel } from './FootprintChartOverlay';
 import type { LiquidityDensityMode } from '../../lib/binance/liquidity-surface-contracts';
 import {
@@ -290,6 +291,8 @@ export default function MarketStructureChart({
     const [tradeVpPlacement, setTradeVpPlacement] = useState<ProfilePlacement>('RIGHT');
     const [onChartFlowOpacity, setOnChartFlowOpacity] = useState(85);
     const [syncedHoverPrice, setSyncedHoverPrice] = useState<number | null>(null);
+    const [syncedHoverTime, setSyncedHoverTime] = useState<number | null>(null);
+    const [visibleLogicalRangeState, setVisibleLogicalRangeState] = useState<{ from: number; to: number } | null>(null);
     const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState<number>(42);
     const [isResizingLeftPane, setIsResizingLeftPane] = useState<boolean>(false);
     const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
@@ -574,18 +577,19 @@ export default function MarketStructureChart({
             priceLineVisible: false, lastValueVisible: false, crosshairMarkerVisible: false,
         });
         const scheduleOverlayUpdate = () => {
-            if (overlayFrameRef.current !== null) return;
+            if (overlayFrameRef.current !== null) {
+                cancelAnimationFrame(overlayFrameRef.current);
+            }
             overlayFrameRef.current = requestAnimationFrame(() => {
-                overlayFrameRef.current = requestAnimationFrame(() => {
-                    overlayFrameRef.current = null;
-                    updateOverlayRef.current();
-                });
+                overlayFrameRef.current = null;
+                updateOverlayRef.current();
             });
         };
         const handleVisibleRangeChange = (rangeValue: LogicalRange | null) => {
             scheduleOverlayUpdate();
             if (rangeValue) {
                 lastKnownLogicalRangeRef.current = rangeValue;
+                setVisibleLogicalRangeState({ from: rangeValue.from, to: rangeValue.to });
                 if (chartSurfaceRef.current) {
                     chartSurfaceRef.current.dataset.visibleFrom = rangeValue.from.toFixed(4);
                     chartSurfaceRef.current.dataset.visibleTo = rangeValue.to.toFixed(4);
@@ -607,8 +611,10 @@ export default function MarketStructureChart({
             } else {
                 setSyncedHoverPrice(point?.close ?? null);
             }
-            if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = param.time ? String(param.time) : '';
-            if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = param.time ? String(param.time) : '';
+            const activeTime = param.time ? Number(param.time) : (point?.time ? Number(point.time) : null);
+            setSyncedHoverTime(activeTime);
+            if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = activeTime ? String(activeTime) : '';
+            if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = activeTime ? String(activeTime) : '';
             if (crosshairSyncRef.current) return;
             if (!param.time) {
                 cvdChartRef.current?.clearCrosshairPosition();
@@ -670,7 +676,7 @@ export default function MarketStructureChart({
             chart.timeScale().setVisibleLogicalRange(previousRange);
         }
         previousBarCountRef.current = bars.length;
-        requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
+        requestAnimationFrame(() => updateOverlayRef.current());
     }, [bars, chartContextKey]);
 
     useEffect(() => {
@@ -699,7 +705,7 @@ export default function MarketStructureChart({
         if (chartLayers.gammaFlip) lines.push(candles.createPriceLine({ price: gammaFlip, color: '#3da7ff', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'GAMMA FLIP' }));
         if (chartLayers.maxPain) lines.push(candles.createPriceLine({ price: maxPain, color: '#d6dae1', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'MAX PAIN' }));
         priceLinesRef.current = lines;
-        requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
+        requestAnimationFrame(() => updateOverlayRef.current());
     }, [callWall, chartLayers.gammaFlip, chartLayers.maxPain, chartLayers.secondaryWalls, chartLayers.walls, gammaFlip, maxPain, putWall, secondaryLevels]);
 
     useEffect(() => {
@@ -793,13 +799,9 @@ export default function MarketStructureChart({
                 return view ? [view] : [];
             }));
         };
-        let nestedFrame: number | null = null;
-        const frame = requestAnimationFrame(() => {
-            nestedFrame = requestAnimationFrame(() => updateOverlayRef.current());
-        });
+        const frame = requestAnimationFrame(() => updateOverlayRef.current());
         return () => {
             cancelAnimationFrame(frame);
-            if (nestedFrame !== null) cancelAnimationFrame(nestedFrame);
         };
     }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, drawingDraft, drawings, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
 
@@ -1019,7 +1021,7 @@ export default function MarketStructureChart({
         setStudyPaneHeight(STUDY_PANE_DEFAULT_HEIGHT);
         writePersistedStudyPaneHeight(STUDY_PANE_DEFAULT_HEIGHT);
         if (priceChartRef.current) showRecentBars(priceChartRef.current, bars.length);
-        requestAnimationFrame(() => requestAnimationFrame(() => updateOverlayRef.current()));
+        requestAnimationFrame(() => updateOverlayRef.current());
     }
 
     const drawingPointFromClient = useCallback((clientX: number, clientY: number): DrawingPoint | null => {
@@ -1043,6 +1045,67 @@ export default function MarketStructureChart({
         if (magnet && Math.abs(Number(magnet.coordinate) - y) <= 8) price = magnet.candidate;
         return { time: Number(bar.time), price };
     }, [bars]);
+
+    const handleLeftPaneCrosshair = useCallback((point: { price: number | null; time: number | null }) => {
+        setSyncedHoverPrice(point.price);
+        setSyncedHoverTime(point.time);
+
+        const main = priceChartRef.current;
+        const candles = priceSeriesRef.current;
+        if (!main || !candles) return;
+
+        if (point.price === null && point.time === null) {
+            main.clearCrosshairPosition();
+            cvdChartRef.current?.clearCrosshairPosition();
+            deltaChartRef.current?.clearCrosshairPosition();
+            if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = '';
+            if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = '';
+            return;
+        }
+
+        crosshairSyncRef.current = true;
+        if (point.price !== null && point.time !== null) {
+            main.setCrosshairPosition(point.price, point.time as any, candles);
+            if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = String(point.time);
+            if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = String(point.time);
+
+            const cvdPoint = cvdBarsRef.current.find((bar) => Number(bar.time) === Number(point.time));
+            if (cvdPoint && isCvdBar(cvdPoint) && cvdSeriesRef.current && cvdChartRef.current) {
+                cvdChartRef.current.setCrosshairPosition(cvdPoint.close, point.time as any, cvdSeriesRef.current);
+            }
+            const deltaPoint = deltaBarsRef.current.find((bar) => Number(bar.time) === Number(point.time));
+            if (deltaPoint && deltaSeriesRef.current && deltaChartRef.current) {
+                deltaChartRef.current.setCrosshairPosition(deltaPoint.value, point.time as any, deltaSeriesRef.current);
+            }
+        }
+        queueMicrotask(() => { crosshairSyncRef.current = false; });
+    }, []);
+
+    const handlePanRangeFromLeftPane = useCallback((deltaBars: number) => {
+        const main = priceChartRef.current;
+        if (!main) return;
+        const currentRange = main.timeScale().getVisibleLogicalRange();
+        if (!currentRange) return;
+        main.timeScale().setVisibleLogicalRange({
+            from: currentRange.from + deltaBars,
+            to: currentRange.to + deltaBars,
+        });
+    }, []);
+
+    const handleZoomBarsFromLeftPane = useCallback((deltaZoom: number) => {
+        const main = priceChartRef.current;
+        if (!main) return;
+        const currentRange = main.timeScale().getVisibleLogicalRange();
+        if (!currentRange) return;
+        const span = currentRange.to - currentRange.from;
+        const zoomStep = Math.max(1, Math.round(span * 0.15));
+        const change = deltaZoom > 0 ? zoomStep : -zoomStep;
+        const newFrom = currentRange.from - change;
+        const newTo = currentRange.to + change;
+        if (newTo - newFrom >= 4) {
+            main.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
+        }
+    }, []);
 
     function handleDrawing(event: React.PointerEvent<HTMLDivElement>) {
         if (activeTool === 'cursor') return;
@@ -1353,9 +1416,12 @@ export default function MarketStructureChart({
                                 timeframeSeconds={TIMEFRAME_SECONDS[timeframe]}
                                 trueFlowSnapshot={trueFlowSnapshot}
                                 liquidityFrames={liquidityFeed.frames}
+                                visibleLogicalRange={visibleLogicalRangeState}
                                 hoveredPrice={syncedHoverPrice}
-                                hoveredTime={lastBar ? Number(lastBar.time) : null}
-                                onHoverPriceChange={(price) => setSyncedHoverPrice(price)}
+                                hoveredTime={syncedHoverTime}
+                                onHoverCrosshair={handleLeftPaneCrosshair}
+                                onPanRange={handlePanRangeFromLeftPane}
+                                onZoomBars={handleZoomBarsFromLeftPane}
                                 onClosePane={() => toggleChartLayer('leftExecutionPane')}
                             />
                         </div>
@@ -1450,19 +1516,20 @@ export default function MarketStructureChart({
                     data-right-coordinate={overlayLayout.profileRightX ?? ''}
                 >
                     {valueAreaTop !== null && <div className="pointer-events-none absolute inset-x-0 bg-sky-400/[0.045]" style={{ top: valueAreaTop, height: valueAreaHeight, opacity: profileOpacityPercent / 100 }} />}
-                    <div className="pointer-events-none absolute inset-0" style={{ opacity: profileOpacityPercent / 100 }} data-testid="fixed-range-vp-bars">
-                        {profile.map((row, idx) => {
-                            const y = overlayLayout.profileRows[idx]?.y;
-                            if (y === undefined) return null;
-                            const metric = profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume;
-                            const width = (metric / maxProfile) * profileWidthPercent;
-                            const inValueArea = profileLevels !== null && row.price >= profileLevels.val && row.price <= profileLevels.vah;
-                            const placementClass = profilePlacement === 'RIGHT' ? 'right-0 justify-end' : 'left-0 justify-start';
-                            if (profileVolumeMode === 'TOTAL') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', inValueArea ? 'bg-sky-300/85' : 'bg-sky-500/55')} /></div>;
-                            if (profileVolumeMode === 'DELTA') return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={cn('size-full', row.delta >= 0 ? inValueArea ? 'bg-cyan-300/90' : 'bg-cyan-500/60' : inValueArea ? 'bg-rose-300/90' : 'bg-rose-500/60')} /></div>;
-                            return <div key={row.price} className={cn('pointer-events-none absolute flex', placementClass)} style={{ top: y, width: `${width}%`, height: profileRowHeight, transform: 'translateY(-50%)' }}><span className={inValueArea ? 'bg-rose-300/85' : 'bg-rose-500/55'} style={{ width: `${(1 - row.upShare) * 100}%` }} /><span className={inValueArea ? 'bg-cyan-300/90' : 'bg-cyan-500/65'} style={{ width: `${row.upShare * 100}%` }} /></div>;
-                        })}
-                    </div>
+                    <FixedRangeVolumeProfileCanvas
+                        profile={profile}
+                        profileRows={overlayLayout.profileRows}
+                        maxProfile={maxProfile}
+                        profileWidthPercent={profileWidthPercent}
+                        profileRowHeight={profileRowHeight}
+                        profilePlacement={profilePlacement}
+                        profileVolumeMode={profileVolumeMode}
+                        profileLevels={profileLevels}
+                        opacityPercent={profileOpacityPercent}
+                        width={profileWidth}
+                        height={overlayLayout.height}
+                        className="pointer-events-none absolute inset-0"
+                    />
                     {[
                         ['VAH', profileLevels?.vah, overlayLayout.vahY, 'border-sky-300/50 text-sky-200'],
                         ['POC', profileLevels?.poc, overlayLayout.pocY, 'border-rose-300/70 text-rose-300'],
