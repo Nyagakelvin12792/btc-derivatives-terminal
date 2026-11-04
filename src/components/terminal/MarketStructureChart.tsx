@@ -33,6 +33,14 @@ import {
     createDemoVolumeProfile,
     type DemoMarketBar,
 } from '../../lib/ui/market-fixtures';
+import { buildAvwapPrefixSums, computeAvwapFromPrefixSums } from '../../lib/indicators/avwap-prefix-sums';
+import {
+    avwapReducer,
+    findNearestBarIndexByTime,
+    loadPersistedAvwapAnchor,
+    savePersistedAvwapAnchor,
+    type AvwapAnchorConfig,
+} from '../../lib/indicators/avwap-state-machine';
 import { TIMEFRAME_SECONDS, type ChartTimeframe, type ChartTool } from './types';
 import ChartDrawingLayer from './ChartDrawingLayer';
 import LiquidityHeatmapOverlay, {
@@ -296,7 +304,15 @@ export default function MarketStructureChart({
     });
     const [studyPaneHeight, setStudyPaneHeight] = useState<number>(() => readPersistedStudyPaneHeight());
     const [range, setRange] = useState<ProfileRange | null>(null);
-    const [anchorIndex, setAnchorIndex] = useState(66);
+    const [avwapConfig, setAvwapConfig] = useState<AvwapAnchorConfig>(() => {
+        const persisted = loadPersistedAvwapAnchor();
+        return {
+            anchorTime: persisted?.anchorTime ?? 0,
+            isManual: persisted?.isManual ?? false,
+            interactionState: 'IDLE',
+            provisionalTime: null,
+        };
+    });
     const [profileRowCount, setProfileRowCount] = useState(1000);
     const [profileWidthPercent, setProfileWidthPercent] = useState(40);
     const [profileValueAreaPercent, setProfileValueAreaPercent] = useState(70);
@@ -342,6 +358,9 @@ export default function MarketStructureChart({
     const [hoverBar, setHoverBar] = useState<DemoMarketBar | null>(null);
     const [drawingStatus, setDrawingStatus] = useState('');
     const dragOriginRef = useRef<{ logical: number; start: number; end: number } | null>(null);
+    const pendingHoverRafRef = useRef<number | null>(null);
+    const drawingDragRafRef = useRef<number | null>(null);
+    const pendingDrawingDragPointRef = useRef<{ clientX: number; clientY: number } | null>(null);
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
@@ -451,6 +470,7 @@ export default function MarketStructureChart({
     const liveBars = useMemo<DemoMarketBar[]>(() => marketFeed.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [marketFeed.candles]);
     const allBars = dataMode === 'DEMO' ? demoBars : liveBars;
     const bars = useMemo(() => replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, replayActive]);
+    const barTimes = useMemo(() => bars.map((b) => Number(b.time)), [bars]);
     const resolvedCvdAnchor = useMemo<CvdAnchor>(() => {
         if (cvdAnchor !== 'AUTO') return cvdAnchor;
         if (timeframe === '1D') return 'UTC_MONTH';
@@ -488,7 +508,16 @@ export default function MarketStructureChart({
     const profileStartIndex = Math.min(rangeStartIndex, rangeEndIndex);
     const profileEndIndex = extendProfileRight ? Math.max(0, bars.length - 1) : Math.max(rangeStartIndex, rangeEndIndex);
     const selectedBarCount = bars.length ? profileEndIndex - profileStartIndex + 1 : 0;
-    const avwapBands = useMemo(() => createDemoAvwapBands(bars, Math.min(anchorIndex, bars.length - 1)), [bars, anchorIndex]);
+    const activeAnchorTime = avwapConfig.provisionalTime ?? avwapConfig.anchorTime;
+    const anchorIndex = useMemo(() => {
+        if (!bars.length) return 0;
+        if (activeAnchorTime === 0) return Math.max(0, bars.length - 127);
+        return findNearestBarIndexByTime(bars, activeAnchorTime);
+    }, [bars, activeAnchorTime]);
+
+    // O(N) precomputed prefix sums table + O(1) per bar evaluation
+    const avwapPrefixSums = useMemo(() => buildAvwapPrefixSums(bars), [bars]);
+    const avwapBands = useMemo(() => computeAvwapFromPrefixSums(avwapPrefixSums, anchorIndex, bars), [avwapPrefixSums, anchorIndex, bars]);
     const selectedStartTime = bars[profileStartIndex] ? Number(bars[profileStartIndex].time) : null;
     const selectedEndTime = bars[profileEndIndex] ? Number(bars[profileEndIndex].time) : null;
 
@@ -613,8 +642,7 @@ export default function MarketStructureChart({
                 setRange((prev) => prev ? { ...prev, endTime: nowSec } : prev);
             }
         }
-        const endIdx = bars.length - 1;
-        setAnchorIndex(Math.max(0, endIdx - 126));
+        
     }, [bars, calculateRangeForApproach, extendProfileRight, vpApproachMode, range]);
 
     useEffect(() => {
@@ -1039,7 +1067,10 @@ export default function MarketStructureChart({
                 const next = Math.max(index, profileStartIndex + 1);
                 setRange((current) => current && ({ ...current, endTime: Number(bars[Math.min(bars.length - 1, next)].time) }));
             }
-            if (dragTarget === 'anchor') setAnchorIndex(index);
+            if (dragTarget === 'anchor') {
+                const nextAnchorTime = Number(bars[index].time);
+                setAvwapConfig((prev) => avwapReducer(prev, { type: 'DRAG_MOVE', timestamp: nextAnchorTime }));
+            }
             if (dragTarget === 'range-body' && dragOriginRef.current) {
                 const delta = Math.round(logical - dragOriginRef.current.logical);
                 const width = dragOriginRef.current.end - dragOriginRef.current.start;
@@ -1047,7 +1078,17 @@ export default function MarketStructureChart({
                 setRange({ startTime: Number(bars[start].time), endTime: Number(bars[start + width].time) });
             }
         };
-        const up = () => { setDragTarget(null); dragOriginRef.current = null; };
+        const up = () => {
+            if (dragTarget === 'anchor') {
+                setAvwapConfig((prev) => {
+                    const next = avwapReducer(prev, { type: 'COMMIT_DRAG' });
+                    savePersistedAvwapAnchor(next.anchorTime);
+                    return next;
+                });
+            }
+            setDragTarget(null);
+            dragOriginRef.current = null;
+        };
         window.addEventListener('pointermove', move);
         window.addEventListener('pointerup', up, { once: true });
         return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
@@ -1094,7 +1135,16 @@ export default function MarketStructureChart({
         const end = bars.length - 1;
         const start = Math.max(0, end - 999);
         setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
-        setAnchorIndex(Math.max(0, end - 126));
+        if (bars.length) {
+            const resetTime = Number(bars[Math.max(0, end - 126)].time);
+            setAvwapConfig({
+                anchorTime: resetTime,
+                isManual: false,
+                interactionState: 'IDLE',
+                provisionalTime: null,
+            });
+            savePersistedAvwapAnchor(resetTime);
+        }
         setDrawings([]);
         setDrawingDraft(null);
         setSelectedDrawingId(null);
@@ -1810,7 +1860,19 @@ export default function MarketStructureChart({
                     </div>
                 )}
 
-                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={(event) => { event.stopPropagation(); if (!objectLocked) setDragTarget('anchor'); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
+                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={(event) => {
+                    event.stopPropagation();
+                    if (!objectLocked) {
+                        try { (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); } catch {}
+                        setAvwapConfig((prev) => avwapReducer(prev, { type: 'START_DRAG' }));
+                        setDragTarget('anchor');
+                    }
+                    setSelectedObject('AVWAP');
+                    setSelectedDrawingId(null);
+                }}
+                onPointerUp={(event) => {
+                    try { (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId); } catch {}
+                }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
 
                 {selectedObject && ((selectedObject === 'VP' && chartLayers.volumeProfile) || (selectedObject === 'AVWAP' && chartLayers.avwap)) && <div
                     className="absolute left-1/2 top-11 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg"

@@ -343,7 +343,9 @@ export default function LeftFootprintExecutionPane({
     className,
 }: LeftFootprintExecutionPaneProps) {
     const canvasRef = useRef<HTMLCanvasElement | null>(null);
+    const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
     const hostRef = useRef<HTMLDivElement | null>(null);
+    const yToPriceRef = useRef<((y: number) => number) | null>(null);
     const [viewMode, setViewMode] = useState<LeftExecutionViewMode>('FOOTPRINT');
     const [visibleBarsCount, setVisibleBarsCount] = useState<number>(10);
     const [syncWithMain, setSyncWithMain] = useState<boolean>(true);
@@ -652,7 +654,54 @@ export default function LeftFootprintExecutionPane({
         ctx.lineTo(width, topPad + plotH);
         ctx.stroke();
 
-        // 4. Synchronized Horizontal Crosshair (Price Line & Axis Tag)
+        yToPriceRef.current = yToPrice;
+        (canvas as HTMLCanvasElement & { __yToPrice?: (y: number) => number }).__yToPrice = yToPrice;
+
+        ctx.restore();
+    }, [
+        bucketStep,
+        dimensions,
+        executionBars,
+        maxPrice,
+        minPrice,
+        viewMode,
+    ]);
+
+    // Fast-path Layer 1: Dedicated crosshair and hover overlay canvas (Zero cell redraw on hover)
+    useEffect(() => {
+        const overlay = overlayCanvasRef.current;
+        if (!overlay) return;
+        const { width, height } = dimensions;
+        if (width <= 0 || height <= 0) return;
+
+        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
+        if (overlay.width !== Math.floor(width * dpr) || overlay.height !== Math.floor(height * dpr)) {
+            overlay.width = Math.floor(width * dpr);
+            overlay.height = Math.floor(height * dpr);
+        }
+
+        const ctx = overlay.getContext('2d');
+        if (!ctx) return;
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, width, height);
+
+        const topPad = 36;
+        const bottomFooterH = 44;
+        const rightAxisW = 58;
+        const plotW = Math.max(60, width - rightAxisW);
+        const plotH = Math.max(60, height - topPad - bottomFooterH);
+
+        if (!executionBars.length || maxPrice <= minPrice) {
+            ctx.restore();
+            return;
+        }
+
+        const priceSpan = Math.max(bucketStep, maxPrice - minPrice);
+        const priceToY = (p: number) => topPad + ((maxPrice - p) / priceSpan) * plotH;
+        const colW = plotW / executionBars.length;
+
+        // 1. Synchronized Horizontal Crosshair (Price Line & Axis Tag)
         const activePrice = localHover?.price ?? (syncWithMain ? hoveredPrice : null);
         if (activePrice !== null && activePrice >= minPrice && activePrice <= maxPrice) {
             const cy = priceToY(activePrice);
@@ -675,7 +724,7 @@ export default function LeftFootprintExecutionPane({
             ctx.restore();
         }
 
-        // 5. Synchronized Vertical Crosshair (Time Line on Matching Bar)
+        // 2. Synchronized Vertical Crosshair (Time Line on Matching Bar)
         const activeTime = localHover?.barTime ?? (syncWithMain ? (hoveredTime ?? null) : null);
         if (typeof activeTime === 'number') {
             const matchIdx = executionBars.findIndex((b) => Math.abs(b.time - activeTime) <= timeframeSeconds * 0.7);
@@ -693,8 +742,6 @@ export default function LeftFootprintExecutionPane({
             }
         }
 
-        (canvas as HTMLCanvasElement & { __yToPrice?: (y: number) => number }).__yToPrice = yToPrice;
-
         ctx.restore();
     }, [
         bucketStep,
@@ -707,7 +754,6 @@ export default function LeftFootprintExecutionPane({
         minPrice,
         syncWithMain,
         timeframeSeconds,
-        viewMode,
     ]);
 
     function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
@@ -731,17 +777,17 @@ export default function LeftFootprintExecutionPane({
     }
 
     function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
-        const canvas = canvasRef.current as (HTMLCanvasElement & { __yToPrice?: (y: number) => number }) | null;
-        if (!canvas || !canvas.__yToPrice) return;
-        const rect = canvas.getBoundingClientRect();
+        const overlay = overlayCanvasRef.current;
+        if (!overlay || !yToPriceRef.current) return;
+        const rect = overlay.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
         const plotW = Math.max(60, dimensions.width - 58);
 
         if (x >= plotW) {
-            canvas.style.cursor = 'ns-resize';
+            overlay.style.cursor = 'ns-resize';
         } else {
-            canvas.style.cursor = 'crosshair';
+            overlay.style.cursor = 'crosshair';
         }
 
         if (isDraggingPriceAxisRef.current) {
@@ -764,7 +810,7 @@ export default function LeftFootprintExecutionPane({
             return;
         }
 
-        const rawPrice = canvas.__yToPrice(y);
+        const rawPrice = yToPriceRef.current(y);
         const snappedPrice = Math.round(rawPrice / bucketStep) * bucketStep;
         const colIdx = Math.min(executionBars.length - 1, Math.max(0, Math.floor((x / plotW) * executionBars.length)));
         const barTime = executionBars[colIdx]?.time ?? null;
@@ -845,8 +891,14 @@ export default function LeftFootprintExecutionPane({
             data-bucket-step={bucketStep}
             data-sync-with-main={syncWithMain}
         >
+            {/* Layer 0: Heavy Footprint Cells & ATAS Skeleton Candles (Redraws only on data change) */}
             <canvas
                 ref={canvasRef}
+                className="absolute inset-0 size-full pointer-events-none"
+            />
+            {/* Layer 1: High-Performance Crosshair & Hover Overlay (Zero cell redraw on hover) */}
+            <canvas
+                ref={overlayCanvasRef}
                 className="absolute inset-0 size-full cursor-crosshair select-none"
                 onPointerDown={handlePointerDown}
                 onPointerMove={handlePointerMove}
