@@ -420,7 +420,7 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
     });
 
     describe('TradingSessionsOverlay & Trading Sessions Calculation', () => {
-        it('calculates Tokyo, London, New York and Overlap session boxes across market bars', () => {
+        it('calculates AS, LON, and NY session boxes cleanly bounded to session end', () => {
             const demoBars = createDemoMarketBars(77900, 288, 300); // 24 hours of 5m bars
             const sessions = calculateTradingSessions(demoBars);
 
@@ -428,11 +428,17 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             expect(sessions.some((s) => s.session === 'ASIA')).toBe(true);
             expect(sessions.some((s) => s.session === 'LONDON')).toBe(true);
             expect(sessions.some((s) => s.session === 'NEW_YORK')).toBe(true);
-            expect(sessions.some((s) => s.session === 'OVERLAP')).toBe(true);
 
             const asia = sessions.find((s) => s.session === 'ASIA')!;
+            expect(asia.label).toBe('AS');
             expect(asia.high).toBeGreaterThanOrEqual(asia.low);
             expect(asia.range).toBe(asia.high - asia.low);
+
+            const london = sessions.find((s) => s.session === 'LONDON')!;
+            expect(london.label).toBe('LON');
+
+            const ny = sessions.find((s) => s.session === 'NEW_YORK')!;
+            expect(ny.label).toBe('NY');
 
             const html = renderToStaticMarkup(
                 <TradingSessionsOverlay

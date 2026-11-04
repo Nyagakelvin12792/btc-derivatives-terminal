@@ -35,47 +35,36 @@ export interface SessionSchedule {
 export const SESSION_SCHEDULES: SessionSchedule[] = [
     {
         session: 'ASIA',
-        label: 'ASIA',
+        label: 'AS',
         startHour: 0,
         startMinute: 0,
         endHour: 9,
         endMinute: 0,
-        fillColor: 'rgba(168, 85, 247, 0.08)',
-        borderColor: 'rgba(168, 85, 247, 0.45)',
+        fillColor: 'rgba(168, 85, 247, 0.05)',
+        borderColor: 'rgba(168, 85, 247, 0.35)',
         tagColor: '#C084FC',
     },
     {
         session: 'LONDON',
-        label: 'LONDON',
+        label: 'LON',
         startHour: 7,
         startMinute: 0,
         endHour: 16,
         endMinute: 30,
-        fillColor: 'rgba(14, 165, 233, 0.08)',
-        borderColor: 'rgba(14, 165, 233, 0.45)',
+        fillColor: 'rgba(14, 165, 233, 0.05)',
+        borderColor: 'rgba(14, 165, 233, 0.35)',
         tagColor: '#38BDF8',
     },
     {
         session: 'NEW_YORK',
-        label: 'NEW YORK',
+        label: 'NY',
         startHour: 13,
         startMinute: 0,
         endHour: 21,
         endMinute: 0,
-        fillColor: 'rgba(245, 158, 11, 0.08)',
-        borderColor: 'rgba(245, 158, 11, 0.45)',
+        fillColor: 'rgba(245, 158, 11, 0.05)',
+        borderColor: 'rgba(245, 158, 11, 0.35)',
         tagColor: '#FBBF24',
-    },
-    {
-        session: 'OVERLAP',
-        label: 'LDN / NY OVERLAP',
-        startHour: 13,
-        startMinute: 0,
-        endHour: 16,
-        endMinute: 30,
-        fillColor: 'rgba(39, 211, 170, 0.12)',
-        borderColor: 'rgba(39, 211, 170, 0.65)',
-        tagColor: '#27D3AA',
     },
 ];
 
@@ -88,8 +77,8 @@ export function calculateTradingSessions(
 ): TradingSessionBox[] {
     if (!bars.length) return [];
 
-    const includeOverlap = options?.includeOverlap ?? true;
-    const maxDays = options?.maxDays ?? 14;
+    const includeOverlap = options?.includeOverlap ?? false;
+    const maxDays = options?.maxDays ?? 3;
 
     // Find min and max timestamps
     const firstBar = bars[0];

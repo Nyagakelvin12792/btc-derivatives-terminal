@@ -9,7 +9,6 @@ export interface TradingSessionsOverlayProps {
     priceToY: (price: number) => number | null;
     width: number;
     height: number;
-    showExtendedRays?: boolean;
     opacityPercent?: number;
     className?: string;
 }
@@ -20,7 +19,6 @@ export default function TradingSessionsOverlay({
     priceToY,
     width,
     height,
-    showExtendedRays = true,
     opacityPercent = 90,
     className,
 }: TradingSessionsOverlayProps) {
@@ -50,7 +48,7 @@ export default function TradingSessionsOverlay({
         const alphaMultiplier = Math.max(0.1, Math.min(1, opacityPercent / 100));
         ctx.globalAlpha = alphaMultiplier;
 
-        // Render sessions from oldest to newest, so overlaps layer properly
+        // Render sessions from oldest to newest
         for (const session of sessions) {
             const rawX1 = timeToX(session.startTime);
             const rawX2 = timeToX(session.endTime);
@@ -78,65 +76,29 @@ export default function TradingSessionsOverlay({
                 continue;
             }
 
-            // 1. Fill Box
+            // 1. Fill Box (ends strictly at the end of the session)
             ctx.fillStyle = session.fillColor;
             ctx.fillRect(left, top, boxWidth, boxHeight);
 
-            // 2. Dashed Border
+            // 2. Clean Dashed Border (ends strictly at the end of the session)
             ctx.save();
             ctx.strokeStyle = session.borderColor;
-            ctx.lineWidth = session.session === 'OVERLAP' ? 1.5 : 1;
-            ctx.setLineDash([4, 3]);
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
             ctx.strokeRect(left, top, boxWidth, boxHeight);
             ctx.restore();
 
-            // 3. Session Tag & Range Header
-            const tagText = `${session.label} $${session.range.toFixed(0)}`;
-            ctx.font = 'bold 9px "JetBrains Mono", monospace';
-            const textMetrics = ctx.measureText(tagText);
-            const badgeW = textMetrics.width + 10;
-            const badgeH = 14;
-
-            const badgeX = Math.max(4, Math.min(width - badgeW - 4, left + 4));
-            const badgeY = Math.max(4, Math.min(height - badgeH - 4, top + 3));
-
+            // 3. Clean minimal label: AS, LON, NY (no price, no bulky badges)
             ctx.save();
-            ctx.fillStyle = 'rgba(7, 12, 19, 0.92)';
-            ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
-            ctx.strokeStyle = session.borderColor;
-            ctx.lineWidth = 1;
-            ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
-
+            ctx.font = 'bold 9px "JetBrains Mono", monospace';
             ctx.fillStyle = session.tagColor;
-            ctx.textBaseline = 'middle';
-            ctx.fillText(tagText, badgeX + 5, badgeY + badgeH / 2);
+            ctx.textBaseline = 'top';
+            ctx.fillText(session.label, left + 4, top + 3);
             ctx.restore();
-
-            // 4. Extended High / Low Rays for previous sessions
-            if (showExtendedRays && !session.isCurrent && right < width) {
-                ctx.save();
-                ctx.strokeStyle = session.borderColor;
-                ctx.lineWidth = 0.8;
-                ctx.setLineDash([2, 4]);
-
-                // High ray
-                ctx.beginPath();
-                ctx.moveTo(right, top);
-                ctx.lineTo(Math.min(width, right + 180), top);
-                ctx.stroke();
-
-                // Low ray
-                ctx.beginPath();
-                ctx.moveTo(right, bottom);
-                ctx.lineTo(Math.min(width, right + 180), bottom);
-                ctx.stroke();
-
-                ctx.restore();
-            }
         }
 
         ctx.restore();
-    }, [sessions, timeToX, priceToY, width, height, showExtendedRays, opacityPercent]);
+    }, [sessions, timeToX, priceToY, width, height, opacityPercent]);
 
     return (
         <canvas

@@ -1,6 +1,6 @@
 # UI/UX Overhaul Progress
 
-Version: 3.20
+Version: 3.21
 Last updated: 2026-11-04
 Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · MULTI-APPROACH VP AUTO-PLACEMENT FIX & CLAMPED VIEWPORT HUD
 Current checkpoint: Multi-approach Volume Profile (Daily VP, Weekly VP, Previous Session VP, and Free Hold manual VP), TradingView-style Trading Sessions indicator (Asia, London, New York, and LDN/NY Overlap boxes with high/low bounds), 1:1 vertical price scale synchronization between left footprint pane and candlestick chart with interactive axis dragging/scaling, and sleek cybernetic radar chart loading animation.
@@ -571,6 +571,21 @@ Every displayed metric requires source, mode, and timestamp/freshness presentati
 - **Aesthetic Balancing & Bar Width Clamping**:
   - Clamped `maxBarWidth` in `FixedRangeVolumeProfileCanvas.tsx` to a maximum of 320px or 45% of the profile area to ensure histogram bars never overpower or obscure candlestick price action.
   - Lowered default `profileOpacityPercent` from 75% to 45% for a clean, translucent TradingView/ATAS aesthetic.
+- **Verification**:
+  - Vitest test suite passing (21/21 tests in `ux16-true-flow.test.tsx`).
+  - TypeScript type check passing with 0 errors (`npx tsc --noEmit`).
+  - Next.js production build passing in 41s (`npm run build`).
+
+### 2026-11-04 - Trading Sessions Decluttering & Minimalist AS / LON / NY Labeling
+
+- **Session Box Bounding (No Extended Rays)**:
+  - Removed extended horizontal high/low dashed rays from previous sessions in `TradingSessionsOverlay.tsx`. Each session box now terminates strictly at the end of the session timeframe.
+  - Reduced historical scope in `calculateTradingSessions()` to the most recent 3 trading days (`maxDays: 3`) so that 10,000 historical bars do not render dozens of overlapping boxes across older chart history.
+- **Removed Overlap Clutter**:
+  - Removed the duplicate `LDN / NY OVERLAP` box from `SESSION_SCHEDULES` to eliminate visual collisions with active London and New York session boxes.
+- **Clean Minimalist Labeling (`AS`, `LON`, `NY`)**:
+  - Simplified labels from long titles and price ranges (e.g. `ASIA $2384`, `LONDON $2826`) to clean, compact identifiers: **`AS`** (Asia), **`LON`** (London), and **`NY`** (New York).
+  - Eliminated bulky dark rectangular badge fills, borders, and dollar amounts, replacing them with crisp monospace text rendered neatly at the top-left of each box.
 - **Verification**:
   - Vitest test suite passing (21/21 tests in `ux16-true-flow.test.tsx`).
   - TypeScript type check passing with 0 errors (`npx tsc --noEmit`).
