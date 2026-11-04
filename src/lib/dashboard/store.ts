@@ -4,9 +4,7 @@ import { WorkspaceTab } from '@/lib/dashboard/types';
 import { TerrainSurfaceCell } from '@/lib/terrain/types';
 import { resolveUx16PublicFeatureFlags } from '../orderflow/feature-flags';
 
-const calmWorkspaceEnabled = resolveUx16PublicFeatureFlags({
-    NEXT_PUBLIC_UX16_CALM_WORKSPACE: process.env.NEXT_PUBLIC_UX16_CALM_WORKSPACE,
-}).calmWorkspace;
+const calmWorkspaceEnabled = process.env.NEXT_PUBLIC_UX16_CALM_WORKSPACE !== 'false';
 
 export type WorkspaceMode = 'CONTEXT' | 'FLOW' | 'SETUP';
 

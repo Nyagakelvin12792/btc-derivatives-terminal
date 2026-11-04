@@ -20,11 +20,12 @@ const ux16Flags = resolveUx16PublicFeatureFlags({
 });
 
 /**
- * UX16.0 is an opt-in presentation shell. When its flag is absent or false,
- * the previously accepted terminal remains the safe fallback.
+ * UX17: CalmMarketTerminal is the authoritative institutional minimalist workspace.
+ * LegacyMarketTerminal is retained strictly as an explicit opt-out fallback.
  */
 export default function MarketTerminal(props: MarketTerminalProps) {
-    return ux16Flags.calmWorkspace
-        ? <CalmMarketTerminal {...props} />
-        : <LegacyMarketTerminal {...props} />;
+    const isLegacyOptOut = process.env.NEXT_PUBLIC_UX16_CALM_WORKSPACE === 'false';
+    return isLegacyOptOut
+        ? <LegacyMarketTerminal {...props} />
+        : <CalmMarketTerminal {...props} />;
 }
