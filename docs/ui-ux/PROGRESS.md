@@ -1,8 +1,8 @@
 # UI/UX Overhaul Progress
 
-Version: 3.21
+Version: 3.22
 Last updated: 2026-11-04
-Overall status: UX16.0–UX16.8 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED / 60.0% ACCEPTED) · MULTI-APPROACH VP AUTO-PLACEMENT FIX & CLAMPED VIEWPORT HUD
+Overall status: UX16.0–UX16.8 & UX17.0–UX17.11 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED) · MINIMALIST INSTITUTIONAL WORKSPACE & PROJECT CONTROL INTEGRATION
 Current checkpoint: Multi-approach Volume Profile (Daily VP, Weekly VP, Previous Session VP, and Free Hold manual VP), TradingView-style Trading Sessions indicator (Asia, London, New York, and LDN/NY Overlap boxes with high/low bounds), 1:1 vertical price scale synchronization between left footprint pane and candlestick chart with interactive axis dragging/scaling, and sleek cybernetic radar chart loading animation.
 
 ## Scope Statement

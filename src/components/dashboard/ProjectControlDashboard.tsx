@@ -20,6 +20,8 @@ export default function ProjectControlDashboard({
     const [data, setData] = useState<ProjectControlResponseV1 | null>(initialData);
     const [loading, setLoading] = useState<boolean>(!initialData);
     const [error, setError] = useState<string | null>(null);
+    const [autoSyncEnabled, setAutoSyncEnabled] = useState<boolean>(true);
+    const [lastSyncedAt, setLastSyncedAt] = useState<string | null>(initialData?.progress.generatedAt ?? null);
 
     const [activeTab, setActiveTab] = useState<'MILESTONES' | 'SPEND'>('MILESTONES');
     const [expandedMilestoneIds, setExpandedMilestoneIds] = useState<Record<string, boolean>>({
@@ -43,6 +45,7 @@ export default function ProjectControlDashboard({
             const parsed = ProjectControlResponseV1Schema.safeParse(await res.json());
             if (!parsed.success) throw new Error('Project-control telemetry failed schema validation');
             setData(parsed.data);
+            setLastSyncedAt(new Date().toISOString());
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch project-control telemetry');
         } finally {
@@ -63,6 +66,7 @@ export default function ProjectControlDashboard({
                     if (!parsed.success) throw new Error('Project-control telemetry failed schema validation');
                     if (!isCancelled) {
                         setData(parsed.data);
+                        setLastSyncedAt(new Date().toISOString());
                         setLoading(false);
                     }
                 })
@@ -77,6 +81,14 @@ export default function ProjectControlDashboard({
             isCancelled = true;
         };
     }, [initialData]);
+
+    useEffect(() => {
+        if (!autoSyncEnabled) return;
+        const timer = window.setInterval(() => {
+            void fetchData();
+        }, 15_000);
+        return () => window.clearInterval(timer);
+    }, [autoSyncEnabled, fetchData]);
 
     const toggleMilestone = (id: string) => {
         setExpandedMilestoneIds((prev) => ({
@@ -146,6 +158,9 @@ export default function ProjectControlDashboard({
                             <span className="rounded bg-[#18212C] px-1.5 py-0.5 font-mono text-[8px] text-[#8390A0]">
                                 {progress.projectId}
                             </span>
+                            <span className="rounded border border-[#39A9F5]/30 bg-[#39A9F5]/10 px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#39A9F5]">
+                                UX17 ACTIVE INITIATIVE
+                            </span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[9px] text-[#5C697A]">
                             <span>BRANCH: <span className="text-[#8390A0]">{progress.sourceBranch}</span></span>
@@ -153,10 +168,31 @@ export default function ProjectControlDashboard({
                             <span>COMMIT: <span className="text-[#8390A0]">{progress.sourceCommit ?? '—'}</span></span>
                             <span>·</span>
                             <span>AS OF: <span className="text-[#8390A0]">{new Date(progress.generatedAt).toLocaleString()}</span></span>
+                            {lastSyncedAt && (
+                                <>
+                                    <span>·</span>
+                                    <span data-testid="last-synced-timestamp">
+                                        LAST SYNC: <span className="text-[#2CC7A0]">{new Date(lastSyncedAt).toLocaleTimeString()}</span>
+                                    </span>
+                                </>
+                            )}
                         </div>
                     </div>
 
                     <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={() => setAutoSyncEnabled((prev) => !prev)}
+                            className={cn(
+                                'rounded border px-2 py-1 font-mono text-[9px] font-bold transition-colors',
+                                autoSyncEnabled
+                                    ? 'border-[#2CC7A0]/40 bg-[#2CC7A0]/10 text-[#2CC7A0]'
+                                    : 'border-[#18212C] bg-[#070A0F] text-[#5C697A]',
+                            )}
+                            data-testid="auto-sync-toggle"
+                        >
+                            {autoSyncEnabled ? 'LIVE SYNC: 15s' : 'LIVE SYNC: OFF'}
+                        </button>
                         <button
                             type="button"
                             onClick={fetchData}

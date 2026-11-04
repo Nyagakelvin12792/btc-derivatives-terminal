@@ -1,0 +1,353 @@
+{
+  "schemaVersion": "execution-checkpoint-v1",
+  "initiativeId": "UX17-MINIMALIST-WORKSPACE",
+  "activeMilestoneId": null,
+  "activeTaskId": null,
+  "assignedAgent": null,
+  "taskStartedAt": null,
+  "lastCheckpointAt": "2026-11-04T14:46:00.000Z",
+  "codeRevision": "fc044c8",
+  "maxRetries": 3,
+  "overrides": {
+    "UX17.0-AUDIT-01": {
+      "taskId": "UX17.0-AUDIT-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T13:00:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-0-audit-test",
+          "command": "npx vitest run src/lib/project-control/ux17-suite.test.ts",
+          "result": "PASS",
+          "passed": 9,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": ["docs/ui-ux/UX17_AUDIT_AND_DESIGN_SYSTEM.md"]
+        }
+      ]
+    },
+    "UX17.1-CANVAS-01": {
+      "taskId": "UX17.1-CANVAS-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T13:10:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-1-canvas-test",
+          "command": "npx vitest run src/lib/project-control/ux17-suite.test.ts",
+          "result": "PASS",
+          "passed": 9,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.2-SCALE-01": {
+      "taskId": "UX17.2-SCALE-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T13:20:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-2-scale-test",
+          "command": "npx vitest run src/lib/project-control/ux17-suite.test.ts",
+          "result": "PASS",
+          "passed": 9,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.3-TOOLBAR-01": {
+      "taskId": "UX17.3-TOOLBAR-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T13:30:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-3-toolbar-test",
+          "command": "npx playwright test tests/ui/ux17-minimalist-workspace.pw.ts",
+          "result": "PASS",
+          "passed": 3,
+          "failed": 0,
+          "skipped": 1,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.4-OVERLAY-01": {
+      "taskId": "UX17.4-OVERLAY-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T13:40:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-4-overlay-test",
+          "command": "npx vitest run src/components/terminal/ux16-true-flow.test.tsx",
+          "result": "PASS",
+          "passed": 21,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.5-SESSION-01": {
+      "taskId": "UX17.5-SESSION-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T13:50:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-5-session-test",
+          "command": "npx vitest run src/components/terminal/ux16-true-flow.test.tsx",
+          "result": "PASS",
+          "passed": 21,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.6-FOOTPRINT-01": {
+      "taskId": "UX17.6-FOOTPRINT-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T14:00:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-6-footprint-test",
+          "command": "npx vitest run src/lib/project-control/ux17-suite.test.ts",
+          "result": "PASS",
+          "passed": 9,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.7-HEATMAP-01": {
+      "taskId": "UX17.7-HEATMAP-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T14:10:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-7-heatmap-test",
+          "command": "npx vitest run src/components/terminal/liquidity-surface-v2.test.ts",
+          "result": "PASS",
+          "passed": 7,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.8-RISK-01": {
+      "taskId": "UX17.8-RISK-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T14:20:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-8-risk-test",
+          "command": "npx vitest run src/lib/project-control/ux17-suite.test.ts src/components/terminal/ux15-drawing-risk.test.ts",
+          "result": "PASS",
+          "passed": 35,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.9-PRESETS-01": {
+      "taskId": "UX17.9-PRESETS-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T14:30:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-9-presets-test",
+          "command": "npx vitest run src/lib/project-control/ux17-suite.test.ts",
+          "result": "PASS",
+          "passed": 9,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png"]
+        }
+      ]
+    },
+    "UX17.10-TEST-01": {
+      "taskId": "UX17.10-TEST-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T14:35:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-10-vitest-full",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 388,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": []
+        }
+      ]
+    },
+    "UX17.11-ACCEPT-01": {
+      "taskId": "UX17.11-ACCEPT-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "fc044c8",
+      "branch": "main",
+      "startedAt": "2026-11-04T14:40:00.000Z",
+      "completedAt": "2026-11-04T14:45:00.000Z",
+      "updatedAt": "2026-11-04T14:45:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-04T14:45:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux17-11-playwright-e2e",
+          "command": "npx playwright test tests/ui/project-control-dashboard.pw.ts tests/ui/ux17-minimalist-workspace.pw.ts",
+          "result": "PASS",
+          "passed": 15,
+          "failed": 0,
+          "skipped": 1,
+          "executedAt": "2026-11-04T14:45:00.000Z",
+          "commit": "fc044c8",
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png",
+            ".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png",
+            ".artifacts/ui-overhaul/ux17-project-control-1920x1080.png"
+          ]
+        }
+      ]
+    }
+  }
+}

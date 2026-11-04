@@ -62,6 +62,9 @@ import {
 } from './RiskTerminal';
 import type { DrawingObject, PositionPrices } from './drawing-model';
 import DecisionDock from './DecisionDock';
+import ToolsDrawer from './ToolsDrawer';
+import type { ChartSplitLayoutMode, FootprintPresetId, OverlayDensityMode, PriceScaleFitMode, WorkspacePresetId } from '../../lib/ui/design-tokens';
+import { BUILTIN_WORKSPACE_PRESETS } from '../../lib/workspace/presets';
 import DataIntegrityStrip from './DataIntegrityStrip';
 import { getAggregateTradeIntegrityStatus } from './trade-integrity-status';
 import { ORDERFLOW_SCHEMA_VERSION, type DataIntegritySourceV1 } from '../../lib/orderflow/contracts';
@@ -197,6 +200,16 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     }, []);
     const [timeframe, setTimeframe] = useState<ChartTimeframe>('1H');
     const [replayActive, setReplayActive] = useState(false);
+    const [toolsDrawerOpen, setToolsDrawerOpen] = useState(false);
+    const [showStudyChipsStrip, setShowStudyChipsStrip] = useState(false);
+    const [activeWorkspacePreset, setActiveWorkspacePreset] = useState<WorkspacePresetId>('TRADE_EXECUTION');
+    const [overlayDensity, setOverlayDensity] = useState<OverlayDensityMode>('STANDARD');
+    const [splitLayoutMode, setSplitLayoutMode] = useState<ChartSplitLayoutMode>('MODE_B_CANDLE_AND_FOOTPRINT');
+    const [priceScaleFit, setPriceScaleFit] = useState<PriceScaleFitMode>('CANDLE_FIT');
+    const [footprintPreset, setFootprintPreset] = useState<FootprintPresetId>('DELTA_IMBALANCE');
+    const [showSessionHighLowLines, setShowSessionHighLowLines] = useState(false);
+    const [showSessionOpeningRange, setShowSessionOpeningRange] = useState(false);
+    const [selectedExpiryOverride, setSelectedExpiryOverride] = useState<string | null>(null);
     const [utcNow, setUtcNow] = useState('--:--:--');
     const riskSettings = useSyncExternalStore(
         subscribePersistedRiskSettings,
@@ -217,7 +230,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         inspectorOpen,
         setInspectorOpen,
         setInspectorTab,
-        setStudyPaneOpen,
+        studyPaneOpen, setStudyPaneOpen,
         activeOrderFlowStudy,
         setActiveOrderFlowStudy,
         dteFilter,
@@ -284,13 +297,25 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
     const displayedSpot = liveSpot ?? metrics.spot;
     const changePct = dataMode === 'LIVE' ? marketFeed.ticker?.priceChangePercent : numeric((data.summary as unknown as Record<string, unknown>).spot24hChangePct);
-    const rawExpiry = data.expirations?.[0];
+    const rawExpiry = selectedExpiryOverride ?? data.expirations?.[0];
     const parsedExpiry = rawExpiry ? Date.parse(rawExpiry) : Number.NaN;
-    const expiryLabel = rawExpiry
-        ? Number.isFinite(parsedExpiry)
-            ? new Date(parsedExpiry).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
-            : rawExpiry
-        : 'EXPIRY';
+    const expiryLabel = selectedExpiryOverride && DTE_FILTERS.includes(selectedExpiryOverride as any)
+        ? `DTE · ${selectedExpiryOverride}`
+        : rawExpiry
+            ? Number.isFinite(parsedExpiry)
+                ? new Date(parsedExpiry).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
+                : rawExpiry
+            : 'EXPIRY';
+
+    const handleApplyWorkspacePreset = useCallback((presetId: WorkspacePresetId) => {
+        setActiveWorkspacePreset(presetId);
+        const preset = BUILTIN_WORKSPACE_PRESETS[presetId];
+        setOverlayDensity(preset.overlayDensity);
+        setSplitLayoutMode(preset.splitLayoutMode);
+        setPriceScaleFit(preset.priceScaleFit);
+        setFootprintPreset(preset.footprintPreset);
+        setStudyPaneOpen(preset.indicators.showLowerStudy);
+    }, [setStudyPaneOpen]);
     const deribitState = dataMode === 'LIVE' ? (isError || data.dataMode !== 'LIVE' ? 'OFFLINE' : 'LIVE') : 'DEMO';
     const binanceState = dataMode === 'DEMO' ? 'DEMO' : marketFeed.state;
 
@@ -535,9 +560,75 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         ))}
                     </div>
 
-                    <button type="button" className="hidden h-7 items-center gap-1.5 rounded border border-[#18212C] bg-[#070A0F] px-2.5 font-mono text-[9px] text-[#8390A0] xl:flex">
-                        {expiryLabel}<ChevronDown className="size-3" />
-                    </button>
+                    <Popover.Root>
+                        <Popover.Trigger asChild>
+                            <button
+                                type="button"
+                                data-testid="header-expiry-dropdown-trigger"
+                                aria-label="Select Deribit Options Expiry or DTE Horizon"
+                                className="flex h-7 items-center gap-1.5 rounded border border-[#18212C] bg-[#070A0F] px-2.5 font-mono text-[9px] text-[#8390A0] hover:border-[#39A9F5]/40 hover:text-[#D8DEE8]"
+                            >
+                                <span>{expiryLabel}</span>
+                                <ChevronDown className="size-3" />
+                            </button>
+                        </Popover.Trigger>
+                        <Popover.Portal>
+                            <Popover.Content
+                                sideOffset={6}
+                                align="end"
+                                className="z-50 w-52 rounded border border-[#18212C] bg-[#0C1118] p-1.5 font-mono text-[9.5px] text-[#D8DEE8] shadow-2xl"
+                                data-testid="header-expiry-dropdown-menu"
+                            >
+                                <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-[#5C697A]">
+                                    DTE Horizon Filter
+                                </div>
+                                {DTE_FILTERS.map((filter) => (
+                                    <button
+                                        key={filter}
+                                        data-testid={`expiry-dte-option-${filter}`}
+                                        onClick={() => {
+                                            setDteFilter(filter);
+                                            setSelectedExpiryOverride(filter);
+                                        }}
+                                        className={cn(
+                                            'flex cursor-pointer items-center justify-between rounded px-2 py-1.5 outline-none data-[highlighted]:bg-[#39A9F5]/15',
+                                            dteFilter === filter && 'text-[#39A9F5] font-bold',
+                                        )}
+                                    >
+                                        <span>{filter === 'ALL' ? 'All Expirations' : `${filter} Window`}</span>
+                                        <span className="text-[8px] text-[#8390A0]">{filter}</span>
+                                    </button>
+                                ))}
+                                {(data.expirations || []).length > 0 && (
+                                    <>
+                                        <div className="my-1 h-px bg-[#18212C]" />
+                                        <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-[#5C697A]">
+                                            Specific Expiries
+                                        </div>
+                                        {(data.expirations || []).slice(0, 6).map((exp) => {
+                                            const parsed = Date.parse(exp);
+                                            const fmt = Number.isFinite(parsed)
+                                                ? new Date(parsed).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
+                                                : exp;
+                                            return (
+                                                <button
+                                                    key={exp}
+                                                    onClick={() => {
+                                                        setSelectedExpiryOverride(exp);
+                                                        setDteFilter('ALL');
+                                                    }}
+                                                    className="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 outline-none data-[highlighted]:bg-[#39A9F5]/15"
+                                                >
+                                                    <span>{fmt}</span>
+                                                    <span className="text-[8px] text-[#2CC7A0]">DERIBIT</span>
+                                                </button>
+                                            );
+                                        })}
+                                    </>
+                                )}
+                            </Popover.Content>
+                        </Popover.Portal>
+                    </Popover.Root>
 
                     <SourceChip label="Binance" state={binanceState} tone={binanceState === 'LIVE' ? 'live' : binanceState === 'DEMO' ? 'demo' : binanceState === 'STALE' || binanceState === 'CONNECTING' ? 'shadow' : 'off'} />
                     <SourceChip label="Deribit" state={deribitState} tone={deribitState === 'LIVE' ? 'live' : deribitState === 'DEMO' ? 'demo' : 'off'} />
@@ -638,6 +729,37 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         {replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Replay
                     </button>
 
+                    <button
+                        type="button"
+                        data-testid="open-tools-drawer-button"
+                        aria-expanded={toolsDrawerOpen}
+                        onClick={() => setToolsDrawerOpen((prev) => !prev)}
+                        className={cn(
+                            'flex h-7 shrink-0 items-center gap-1.5 rounded border px-2.5 text-[9.5px] font-bold transition-colors',
+                            toolsDrawerOpen
+                                ? 'border-[#39A9F5]/60 bg-[#39A9F5]/15 text-[#39A9F5]'
+                                : 'border-[#18212C] bg-[#070A0F] text-[#D8DEE8] hover:border-[#39A9F5]/40',
+                        )}
+                    >
+                        <SlidersHorizontal className="size-3 text-[#39A9F5]" />
+                        <span>Tools &amp; Presets</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        data-testid="price-scale-fit-toggle"
+                        title="Toggle Price Scale Fit: Candle Fit (85% viewport height) vs Include Distant Option Walls"
+                        onClick={() => setPriceScaleFit((prev) => prev === 'CANDLE_FIT' ? 'INCLUDE_WALLS' : 'CANDLE_FIT')}
+                        className={cn(
+                            'hidden h-7 shrink-0 items-center gap-1 rounded border px-2 text-[9px] font-bold transition-colors lg:flex',
+                            priceScaleFit === 'CANDLE_FIT'
+                                ? 'border-[#2CC7A0]/40 bg-[#2CC7A0]/10 text-[#2CC7A0]'
+                                : 'border-[#18212C] bg-[#070A0F] text-[#8390A0] hover:text-[#D8DEE8]',
+                        )}
+                    >
+                        <span>SCALE: {priceScaleFit === 'CANDLE_FIT' ? 'CANDLE FIT' : 'ALL WALLS'}</span>
+                    </button>
+
                     <div className="ml-auto flex items-center gap-1">
                         <button
                             type="button"
@@ -689,8 +811,9 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                     >
                         <Panel id="chart" minSize="58%" defaultSize="78%">
                             <div className="flex h-full min-h-0 flex-col">
-                                {/* Study Chips Bar */}
-                                <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#18212C] bg-[#090D14] px-2">
+                                {/* Minimalist Active Studies Bar (Collapsible) */}
+                                {showStudyChipsStrip && (
+                                <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#18212C] bg-[#090D14] px-2" data-testid="study-chips-strip">
                                     <StudyChip label="Left Footprint Pane" visible={chartLayers.leftExecutionPane !== false} onToggle={() => toggleChartLayer('leftExecutionPane')} description="Synchronized left execution pane with Skeleton Candles, Bid×Ask Footprint, Colored Delta Ladder, and Heatmap + Imbalance." />
                                     <StudyChip label={chartLayers.volumeProfile ? `Fixed Range VP (${vpApproachMode === 'PREV_SESSION' ? 'PREV' : vpApproachMode === 'FREE_HOLD' ? 'FREE' : vpApproachMode})` : 'Fixed Range VP'} visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Multi-approach volume profile (Daily, Weekly, Prev Session, Free Hold) with POC, VAH, VAL, opacity slider, and Left/Right placement." />
                                       {chartLayers.volumeProfile && (
@@ -719,6 +842,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                     <StudyChip label="Liquidity Heatmap" visible={chartLayers.liquidityHeatmap !== false} onToggle={() => toggleChartLayer('liquidityHeatmap')} description="Sequence-validated Binance Spot depth history. Session-local only; no synthetic liquidity." />
                                     <StudyChip label="On-Candle Footprint" visible={Boolean(chartLayers.footprint)} onToggle={() => toggleChartLayer('footprint')} description="Optional ATAS/NinjaTrader-style bid/ask cluster cells rendered directly on the right candlestick chart." />
                                 </div>
+                                )}
 
                                 <div className="flex min-h-0 flex-1">
                                     {/* Left Drawing Tools Rail */}
@@ -798,8 +922,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                         </Tooltip.Root>
 
                                         <div className="mt-auto">
-                                            <DropdownMenu.Root>
-                                                <DropdownMenu.Trigger asChild>
+                                            <Popover.Root>
+                                                <Popover.Trigger asChild>
                                                     <button
                                                         type="button"
                                                         aria-label="Switch workspace"
@@ -808,22 +932,76 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                                     >
                                                         <LayoutDashboard className="size-3.5" />
                                                     </button>
-                                                </DropdownMenu.Trigger>
-                                                <DropdownMenu.Portal>
-                                                    <DropdownMenu.Content side="right" sideOffset={7} className="z-50 w-48 rounded border border-[#18212C] bg-[#0C1118] p-1 shadow-xl">
+                                                </Popover.Trigger>
+                                                <Popover.Portal>
+                                                    <Popover.Content side="right" sideOffset={7} className="z-50 w-48 rounded border border-[#18212C] bg-[#0C1118] p-1 shadow-xl">
                                                         {WORKSPACES.map(({ id, label, icon: Icon }) => (
-                                                            <DropdownMenu.Item key={id} onSelect={() => setActiveWorkspace(id)} className="flex cursor-default items-center gap-2 rounded px-2 py-2 text-[10px] text-[#D8DEE8] outline-none data-[highlighted]:bg-[#39A9F5]/10">
+                                                            <button key={id} onSelect={() => setActiveWorkspace(id)} className="flex cursor-default items-center gap-2 rounded px-2 py-2 text-[10px] text-[#D8DEE8] outline-none data-[highlighted]:bg-[#39A9F5]/10">
                                                                 <Icon className="size-3.5 text-[#39A9F5]" />{label}
-                                                            </DropdownMenu.Item>
+                                                            </button>
                                                         ))}
-                                                    </DropdownMenu.Content>
-                                                </DropdownMenu.Portal>
-                                            </DropdownMenu.Root>
+                                                    </Popover.Content>
+                                                </Popover.Portal>
+                                            </Popover.Root>
                                         </div>
                                     </nav>
 
                                     {/* Chart Center Area */}
-                                    <div className="min-w-0 flex-1">
+                                    <div className="relative min-w-0 flex-1">
+                                        <ToolsDrawer
+                                            open={toolsDrawerOpen}
+                                            onClose={() => setToolsDrawerOpen(false)}
+                                            activeWorkspacePreset={activeWorkspacePreset}
+                                            onApplyWorkspacePreset={handleApplyWorkspacePreset}
+                                            overlayDensity={overlayDensity}
+                                            onChangeOverlayDensity={setOverlayDensity}
+                                            splitLayoutMode={splitLayoutMode}
+                                            onChangeSplitLayoutMode={(mode) => {
+                                                setSplitLayoutMode(mode);
+                                                if (mode === 'MODE_A_CANDLE_ONLY' && chartLayers.leftExecutionPane !== false) {
+                                                    toggleChartLayer('leftExecutionPane');
+                                                } else if (mode !== 'MODE_A_CANDLE_ONLY' && chartLayers.leftExecutionPane === false) {
+                                                    toggleChartLayer('leftExecutionPane');
+                                                }
+                                            }}
+                                            priceScaleFit={priceScaleFit}
+                                            onChangePriceScaleFit={setPriceScaleFit}
+                                            showVolumeProfile={chartLayers.volumeProfile}
+                                            onToggleVolumeProfile={() => toggleChartLayer('volumeProfile')}
+                                            vpPreset={vpApproachMode === 'FREE_HOLD' ? 'FREE' : vpApproachMode}
+                                            onSelectVpPreset={(preset) => setVpApproachMode(preset === 'FREE' ? 'FREE_HOLD' : preset)}
+                                            vpSide="RIGHT"
+                                            onToggleVpSide={() => undefined}
+                                            vpOpacityPct={45}
+                                            onChangeVpOpacityPct={() => undefined}
+                                            onStartTwoClickFreeVp={() => setVpApproachMode('FREE_HOLD')}
+                                            isSelectingFreeVpRange={false}
+                                            footprintPreset={footprintPreset}
+                                            onSelectFootprintPreset={setFootprintPreset}
+                                            showLowerStudy={studyPaneOpen}
+                                            onToggleLowerStudy={() => setStudyPaneOpen(!studyPaneOpen)}
+                                            showGammaRegime={chartLayers.gammaRegime}
+                                            onToggleGammaRegime={() => toggleChartLayer('gammaRegime')}
+                                            showOptionWalls={chartLayers.walls}
+                                            onToggleOptionWalls={() => toggleChartLayer('walls')}
+                                            showLiquidityHeatmap={chartLayers.liquidityHeatmap !== false}
+                                            onToggleLiquidityHeatmap={() => toggleChartLayer('liquidityHeatmap')}
+                                            liquidityDensityMode="FOCUSED"
+                                            onToggleLiquidityDensityMode={() => undefined}
+                                            liquidityOpacityPct={50}
+                                            onChangeLiquidityOpacityPct={() => undefined}
+                                            showAvwap={chartLayers.avwap}
+                                            onToggleAvwap={() => toggleChartLayer('avwap')}
+                                            showTradingSessions={chartLayers.sessions !== false}
+                                            onToggleTradingSessions={() => toggleChartLayer('sessions')}
+                                            showSessionHighLowLines={showSessionHighLowLines}
+                                            onToggleSessionHighLowLines={() => setShowSessionHighLowLines((v) => !v)}
+                                            showSessionOpeningRange={showSessionOpeningRange}
+                                            onToggleSessionOpeningRange={() => setShowSessionOpeningRange((v) => !v)}
+                                            onSelectDrawingTool={(tool) => setActiveTool(tool as ChartTool)}
+                                            onClearDrawings={() => setActiveTool('cursor')}
+                                            onResetAllDefaults={resetWorkspaceUi}
+                                        />
                                         <MarketStructureChart
                                             data={data}
                                             marketFeed={marketFeed}
@@ -838,6 +1016,10 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             onRegisterPositionUpdater={handleRegisterPositionUpdater}
                                             riskSettings={riskSettings}
                                             trueFlowSnapshot={activeTrueFlow}
+                                            priceScaleFit={priceScaleFit}
+                                            overlayDensity={overlayDensity}
+                                            showSessionHighLowLines={showSessionHighLowLines}
+                                            showSessionOpeningRange={showSessionOpeningRange}
                                         />
                                     </div>
                                 </div>

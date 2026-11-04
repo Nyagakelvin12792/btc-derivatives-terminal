@@ -56,12 +56,14 @@ export default function FixedRangeVolumeProfileCanvas({
             return;
         }
 
-        const alpha = Math.max(0.05, Math.min(1, opacityPercent / 100));
+        // Restrained institutional opacity so price candles remain visually dominant
+        const alpha = Math.max(0.08, Math.min(0.75, (opacityPercent / 100) * 0.72));
         ctx.globalAlpha = alpha;
 
         const rowHeight = Math.max(1, profileRowHeight);
         const halfRow = rowHeight / 2;
-        const maxBarWidth = Math.min((width * profileWidthPercent) / 100, Math.min(width * 0.45, 320));
+        // Cap profile histogram width to at most 22% of box width or 165px so candles are never buried
+        const maxBarWidth = Math.min((width * profileWidthPercent) / 100, Math.min(width * 0.22, 165));
         const isRight = profilePlacement === 'RIGHT';
 
         for (let i = 0; i < profile.length; i++) {
@@ -73,42 +75,48 @@ export default function FixedRangeVolumeProfileCanvas({
 
             const metric = profileVolumeMode === 'DELTA' ? Math.abs(row.delta) : row.volume;
             const barWidth = Math.max(1, (metric / maxProfile) * maxBarWidth);
-            const inValueArea = profileLevels !== null && row.price >= profileLevels.val && row.price <= profileLevels.vah;
+            const inValueArea =
+                profileLevels !== null && row.price >= profileLevels.val && row.price <= profileLevels.vah;
+            const isPocRow =
+                profileLevels !== null && Math.abs(row.price - profileLevels.poc) <= Math.max(1, rowHeight);
             const top = y - halfRow;
 
             const startX = isRight ? width - barWidth : 0;
 
+            if (isPocRow) {
+                ctx.fillStyle = '#F59E0B';
+                ctx.fillRect(startX, top, barWidth, Math.max(1.5, rowHeight));
+                continue;
+            }
+
             if (profileVolumeMode === 'TOTAL') {
-                ctx.fillStyle = inValueArea ? '#38bdf8' : '#0284c7';
+                ctx.fillStyle = inValueArea ? 'rgba(56, 189, 248, 0.75)' : 'rgba(14, 116, 144, 0.45)';
                 ctx.fillRect(startX, top, barWidth, rowHeight);
             } else if (profileVolumeMode === 'DELTA') {
                 if (row.delta >= 0) {
-                    ctx.fillStyle = inValueArea ? '#22d3ee' : '#06b6d4';
+                    ctx.fillStyle = inValueArea ? 'rgba(44, 199, 160, 0.78)' : 'rgba(44, 199, 160, 0.42)';
                 } else {
-                    ctx.fillStyle = inValueArea ? '#fda4af' : '#f43f5e';
+                    ctx.fillStyle = inValueArea ? 'rgba(240, 97, 82, 0.78)' : 'rgba(240, 97, 82, 0.42)';
                 }
                 ctx.fillRect(startX, top, barWidth, rowHeight);
             } else {
-                // UP_DOWN mode: two-tone bar
                 const upWidth = barWidth * row.upShare;
                 const downWidth = barWidth * (1 - row.upShare);
 
                 if (isRight) {
-                    // Down volume on left, Up volume on right
                     const downX = width - barWidth;
                     const upX = width - upWidth;
 
-                    ctx.fillStyle = inValueArea ? '#fda4af' : '#e11d48';
+                    ctx.fillStyle = inValueArea ? 'rgba(240, 97, 82, 0.72)' : 'rgba(190, 18, 60, 0.42)';
                     ctx.fillRect(downX, top, downWidth, rowHeight);
 
-                    ctx.fillStyle = inValueArea ? '#67e8f9' : '#0891b2';
+                    ctx.fillStyle = inValueArea ? 'rgba(44, 199, 160, 0.78)' : 'rgba(14, 116, 144, 0.48)';
                     ctx.fillRect(upX, top, upWidth, rowHeight);
                 } else {
-                    // Down volume first, Up volume second
-                    ctx.fillStyle = inValueArea ? '#fda4af' : '#e11d48';
+                    ctx.fillStyle = inValueArea ? 'rgba(240, 97, 82, 0.72)' : 'rgba(190, 18, 60, 0.42)';
                     ctx.fillRect(0, top, downWidth, rowHeight);
 
-                    ctx.fillStyle = inValueArea ? '#67e8f9' : '#0891b2';
+                    ctx.fillStyle = inValueArea ? 'rgba(44, 199, 160, 0.78)' : 'rgba(14, 116, 144, 0.48)';
                     ctx.fillRect(downWidth, top, upWidth, rowHeight);
                 }
             }

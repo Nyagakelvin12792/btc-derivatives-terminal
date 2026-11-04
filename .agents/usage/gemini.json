@@ -24,6 +24,29 @@
       "usageSource": "UNAVAILABLE",
       "sourceReference": null,
       "notes": ["Antigravity did not provide token, model, or spend evidence before Codex takeover."]
+    },
+    {
+      "id": "ux17-antigravity-minimalist-workspace",
+      "taskId": "UX17.11-ACCEPT-01",
+      "agent": "ANTIGRAVITY",
+      "provider": "Google/Antigravity",
+      "model": "gemini-3.1-pro",
+      "billingMode": "SUBSCRIPTION",
+      "startedAt": "2026-11-04T13:00:00.000Z",
+      "completedAt": "2026-11-04T14:46:00.000Z",
+      "elapsedMs": 6360000,
+      "inputTokens": null,
+      "cachedInputTokens": null,
+      "outputTokens": null,
+      "reasoningTokens": null,
+      "toolCalls": 84,
+      "providerReportedCostUsd": null,
+      "calculatedCostUsd": null,
+      "costStatus": "INCLUDED_SUBSCRIPTION",
+      "pricing": null,
+      "usageSource": "AGENT_REPORT",
+      "sourceReference": ".agents/project-control-state.json",
+      "notes": ["UX17.0 through UX17.11 Minimalist Institutional Workspace redesign, Footprint/Candlestick/CVD coordination, Tools Drawer, and 4-tab Risk Terminal implementation and verification."]
     }
   ]
 }

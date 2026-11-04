@@ -179,7 +179,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
             [layer]: !(state.chartLayers[layer] ?? defaultChartLayers[layer]),
         },
     })),
-    vpApproachMode: 'DAILY',
+    vpApproachMode: 'FREE_HOLD',
     setVpApproachMode: (mode) => set({ vpApproachMode: mode }),
     resetWorkspaceUi: () => set({
         workspaceMode: 'CONTEXT',
@@ -190,7 +190,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         dteFilter: 'ALL',
         optionsDisplay: 'GEX',
         chartLayers: defaultChartLayers,
-        vpApproachMode: 'DAILY',
+        vpApproachMode: 'FREE_HOLD',
     }),
 }), {
     name: 'btc-terminal-ui-v1',

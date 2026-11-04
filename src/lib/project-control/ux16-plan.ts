@@ -6,6 +6,7 @@ import {
     type ProjectTaskV1,
     type WorkStatus,
 } from './contracts';
+import { buildUx17Milestones } from './ux17-plan';
 
 const UPDATED_AT = '2026-11-03T00:00:00.000Z';
 
@@ -575,6 +576,7 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
                 ],
             }),
         ]),
+        ...buildUx17Milestones(),
     ];
 }
 

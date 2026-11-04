@@ -5,6 +5,7 @@ import { BarChart3, Columns2, Eye, Flame, Layers, Lock, RefreshCw, Unlock, ZoomI
 import type { DemoMarketBar } from '../../lib/ui/market-fixtures';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import type { LiquidityHeatmapFrame } from '../../lib/binance/types';
+import { computeNicePriceTicks } from '../../lib/market-structure/label-layout';
 import { cn } from '../../lib/ui/cn';
 
 export type LeftExecutionViewMode = 'FOOTPRINT' | 'DELTA_LADDER' | 'CANDLE_VP' | 'HEATMAP_IMBALANCE';
@@ -49,6 +50,7 @@ export interface LeftFootprintExecutionPaneProps {
     onHoverCrosshair?: (point: { price: number | null; time: number | null }) => void;
     onPanRange?: (deltaBars: number) => void;
     onZoomBars?: (deltaZoom: number) => void;
+    onInspectCandle?: (barTime: number) => void;
     onClosePane?: () => void;
     className?: string;
 }
@@ -105,20 +107,23 @@ export function buildSkeletonExecutionBars(
     let minPrice: number;
     let maxPrice: number;
 
+    const rawLow = Math.min(...slice.map((b) => b.low));
+    const rawHigh = Math.max(...slice.map((b) => b.high));
+    const sliceSpan = Math.max(bucketStep * 4, rawHigh - rawLow);
+
     if (
         syncPriceScale &&
         mainChartPriceRange &&
         Number.isFinite(mainChartPriceRange.min) &&
         Number.isFinite(mainChartPriceRange.max) &&
-        mainChartPriceRange.max > mainChartPriceRange.min
+        mainChartPriceRange.max > mainChartPriceRange.min &&
+        mainChartPriceRange.max - mainChartPriceRange.min <= Math.max(8_000, sliceSpan * 4.5)
     ) {
         minPrice = Math.floor(mainChartPriceRange.min / bucketStep) * bucketStep;
         maxPrice = Math.ceil(mainChartPriceRange.max / bucketStep) * bucketStep;
     } else {
-        const rawLow = Math.min(...slice.map((b) => b.low));
-        const rawHigh = Math.max(...slice.map((b) => b.high));
         const center = (rawHigh + rawLow) / 2 + priceScaleOffset;
-        const halfSpan = (Math.max(bucketStep * 4, rawHigh - rawLow) / 2) * priceScaleZoom;
+        const halfSpan = (sliceSpan * 0.58) * priceScaleZoom;
         minPrice = Math.floor((center - halfSpan) / bucketStep) * bucketStep;
         maxPrice = Math.ceil((center + halfSpan) / bucketStep) * bucketStep;
     }
@@ -333,6 +338,7 @@ export default function LeftFootprintExecutionPane({
     onHoverCrosshair,
     onPanRange,
     onZoomBars,
+    onInspectCandle,
     onClosePane,
     className,
 }: LeftFootprintExecutionPaneProps) {
@@ -429,22 +435,23 @@ export default function LeftFootprintExecutionPane({
         const cellHeight = Math.max(10, Math.min(28, (bucketStep / priceSpan) * plotH));
         const colW = plotW / executionBars.length;
 
-        // Horizontal price grid lines & right price axis labels
-        ctx.strokeStyle = 'rgba(28, 41, 56, 0.55)';
+        // Horizontal price grid lines & collision-free nice price axis ticks
+        ctx.strokeStyle = 'rgba(24, 33, 44, 0.45)';
         ctx.lineWidth = 1;
         ctx.font = '10px "JetBrains Mono", monospace';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
 
-        for (let p = minPrice; p <= maxPrice; p += bucketStep) {
+        const niceTicks = computeNicePriceTicks(minPrice, maxPrice, Math.max(6, Math.floor(plotH / 34)));
+        for (const p of niceTicks) {
             const y = priceToY(p);
-            if (y < topPad - 4 || y > topPad + plotH + 4) continue;
+            if (y < topPad + 6 || y > topPad + plotH - 6) continue;
             ctx.beginPath();
             ctx.moveTo(0, y);
             ctx.lineTo(plotW, y);
             ctx.stroke();
 
-            ctx.fillStyle = '#6A7788';
+            ctx.fillStyle = '#8390A0';
             ctx.fillText(p.toFixed(0), plotW + 6, y);
         }
 
@@ -769,6 +776,25 @@ export default function LeftFootprintExecutionPane({
     }
 
     function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
+        const wasClick =
+            isDraggingRef.current &&
+            Math.abs(event.clientX - dragStartXRef.current) < 5 &&
+            dragAccumulatedBarsRef.current === 0;
+        if (wasClick && onInspectCandle && executionBars.length > 0) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const plotW = Math.max(60, dimensions.width - 58);
+            if (x >= 0 && x < plotW) {
+                const colIdx = Math.min(
+                    executionBars.length - 1,
+                    Math.max(0, Math.floor((x / plotW) * executionBars.length)),
+                );
+                const clickedTime = executionBars[colIdx]?.time;
+                if (typeof clickedTime === 'number') {
+                    onInspectCandle(clickedTime);
+                }
+            }
+        }
         isDraggingRef.current = false;
         isDraggingPriceAxisRef.current = false;
         try {

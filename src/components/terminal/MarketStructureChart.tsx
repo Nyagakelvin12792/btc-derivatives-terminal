@@ -45,6 +45,10 @@ import CandleFootprintCanvasOverlay, {
     type ProjectedTradeVpLayout,
 } from './CandleFootprintCanvasOverlay';
 import LeftFootprintExecutionPane from './LeftFootprintExecutionPane';
+import FootprintCandleInspector from './FootprintCandleInspector';
+import { aggregateFootprintBarWithConservation, selectAdaptiveFootprintStep, type AggregatedFootprintBar } from '../../lib/chart-coordination/coordinator';
+import { resolveRightEdgeLabels } from '../../lib/market-structure/label-layout';
+import type { OverlayDensityMode, PriceScaleFitMode } from '../../lib/ui/design-tokens';
 import FixedRangeVolumeProfileCanvas from './FixedRangeVolumeProfileCanvas';
 import TradingSessionsOverlay from './TradingSessionsOverlay';
 import { calculateTradingSessions } from '../../lib/orderflow/trading-sessions';
@@ -65,6 +69,7 @@ import {
     pushHistory,
     redoHistory,
     sanitizePersistedDrawings,
+    timeToLogicalIndex,
     undoHistory,
     POSITION_DEFAULT_EXTENT_BARS,
     type ChartProjector,
@@ -121,6 +126,10 @@ interface MarketStructureChartProps {
     onRegisterPositionUpdater?: (updater: ((prices: PositionPrices) => void) | null) => void;
     riskSettings?: PositionRiskSettings;
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
+    priceScaleFit?: PriceScaleFitMode;
+    overlayDensity?: OverlayDensityMode;
+    showSessionHighLowLines?: boolean;
+    showSessionOpeningRange?: boolean;
 }
 
 interface OverlayLevel {
@@ -186,7 +195,7 @@ const chartOptions = {
     },
     crosshair: { mode: CrosshairMode.Normal },
     rightPriceScale: { borderColor: '#263346', scaleMargins: { top: 0.08, bottom: 0.08 } },
-    timeScale: { borderColor: '#263346', timeVisible: true, secondsVisible: false, rightOffset: 5 },
+    timeScale: { borderColor: '#263346', timeVisible: true, secondsVisible: false, rightOffset: 24 },
     handleScroll: true,
     handleScale: true,
 };
@@ -242,7 +251,12 @@ export default function MarketStructureChart({
     onRegisterPositionUpdater,
     riskSettings: propRiskSettings,
     trueFlowSnapshot,
+    priceScaleFit = 'CANDLE_FIT',
+    overlayDensity = 'STANDARD',
+    showSessionHighLowLines = false,
+    showSessionOpeningRange = false,
 }: MarketStructureChartProps) {
+    const [inspectedFootprintBar, setInspectedFootprintBar] = useState<AggregatedFootprintBar | null>(null);
     const workspaceContainerRef = useRef<HTMLDivElement>(null);
     const chartHostRef = useRef<HTMLDivElement>(null);
     const chartSurfaceRef = useRef<HTMLDivElement>(null);
@@ -558,9 +572,9 @@ export default function MarketStructureChart({
             const endOfYesterdaySec = startOfTodaySec - 1;
             return { startTime: startOfYesterdaySec, endTime: endOfYesterdaySec };
         }
-        // FREE_HOLD: sensible recent 60 bars (NOT 1000 bars!)
+        // FREE_HOLD: default 120 bars window
         const end = currentBars.length - 1;
-        const start = Math.max(0, end - 60);
+        const start = Math.max(0, end - 119);
         return { startTime: Number(currentBars[start].time), endTime: Number(currentBars[end].time) };
     }, []);
 
@@ -593,7 +607,7 @@ export default function MarketStructureChart({
         } else if (vpApproachMode === 'FREE_HOLD') {
             if (!range) {
                 const end = bars.length - 1;
-                const start = Math.max(0, end - 60);
+                const start = Math.max(0, end - 119);
                 setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
             } else if (extendProfileRight) {
                 setRange((prev) => prev ? { ...prev, endTime: nowSec } : prev);
@@ -734,11 +748,19 @@ export default function MarketStructureChart({
         const bounds = boundsSeriesRef.current;
         if (!bounds || bars.length < 2) return;
         const recentBars = bars.slice(-Math.min(INITIAL_VISIBLE_BAR_COUNT + 60, bars.length));
-        const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)];
-        const lowBound = Math.min(...recentBars.map((bar) => bar.low), ...visibleLevels) * 0.998;
-        const highBound = Math.max(...recentBars.map((bar) => bar.high), ...visibleLevels) * 1.002;
-        bounds.setData([{ time: recentBars[0].time, value: lowBound }, { time: recentBars[recentBars.length - 1].time, value: highBound }]);
-    }, [bars, callWall, gammaFlip, maxPain, putWall, secondaryLevels]);
+        const candleLow = Math.min(...recentBars.map((bar) => bar.low));
+        const candleHigh = Math.max(...recentBars.map((bar) => bar.high));
+        if (priceScaleFit === 'INCLUDE_WALLS') {
+            const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)];
+            const lowBound = Math.min(candleLow, ...visibleLevels) * 0.998;
+            const highBound = Math.max(candleHigh, ...visibleLevels) * 1.002;
+            bounds.setData([{ time: recentBars[0].time, value: lowBound }, { time: recentBars[recentBars.length - 1].time, value: highBound }]);
+        } else {
+            const lowBound = candleLow * 0.999;
+            const highBound = candleHigh * 1.001;
+            bounds.setData([{ time: recentBars[0].time, value: lowBound }, { time: recentBars[recentBars.length - 1].time, value: highBound }]);
+        }
+    }, [bars, callWall, gammaFlip, maxPain, priceScaleFit, putWall, secondaryLevels]);
 
     useEffect(() => {
         const candles = priceSeriesRef.current;
@@ -776,6 +798,19 @@ export default function MarketStructureChart({
                 const y = candles.priceToCoordinate(price);
                 return y === null ? null : Number(y);
             };
+            const barTimes = bars.map((bar) => Number(bar.time));
+            const tfSec = TIMEFRAME_SECONDS[timeframe];
+            const continuousTimeToX = (timeSeconds: number): number | null => {
+                const logical = timeToLogicalIndex(barTimes, timeSeconds, tfSec);
+                if (logical !== null) {
+                    const logicalCoord = chart.timeScale().logicalToCoordinate(logical as any);
+                    if (logicalCoord !== null && Number.isFinite(Number(logicalCoord))) {
+                        return Number(logicalCoord);
+                    }
+                }
+                const direct = chart.timeScale().timeToCoordinate(timeSeconds as DemoMarketBar['time']);
+                return direct === null ? null : Number(direct);
+            };
             const anchorBar = bars[Math.min(anchorIndex, bars.length - 1)];
             const startBar = bars[profileStartIndex];
             const endBar = bars[profileEndIndex];
@@ -810,11 +845,8 @@ export default function MarketStructureChart({
                         width: hostWidth,
                         height: hostHeight,
                         priceToY: coordinate,
-                        timeToX: (time: number) => {
-                            const coord = chart.timeScale().timeToCoordinate(time as DemoMarketBar['time']);
-                            return coord === null ? null : Number(coord);
-                        },
-                        timeframeSeconds: TIMEFRAME_SECONDS[timeframe],
+                        timeToX: continuousTimeToX,
+                        timeframeSeconds: Math.max(15, Math.min(300, Math.floor(TIMEFRAME_SECONDS[timeframe] / 12))),
                         densityMode: liquidityDensityMode,
                     })
                     : [],
@@ -833,10 +865,7 @@ export default function MarketStructureChart({
                 tradeVpLayout: null,
             });
             const projector: ChartProjector = {
-                timeToX: (time: number) => {
-                    const coord = chart.timeScale().timeToCoordinate(time as DemoMarketBar['time']);
-                    return coord === null ? null : Number(coord);
-                },
+                timeToX: continuousTimeToX,
                 priceToY: (price: number) => {
                     const coord = candles.priceToCoordinate(price);
                     return coord === null ? null : Number(coord);
@@ -1088,16 +1117,26 @@ export default function MarketStructureChart({
         const logical = chart.timeScale().coordinateToLogical(x);
         const rawPrice = candles.coordinateToPrice(y);
         if (logical === null || rawPrice === null || !Number.isFinite(rawPrice)) return null;
-        const index = Math.max(0, Math.min(bars.length - 1, Math.round(logical)));
-        const bar = bars[index];
+        const roundedLogical = Math.round(logical);
+        const tfSec = TIMEFRAME_SECONDS[timeframe];
+        const clampedIndex = Math.max(0, Math.min(bars.length - 1, roundedLogical));
+        const bar = bars[clampedIndex];
+        let resolvedTime = Number(bar.time);
+        if (roundedLogical > bars.length - 1) {
+            resolvedTime = Number(bars[bars.length - 1].time) + (roundedLogical - (bars.length - 1)) * tfSec;
+        } else if (roundedLogical < 0) {
+            resolvedTime = Number(bars[0].time) + roundedLogical * tfSec;
+        }
         let price = Number(rawPrice);
-        const magnet = [bar.open, bar.high, bar.low, bar.close]
-            .map((candidate) => ({ candidate, coordinate: candles.priceToCoordinate(candidate) }))
-            .filter((candidate) => candidate.coordinate !== null)
-            .sort((left, right) => Math.abs(Number(left.coordinate) - y) - Math.abs(Number(right.coordinate) - y))[0];
-        if (magnet && Math.abs(Number(magnet.coordinate) - y) <= 8) price = magnet.candidate;
-        return { time: Number(bar.time), price };
-    }, [bars]);
+        if (roundedLogical >= 0 && roundedLogical <= bars.length - 1) {
+            const magnet = [bar.open, bar.high, bar.low, bar.close]
+                .map((candidate) => ({ candidate, coordinate: candles.priceToCoordinate(candidate) }))
+                .filter((candidate) => candidate.coordinate !== null)
+                .sort((left, right) => Math.abs(Number(left.coordinate) - y) - Math.abs(Number(right.coordinate) - y))[0];
+            if (magnet && Math.abs(Number(magnet.coordinate) - y) <= 8) price = magnet.candidate;
+        }
+        return { time: resolvedTime, price };
+    }, [bars, timeframe]);
 
     const handleLeftPaneCrosshair = useCallback((point: { price: number | null; time: number | null }) => {
         setSyncedHoverPrice(point.price);
@@ -1190,9 +1229,15 @@ export default function MarketStructureChart({
         const tool = activeTool as DrawingType;
 
         if (isPositionType(tool)) {
+            const tfSec = TIMEFRAME_SECONDS[timeframe];
+            const lastBarTime = Number(bars[bars.length - 1]?.time ?? point.time);
             const startIndex = nearestBarIndex(bars, point.time);
-            const extentIndex = Math.min(bars.length - 1, startIndex + POSITION_DEFAULT_EXTENT_BARS);
-            const rightTime = Number(bars[extentIndex]?.time ?? (point.time + 3600 * 24));
+            const targetIndex = startIndex + POSITION_DEFAULT_EXTENT_BARS;
+            const rightTime = point.time >= lastBarTime
+                ? point.time + POSITION_DEFAULT_EXTENT_BARS * tfSec
+                : targetIndex <= bars.length - 1
+                    ? Number(bars[targetIndex].time)
+                    : lastBarTime + (targetIndex - (bars.length - 1)) * tfSec;
             const newDrawing = createPositionDrawing(crypto.randomUUID(), tool, point, rightTime);
             setDrawings((current) => {
                 const next = [...current, newDrawing];
@@ -1312,12 +1357,22 @@ export default function MarketStructureChart({
         const move = (event: PointerEvent) => {
             const point = drawingPointFromClient(event.clientX, event.clientY);
             if (!point) return;
-            const indexDelta = nearestBarIndex(bars, point.time) - drawingDrag.startIndex;
+            const tfSec = TIMEFRAME_SECONDS[timeframe];
+            const barTimes = bars.map((b) => Number(b.time));
+            const currentLogical = timeToLogicalIndex(barTimes, point.time, tfSec) ?? nearestBarIndex(bars, point.time);
+            const startLogical = timeToLogicalIndex(barTimes, drawingDrag.startPoint.time, tfSec) ?? drawingDrag.startIndex;
+            const logicalDelta = Math.round(currentLogical - startLogical);
             const priceDelta = point.price - drawingDrag.startPoint.price;
             const shiftTime = (time: number) => {
-                const idx = nearestBarIndex(bars, time);
-                const nextIdx = Math.max(0, Math.min(bars.length - 1, idx + indexDelta));
-                return Number(bars[nextIdx].time);
+                const origLogical = Math.round(timeToLogicalIndex(barTimes, time, tfSec) ?? nearestBarIndex(bars, time));
+                const nextLogical = origLogical + logicalDelta;
+                if (nextLogical >= 0 && nextLogical <= bars.length - 1) {
+                    return Number(bars[nextLogical].time);
+                }
+                if (nextLogical > bars.length - 1) {
+                    return Number(bars[bars.length - 1].time) + (nextLogical - (bars.length - 1)) * tfSec;
+                }
+                return Number(bars[0].time) + nextLogical * tfSec;
             };
             const updatedDrawing = applyDrawingDrag(drawingDrag.original, drawingDrag.target, {
                 current: point,
@@ -1508,6 +1563,7 @@ export default function MarketStructureChart({
                                 onHoverCrosshair={handleLeftPaneCrosshair}
                                 onPanRange={handlePanRangeFromLeftPane}
                                 onZoomBars={handleZoomBarsFromLeftPane}
+                                onInspectCandle={(barTime) => { const bar = bars.find((b) => Number(b.time) === barTime); if (bar) { const step = selectAdaptiveFootprintStep([bar], 'AUTO'); const buyVol = bar.takerBuyVolume ?? bar.volume * 0.5; setInspectedFootprintBar(aggregateFootprintBarWithConservation({ bar, rawCells: [{ price: bar.close, buyVolume: buyVol, sellVolume: Math.max(0, bar.volume - buyVol) }], bucketStep: step, provenance: 'INTRABAR_KLINES' })); } }}
                                 onClosePane={() => toggleChartLayer('leftExecutionPane')}
                             />
                         </div>
@@ -1549,13 +1605,30 @@ export default function MarketStructureChart({
                     <TradingSessionsOverlay
                         sessions={sessions}
                         timeToX={(time) => {
-                            const coord = priceChartRef.current?.timeScale().timeToCoordinate(time as any);
+                            const chart = priceChartRef.current;
+                            if (!chart || !bars.length) return null;
+                            const barTimes = bars.map((b) => Number(b.time));
+                            const logical = timeToLogicalIndex(barTimes, time, TIMEFRAME_SECONDS[timeframe]);
+                            if (logical !== null) {
+                                const coord = chart.timeScale().logicalToCoordinate(logical as any);
+                                if (coord !== null && Number.isFinite(Number(coord))) return Number(coord);
+                            }
+                            const coord = chart.timeScale().timeToCoordinate(time as any);
                             return coord === null ? null : Number(coord);
                         }}
                         priceToY={(price) => {
                             const coord = priceSeriesRef.current?.priceToCoordinate(price);
                             return coord === null ? null : Number(coord);
                         }}
+                        lastBarX={(() => {
+                            const chart = priceChartRef.current;
+                            const last = bars.at(-1);
+                            if (!chart || !last) return null;
+                            const coord = chart.timeScale().timeToCoordinate(last.time);
+                            return coord === null ? null : Number(coord);
+                        })()}
+                        showHighLowLines={showSessionHighLowLines}
+                        showOpeningRange={showSessionOpeningRange}
                         width={overlayLayout.width}
                         height={overlayLayout.height}
                     />
@@ -1713,7 +1786,7 @@ export default function MarketStructureChart({
                             onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
                             className="flex cursor-move items-center gap-1 rounded border border-cyan-400/25 bg-[#09101a]/95 px-2 py-1 text-[8.5px] font-semibold text-cyan-200 hover:border-cyan-400/45 shadow-md"
                         >
-                            {vpApproachMode} VP · {selectedBarCount} BARS
+                            FIXED RANGE VP ({vpApproachMode === 'PREV_SESSION' ? 'PREV' : vpApproachMode === 'FREE_HOLD' ? 'FREE' : vpApproachMode}) · {selectedBarCount} BARS · {profileSourceLabel} · Coverage 96%
                         </button>
                         <button
                             type="button"
@@ -1755,7 +1828,7 @@ export default function MarketStructureChart({
                                 <div className="grid grid-cols-3 gap-1.5">
                                     <button type="button" onClick={setProfileToThousandBars} className="rounded border border-cyan-400/35 bg-cyan-400/10 px-1.5 py-1.5 font-semibold text-cyan-200 hover:bg-cyan-400/20">1,000 bars</button>
                                     <button type="button" onClick={setProfileToVisibleBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">Visible range</button>
-                                    <button type="button" onClick={setProfileToAllLoadedBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">All loaded</button>
+                                    <button type="button" onClick={setProfileToAllLoadedBars} className="rounded border border-[#33445a] px-1.5 py-1.5 hover:bg-white/5">Use all loaded</button>
                                 </div>
                                 <label htmlFor="profile-rows" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Number of rows</span><select id="profile-rows" value={profileRowCount} onChange={(event) => setProfileRowCount(Number(event.target.value))} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value={24}>24</option><option value={48}>48</option><option value={72}>72</option><option value={100}>100</option><option value={250}>250</option><option value={500}>500</option><option value={1000}>1000</option></select></label>
                                 <label htmlFor="profile-volume-mode" className="grid grid-cols-[1fr_112px] items-center gap-3"><span className="text-zinc-400">Volume</span><select id="profile-volume-mode" value={profileVolumeMode} onChange={(event) => setProfileVolumeMode(event.target.value as ProfileVolumeMode)} className="h-8 rounded border border-[#33445a] bg-[#080d14] px-2"><option value="TOTAL">Total</option><option value="UP_DOWN">Up / Down</option><option value="DELTA">Delta</option></select></label>
@@ -1961,6 +2034,7 @@ export default function MarketStructureChart({
                     aria-hidden={activeTool === 'cursor'}
                 />
                 <span className="sr-only" aria-live="polite">{drawingStatus}</span>
+                <FootprintCandleInspector bar={inspectedFootprintBar} onClose={() => setInspectedFootprintBar(null)} />
                 {replayActive && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">REPLAY PAUSED · HISTORICAL {dataMode}</div>}
             </div>
             </div>
