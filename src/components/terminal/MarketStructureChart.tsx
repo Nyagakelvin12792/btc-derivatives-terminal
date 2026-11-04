@@ -511,7 +511,19 @@ export default function MarketStructureChart({
     const activeAnchorTime = avwapConfig.provisionalTime ?? avwapConfig.anchorTime;
     const anchorIndex = useMemo(() => {
         if (!bars.length) return 0;
-        if (activeAnchorTime === 0) return Math.max(0, bars.length - 127);
+        if (activeAnchorTime === 0) {
+            const end = bars.length - 1;
+            const start = Math.max(0, end - 60);
+            let minLow = Infinity;
+            let minIdx = Math.max(0, end - 35);
+            for (let i = start; i <= end - 5; i++) {
+                if (bars[i].low < minLow) {
+                    minLow = bars[i].low;
+                    minIdx = i;
+                }
+            }
+            return minIdx;
+        }
         return findNearestBarIndexByTime(bars, activeAnchorTime);
     }, [bars, activeAnchorTime]);
 
@@ -1081,18 +1093,46 @@ export default function MarketStructureChart({
         const up = () => {
             if (dragTarget === 'anchor') {
                 setAvwapConfig((prev) => {
-                    const next = avwapReducer(prev, { type: 'COMMIT_DRAG' });
-                    savePersistedAvwapAnchor(next.anchorTime);
-                    return next;
+                    const finalTime = prev.provisionalTime ?? prev.anchorTime;
+                    savePersistedAvwapAnchor(finalTime);
+                    return {
+                        ...prev,
+                        anchorTime: finalTime,
+                        isManual: true,
+                        interactionState: 'COMMITTED',
+                        provisionalTime: null,
+                    };
                 });
             }
             setDragTarget(null);
             dragOriginRef.current = null;
         };
         window.addEventListener('pointermove', move);
-        window.addEventListener('pointerup', up, { once: true });
-        return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+        window.addEventListener('pointerup', up);
+        window.addEventListener('pointercancel', up);
+        return () => {
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', up);
+            window.removeEventListener('pointercancel', up);
+        };
     }, [bars, dragTarget, extendProfileRight, objectLocked, profileEndIndex, profileStartIndex]);
+
+    function beginAvwapDrag(event: React.PointerEvent<HTMLElement>) {
+        event.preventDefault();
+        event.stopPropagation();
+        setSelectedObject('AVWAP');
+        setSelectedDrawingId(null);
+        if (objectLocked || !bars.length) return;
+        const currentAnchorTime = activeAnchorTime !== 0 ? activeAnchorTime : Number(bars[anchorIndex].time);
+        setAvwapConfig((prev) => ({
+            ...prev,
+            anchorTime: currentAnchorTime,
+            isManual: true,
+            interactionState: 'DRAGGING',
+            provisionalTime: currentAnchorTime,
+        }));
+        setDragTarget('anchor');
+    }
 
     function beginProfileDrag(event: React.PointerEvent<HTMLElement>, target: 'range-start' | 'range-end' | 'range-body') {
         event.stopPropagation();
@@ -1860,19 +1900,7 @@ export default function MarketStructureChart({
                     </div>
                 )}
 
-                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={(event) => {
-                    event.stopPropagation();
-                    if (!objectLocked) {
-                        try { (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId); } catch {}
-                        setAvwapConfig((prev) => avwapReducer(prev, { type: 'START_DRAG' }));
-                        setDragTarget('anchor');
-                    }
-                    setSelectedObject('AVWAP');
-                    setSelectedDrawingId(null);
-                }}
-                onPointerUp={(event) => {
-                    try { (event.currentTarget as HTMLElement).releasePointerCapture(event.pointerId); } catch {}
-                }} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
+                {chartLayers.avwap && overlayLayout.anchorX !== null && overlayLayout.anchorY !== null && overlayLayout.anchorX >= 0 && overlayLayout.anchorX <= (chartHostRef.current?.clientWidth || 800) && <><button type="button" aria-label="Move anchored VWAP anchor" onClick={(event) => { event.stopPropagation(); setSelectedObject('AVWAP'); setSelectedDrawingId(null); }} onPointerDown={beginAvwapDrag} className="absolute z-40 flex size-5 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border-2 border-sky-300 bg-[#0b1722] text-sky-200 shadow-sm" style={{ left: overlayLayout.anchorX, top: overlayLayout.anchorY }} title="Drag to re-anchor AVWAP"><span className="size-1.5 rounded-full bg-sky-300" /></button><span className="pointer-events-none absolute z-40 whitespace-nowrap rounded border border-sky-400/40 bg-[#07111c]/95 px-2 py-1 text-[9px] font-semibold text-sky-200" style={{ left: overlayLayout.anchorX + 12, top: Math.max(0, overlayLayout.anchorY - 10) }}>AVWAP · Swing Low</span></>}
 
                 {selectedObject && ((selectedObject === 'VP' && chartLayers.volumeProfile) || (selectedObject === 'AVWAP' && chartLayers.avwap)) && <div
                     className="absolute left-1/2 top-11 z-50 flex -translate-x-1/2 items-center gap-0.5 rounded-md border border-[#33445a] bg-[#0b121c] p-1 shadow-lg"
@@ -1880,7 +1908,7 @@ export default function MarketStructureChart({
                     aria-label={`${selectedObject} controls`}
                     onPointerDown={(event) => event.stopPropagation()}
                 >
-                    <button type="button" aria-label={`Move ${selectedObject}`} onPointerDown={(event) => selectedObject === 'VP' ? beginProfileDrag(event, 'range-body') : setDragTarget('anchor')} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Move className="size-3.5" /></button>
+                    <button type="button" aria-label={`Move ${selectedObject}`} onPointerDown={(event) => selectedObject === 'VP' ? beginProfileDrag(event, 'range-body') : beginAvwapDrag(event)} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Move className="size-3.5" /></button>
                     <button type="button" aria-label={objectLocked ? `Unlock ${selectedObject}` : `Lock ${selectedObject}`} onClick={() => setObjectLocked((locked) => !locked)} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100">{objectLocked ? <Lock className="size-3.5" /> : <Unlock className="size-3.5" />}</button>
                     <Popover.Root open={settingsOpen} onOpenChange={setSettingsOpen}>
                         <Popover.Trigger asChild><button type="button" aria-label={`${selectedObject} settings`} className="rounded p-1.5 text-zinc-400 hover:bg-white/5 hover:text-zinc-100"><Settings className="size-3.5" /></button></Popover.Trigger>
