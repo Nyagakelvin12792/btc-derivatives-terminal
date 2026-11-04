@@ -46,6 +46,9 @@ import CandleFootprintCanvasOverlay, {
 } from './CandleFootprintCanvasOverlay';
 import LeftFootprintExecutionPane from './LeftFootprintExecutionPane';
 import FixedRangeVolumeProfileCanvas from './FixedRangeVolumeProfileCanvas';
+import TradingSessionsOverlay from './TradingSessionsOverlay';
+import { calculateTradingSessions } from '../../lib/orderflow/trading-sessions';
+import TerminalChartLoader from './TerminalChartLoader';
 import type { FootprintZoomLevel } from './FootprintChartOverlay';
 import type { LiquidityDensityMode } from '../../lib/binance/liquidity-surface-contracts';
 import {
@@ -287,6 +290,8 @@ export default function MarketStructureChart({
     const [profileVolumeMode, setProfileVolumeMode] = useState<ProfileVolumeMode>('UP_DOWN');
     const [profilePlacement, setProfilePlacement] = useState<ProfilePlacement>('RIGHT');
     const [extendProfileRight, setExtendProfileRight] = useState(false);
+    const [vpApproachMode, setVpApproachMode] = useState<'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD'>('FREE_HOLD');
+    const [isManualVpPlacement, setIsManualVpPlacement] = useState<boolean>(false);
     const [onChartFootprintZoom, setOnChartFootprintZoom] = useState<'AUTO' | FootprintZoomLevel>('AUTO');
     const [tradeVpPlacement, setTradeVpPlacement] = useState<ProfilePlacement>('RIGHT');
     const [onChartFlowOpacity, setOnChartFlowOpacity] = useState(85);
@@ -536,21 +541,22 @@ export default function MarketStructureChart({
     useEffect(() => {
         if (bars.length < (dataMode === 'LIVE' ? 50 : 2) || profileContextRef.current === chartContextKey) return;
         profileContextRef.current = chartContextKey;
+        if (isManualVpPlacement && range) return;
         const end = bars.length - 1;
         const start = Math.max(0, end - 999);
         setRange({ startTime: Number(bars[start].time), endTime: Number(bars[end].time) });
         setAnchorIndex(Math.max(0, end - 126));
-    }, [bars, chartContextKey, dataMode]);
+    }, [bars, chartContextKey, dataMode, isManualVpPlacement, range]);
 
     useEffect(() => {
-        if (!range || bars.length < 1_000) return;
+        if (!range || bars.length < 1_000 || isManualVpPlacement) return;
         const currentStartIdx = nearestBarIndex(bars, range.startTime);
         const currentEndIdx = nearestBarIndex(bars, range.endTime);
         if (currentEndIdx - currentStartIdx + 1 === 120 && currentEndIdx === bars.length - 1) {
             const newStart = Math.max(0, bars.length - 1_000);
             setRange({ startTime: Number(bars[newStart].time), endTime: Number(bars[bars.length - 1].time) });
         }
-    }, [bars, range]);
+    }, [bars, range, isManualVpPlacement]);
 
     useEffect(() => {
         if (!chartHostRef.current || !hasChartData) return;
@@ -975,6 +981,8 @@ export default function MarketStructureChart({
 
     function beginProfileDrag(event: React.PointerEvent<HTMLElement>, target: 'range-start' | 'range-end' | 'range-body') {
         event.stopPropagation();
+        setVpApproachMode('FREE_HOLD');
+        setIsManualVpPlacement(true);
         setSelectedObject('VP');
         setSelectedDrawingId(null);
         if (objectLocked || !chartHostRef.current || !priceChartRef.current) return;
@@ -1106,6 +1114,45 @@ export default function MarketStructureChart({
             main.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
         }
     }, []);
+
+    const sessions = useMemo(() => calculateTradingSessions(bars), [bars]);
+
+    const handleSelectVpApproach = useCallback((mode: 'DAILY' | 'WEEKLY' | 'PREV_SESSION' | 'FREE_HOLD') => {
+        setVpApproachMode(mode);
+        if (!bars.length) return;
+        const nowSec = Number(bars[bars.length - 1].time);
+
+        if (mode === 'DAILY') {
+            const startOfDaySec = Math.floor(nowSec / 86400) * 86400;
+            setRange({ startTime: startOfDaySec, endTime: nowSec });
+            setIsManualVpPlacement(true);
+        } else if (mode === 'WEEKLY') {
+            const d = new Date(nowSec * 1000);
+            const dayOfWeek = (d.getUTCDay() + 6) % 7;
+            const startOfWeekSec = Math.floor((nowSec - dayOfWeek * 86400) / 86400) * 86400;
+            setRange({ startTime: startOfWeekSec, endTime: nowSec });
+            setIsManualVpPlacement(true);
+        } else if (mode === 'PREV_SESSION') {
+            const startOfTodaySec = Math.floor(nowSec / 86400) * 86400;
+            const startOfYesterdaySec = startOfTodaySec - 86400;
+            const endOfYesterdaySec = startOfTodaySec - 1;
+            setRange({ startTime: startOfYesterdaySec, endTime: endOfYesterdaySec });
+            setIsManualVpPlacement(true);
+        } else if (mode === 'FREE_HOLD') {
+            setIsManualVpPlacement(true);
+        }
+    }, [bars]);
+
+    const handleFitVpToVisibleViewport = useCallback(() => {
+        if (!bars.length || !priceChartRef.current) return;
+        const logicalRange = priceChartRef.current.timeScale().getVisibleLogicalRange();
+        if (!logicalRange) return;
+        const startIdx = Math.max(0, Math.min(bars.length - 1, Math.floor(logicalRange.from)));
+        const endIdx = Math.max(0, Math.min(bars.length - 1, Math.ceil(logicalRange.to)));
+        setRange({ startTime: Number(bars[startIdx].time), endTime: Number(bars[endIdx].time) });
+        setVpApproachMode('FREE_HOLD');
+        setIsManualVpPlacement(true);
+    }, [bars]);
 
     function handleDrawing(event: React.PointerEvent<HTMLDivElement>) {
         if (activeTool === 'cursor') return;
@@ -1354,13 +1401,11 @@ export default function MarketStructureChart({
 
     if (!bars.length) {
         return (
-            <div className="flex h-full min-h-0 items-center justify-center bg-[#080c13] p-6">
-                <div className="max-w-md rounded-lg border border-amber-500/25 bg-[#0b111a] p-5 text-center">
-                    <div className="mb-2 text-[10px] font-bold text-amber-300">BINANCE MARKET FEED · {marketFeed.state}</div>
-                    <p className="text-pretty text-sm text-zinc-300">Waiting for validated BTCUSDT candles and order-flow data. Demo values are not substituted into the live workspace.</p>
-                    {marketFeed.state === 'OFFLINE' && <button type="button" onClick={() => useTerminalStore.getState().setDataMode('DEMO')} className="mt-4 rounded border border-cyan-400/40 bg-cyan-400/10 px-3 py-2 text-xs font-semibold text-cyan-200">OPEN DEMO WORKSPACE</button>}
-                </div>
-            </div>
+            <TerminalChartLoader
+                feedState={marketFeed.state}
+                isOffline={marketFeed.state === 'OFFLINE'}
+                onOpenDemo={() => useTerminalStore.getState().setDataMode('DEMO')}
+            />
         );
     }
 
@@ -1417,6 +1462,18 @@ export default function MarketStructureChart({
                                 trueFlowSnapshot={trueFlowSnapshot}
                                 liquidityFrames={liquidityFeed.frames}
                                 visibleLogicalRange={visibleLogicalRangeState}
+                                mainChartPriceRange={(() => {
+                                    const hostH = chartHostRef.current?.clientHeight || overlayLayout.height || 460;
+                                    const candles = priceSeriesRef.current;
+                                    if (!candles) return null;
+                                    const pBottom = candles.coordinateToPrice(hostH as any);
+                                    const pTop = candles.coordinateToPrice(0 as any);
+                                    if (pBottom === null || pTop === null || !Number.isFinite(pBottom) || !Number.isFinite(pTop)) return null;
+                                    return {
+                                        min: Math.min(Number(pBottom), Number(pTop)),
+                                        max: Math.max(Number(pBottom), Number(pTop)),
+                                    };
+                                })()}
                                 hoveredPrice={syncedHoverPrice}
                                 hoveredTime={syncedHoverTime}
                                 onHoverCrosshair={handleLeftPaneCrosshair}
@@ -1458,6 +1515,22 @@ export default function MarketStructureChart({
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
                 </div>}
+
+                {chartLayers.sessions !== false && (
+                    <TradingSessionsOverlay
+                        sessions={sessions}
+                        timeToX={(time) => {
+                            const coord = priceChartRef.current?.timeScale().timeToCoordinate(time as any);
+                            return coord === null ? null : Number(coord);
+                        }}
+                        priceToY={(price) => {
+                            const coord = priceSeriesRef.current?.priceToCoordinate(price);
+                            return coord === null ? null : Number(coord);
+                        }}
+                        width={overlayLayout.width}
+                        height={overlayLayout.height}
+                    />
+                )}
 
                 {chartLayers.liquidityHeatmap !== false && (
                     <LiquidityHeatmapOverlay
@@ -1565,6 +1638,34 @@ export default function MarketStructureChart({
                         </>
                     )}
                     <div className="pointer-events-auto absolute left-2 top-2 z-30 flex items-center gap-1">
+                        <div className="flex items-center gap-0.5 rounded border border-cyan-400/20 bg-[#070e17]/95 p-0.5" data-testid="vp-approach-buttons">
+                            {(['DAILY', 'WEEKLY', 'PREV_SESSION', 'FREE_HOLD'] as const).map((mode) => (
+                                <button
+                                    key={mode}
+                                    type="button"
+                                    data-testid={`vp-mode-${mode.toLowerCase()}`}
+                                    title={`Switch to ${mode} Volume Profile`}
+                                    onClick={(e) => { e.stopPropagation(); handleSelectVpApproach(mode); }}
+                                    className={cn(
+                                        'rounded px-1.5 py-0.5 font-mono text-[8px] font-bold transition-colors',
+                                        vpApproachMode === mode
+                                            ? 'bg-cyan-500/20 text-cyan-300 ring-1 ring-cyan-400/40'
+                                            : 'text-zinc-400 hover:text-zinc-200',
+                                    )}
+                                >
+                                    {mode === 'PREV_SESSION' ? 'PREV' : mode === 'FREE_HOLD' ? 'FREE' : mode}
+                                </button>
+                            ))}
+                        </div>
+                        <button
+                            type="button"
+                            data-testid="vp-fit-viewport-btn"
+                            title="Fit Volume Profile to visible chart viewport"
+                            onClick={(e) => { e.stopPropagation(); handleFitVpToVisibleViewport(); }}
+                            className="rounded border border-cyan-400/25 bg-[#09101a]/95 px-1.5 py-1 font-mono text-[8px] font-bold text-cyan-300 hover:bg-cyan-400/15"
+                        >
+                            FIT VIEW
+                        </button>
                         <button
                             type="button"
                             title="Hover and drag to move Volume Profile, or click for controls"
@@ -1572,7 +1673,7 @@ export default function MarketStructureChart({
                             onPointerDown={(event) => beginProfileDrag(event, 'range-body')}
                             className="flex cursor-move items-center gap-1 rounded border border-cyan-400/20 bg-[#09101a]/95 px-2 py-1 text-[9px] font-semibold text-cyan-200 hover:border-cyan-400/45"
                         >
-                            FIXED RANGE VP · {selectedBarCount} BARS · {profileRowCount} ROWS · {profileSourceLabel}
+                            {vpApproachMode} VP · {selectedBarCount} BARS · {profileRowCount} ROWS
                         </button>
                         <button
                             type="button"

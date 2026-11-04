@@ -18,6 +18,9 @@ import CandleFootprintCanvasOverlay, {
     projectTradeVolumeProfileToChart,
 } from './CandleFootprintCanvasOverlay';
 import LeftFootprintExecutionPane, { buildSkeletonExecutionBars } from './LeftFootprintExecutionPane';
+import { calculateTradingSessions } from '../../lib/orderflow/trading-sessions';
+import TradingSessionsOverlay from './TradingSessionsOverlay';
+import TerminalChartLoader from './TerminalChartLoader';
 import { createDemoMarketBars } from '../../lib/ui/market-fixtures';
 import FlowMode from './FlowMode';
 
@@ -379,6 +382,84 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
             expect(executionBars.length).toBeLessThanOrEqual(10);
             expect(executionBars[0].vahPrice).toBeGreaterThanOrEqual(executionBars[0].valPrice);
             expect(executionBars[0].maxLevelVolume).toBeGreaterThan(0);
+        });
+
+        it('supports 1:1 price scale synchronization and renders price sync toggle', () => {
+            const demoBars = createDemoMarketBars(77900, 30, 60);
+            const snapshot = createTestSnapshot(false);
+            const { minPrice, maxPrice } = buildSkeletonExecutionBars(
+                demoBars,
+                10,
+                60,
+                snapshot,
+                [],
+                14,
+                null,
+                true,
+                { min: 75000, max: 82000 },
+                true
+            );
+
+            expect(minPrice).toBeLessThanOrEqual(75000);
+            expect(maxPrice).toBeGreaterThanOrEqual(82000);
+
+            const html = renderToStaticMarkup(
+                <LeftFootprintExecutionPane
+                    bars={demoBars}
+                    timeframeSeconds={60}
+                    trueFlowSnapshot={snapshot}
+                    mainChartPriceRange={{ min: 75000, max: 82000 }}
+                    hoveredPrice={77900}
+                />
+            );
+
+            expect(html).toContain('data-testid="exec-price-sync-toggle"');
+            expect(html).toContain('PRICE SYNC');
+        });
+    });
+
+    describe('TradingSessionsOverlay & Trading Sessions Calculation', () => {
+        it('calculates Tokyo, London, New York and Overlap session boxes across market bars', () => {
+            const demoBars = createDemoMarketBars(77900, 288, 300); // 24 hours of 5m bars
+            const sessions = calculateTradingSessions(demoBars);
+
+            expect(sessions.length).toBeGreaterThan(0);
+            expect(sessions.some((s) => s.session === 'ASIA')).toBe(true);
+            expect(sessions.some((s) => s.session === 'LONDON')).toBe(true);
+            expect(sessions.some((s) => s.session === 'NEW_YORK')).toBe(true);
+            expect(sessions.some((s) => s.session === 'OVERLAP')).toBe(true);
+
+            const asia = sessions.find((s) => s.session === 'ASIA')!;
+            expect(asia.high).toBeGreaterThanOrEqual(asia.low);
+            expect(asia.range).toBe(asia.high - asia.low);
+
+            const html = renderToStaticMarkup(
+                <TradingSessionsOverlay
+                    sessions={sessions}
+                    timeToX={() => 100}
+                    priceToY={() => 200}
+                    width={800}
+                    height={460}
+                />
+            );
+
+            expect(html).toContain('data-testid="trading-sessions-overlay"');
+        });
+    });
+
+    describe('TerminalChartLoader (Creative Sleek Loading Animation)', () => {
+        it('renders sleek cyberpunk radar reticle, BTC monogram, and telemetry ticker', () => {
+            const html = renderToStaticMarkup(
+                <TerminalChartLoader
+                    feedState="LIVE"
+                    isOffline={false}
+                />
+            );
+
+            expect(html).toContain('data-testid="terminal-chart-loader"');
+            expect(html).toContain('₿');
+            expect(html).toContain('CALIBRATING BTC TERMINAL WORKSPACE');
+            expect(html).toContain('LIVE');
         });
     });
 });

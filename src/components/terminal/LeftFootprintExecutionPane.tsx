@@ -43,6 +43,7 @@ export interface LeftFootprintExecutionPaneProps {
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
     liquidityFrames?: LiquidityHeatmapFrame[];
     visibleLogicalRange?: { from: number; to: number } | null;
+    mainChartPriceRange?: { min: number; max: number } | null;
     hoveredPrice: number | null;
     hoveredTime?: number | null;
     onHoverCrosshair?: (point: { price: number | null; time: number | null }) => void;
@@ -70,6 +71,10 @@ export function buildSkeletonExecutionBars(
     ladderRowsTarget = 14,
     visibleLogicalRange?: { from: number; to: number } | null,
     syncWithMain = true,
+    mainChartPriceRange?: { min: number; max: number } | null,
+    syncPriceScale = true,
+    priceScaleZoom = 1.0,
+    priceScaleOffset = 0,
 ): { executionBars: SkeletonExecutionBar[]; bucketStep: number; minPrice: number; maxPrice: number } {
     if (!bars.length) {
         return { executionBars: [], bucketStep: 10, minPrice: 0, maxPrice: 0 };
@@ -97,10 +102,26 @@ export function buildSkeletonExecutionBars(
     }
 
     const bucketStep = choosePriceBucketStep(slice, ladderRowsTarget);
-    const rawLow = Math.min(...slice.map((b) => b.low));
-    const rawHigh = Math.max(...slice.map((b) => b.high));
-    const minPrice = Math.floor(rawLow / bucketStep) * bucketStep - bucketStep;
-    const maxPrice = Math.ceil(rawHigh / bucketStep) * bucketStep + bucketStep;
+    let minPrice: number;
+    let maxPrice: number;
+
+    if (
+        syncPriceScale &&
+        mainChartPriceRange &&
+        Number.isFinite(mainChartPriceRange.min) &&
+        Number.isFinite(mainChartPriceRange.max) &&
+        mainChartPriceRange.max > mainChartPriceRange.min
+    ) {
+        minPrice = Math.floor(mainChartPriceRange.min / bucketStep) * bucketStep;
+        maxPrice = Math.ceil(mainChartPriceRange.max / bucketStep) * bucketStep;
+    } else {
+        const rawLow = Math.min(...slice.map((b) => b.low));
+        const rawHigh = Math.max(...slice.map((b) => b.high));
+        const center = (rawHigh + rawLow) / 2 + priceScaleOffset;
+        const halfSpan = (Math.max(bucketStep * 4, rawHigh - rawLow) / 2) * priceScaleZoom;
+        minPrice = Math.floor((center - halfSpan) / bucketStep) * bucketStep;
+        maxPrice = Math.ceil((center + halfSpan) / bucketStep) * bucketStep;
+    }
 
     // Index captured footprint bars by openTime in seconds
     const capturedByTime = new Map<number, TrueFlowSnapshotV1['footprintBars'][number]>();
@@ -306,6 +327,7 @@ export default function LeftFootprintExecutionPane({
     trueFlowSnapshot,
     liquidityFrames,
     visibleLogicalRange,
+    mainChartPriceRange,
     hoveredPrice,
     hoveredTime,
     onHoverCrosshair,
@@ -319,6 +341,12 @@ export default function LeftFootprintExecutionPane({
     const [viewMode, setViewMode] = useState<LeftExecutionViewMode>('FOOTPRINT');
     const [visibleBarsCount, setVisibleBarsCount] = useState<number>(10);
     const [syncWithMain, setSyncWithMain] = useState<boolean>(true);
+    const [syncPriceScale, setSyncPriceScale] = useState<boolean>(true);
+    const [priceScaleZoom, setPriceScaleZoom] = useState<number>(1.0);
+    const [priceScaleOffset, setPriceScaleOffset] = useState<number>(0);
+    const isDraggingPriceAxisRef = useRef<boolean>(false);
+    const dragStartYRef = useRef<number>(0);
+    const dragStartZoomRef = useRef<number>(1.0);
     const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 520, height: 460 });
     const [localHover, setLocalHover] = useState<{ x: number; y: number; price: number; barTime: number | null } | null>(null);
 
@@ -350,8 +378,12 @@ export default function LeftFootprintExecutionPane({
             14,
             visibleLogicalRange,
             syncWithMain,
+            mainChartPriceRange,
+            syncPriceScale,
+            priceScaleZoom,
+            priceScaleOffset,
         ),
-        [bars, liquidityFrames, syncWithMain, timeframeSeconds, trueFlowSnapshot, visibleBarsCount, visibleLogicalRange],
+        [bars, liquidityFrames, mainChartPriceRange, priceScaleOffset, priceScaleZoom, syncPriceScale, syncWithMain, timeframeSeconds, trueFlowSnapshot, visibleBarsCount, visibleLogicalRange],
     );
 
     const imbalanceCount = useMemo(
@@ -672,6 +704,19 @@ export default function LeftFootprintExecutionPane({
     ]);
 
     function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+        const plotW = Math.max(60, dimensions.width - 58);
+
+        if (x >= plotW) {
+            isDraggingPriceAxisRef.current = true;
+            dragStartYRef.current = event.clientY;
+            dragStartZoomRef.current = priceScaleZoom;
+            setSyncPriceScale(false);
+            event.currentTarget.setPointerCapture(event.pointerId);
+            return;
+        }
+
         isDraggingRef.current = true;
         dragStartXRef.current = event.clientX;
         dragAccumulatedBarsRef.current = 0;
@@ -684,10 +729,23 @@ export default function LeftFootprintExecutionPane({
         const rect = canvas.getBoundingClientRect();
         const x = event.clientX - rect.left;
         const y = event.clientY - rect.top;
+        const plotW = Math.max(60, dimensions.width - 58);
+
+        if (x >= plotW) {
+            canvas.style.cursor = 'ns-resize';
+        } else {
+            canvas.style.cursor = 'crosshair';
+        }
+
+        if (isDraggingPriceAxisRef.current) {
+            const dy = event.clientY - dragStartYRef.current;
+            const newZoom = Math.max(0.15, Math.min(8.0, dragStartZoomRef.current * (1 + dy * 0.008)));
+            setPriceScaleZoom(newZoom);
+            return;
+        }
 
         if (isDraggingRef.current) {
             const dx = event.clientX - dragStartXRef.current;
-            const plotW = Math.max(60, dimensions.width - 58);
             const colW = plotW / Math.max(1, executionBars.length);
             const barShift = -Math.round(dx / Math.max(12, colW));
 
@@ -701,7 +759,6 @@ export default function LeftFootprintExecutionPane({
 
         const rawPrice = canvas.__yToPrice(y);
         const snappedPrice = Math.round(rawPrice / bucketStep) * bucketStep;
-        const plotW = Math.max(60, dimensions.width - 58);
         const colIdx = Math.min(executionBars.length - 1, Math.max(0, Math.floor((x / plotW) * executionBars.length)));
         const barTime = executionBars[colIdx]?.time ?? null;
 
@@ -713,6 +770,7 @@ export default function LeftFootprintExecutionPane({
 
     function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
         isDraggingRef.current = false;
+        isDraggingPriceAxisRef.current = false;
         try {
             event.currentTarget.releasePointerCapture(event.pointerId);
         } catch {
@@ -721,7 +779,7 @@ export default function LeftFootprintExecutionPane({
     }
 
     function handlePointerLeave() {
-        if (isDraggingRef.current) return;
+        if (isDraggingRef.current || isDraggingPriceAxisRef.current) return;
         setLocalHover(null);
         if (syncWithMain) {
             onHoverCrosshair?.({ price: null, time: null });
@@ -729,6 +787,18 @@ export default function LeftFootprintExecutionPane({
     }
 
     function handleWheel(event: React.WheelEvent<HTMLCanvasElement>) {
+        const plotW = Math.max(60, dimensions.width - 58);
+        const rect = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX - rect.left;
+
+        if (x >= plotW) {
+            event.preventDefault();
+            const zoomDelta = event.deltaY < 0 ? 0.9 : 1.1;
+            setSyncPriceScale(false);
+            setPriceScaleZoom((z) => Math.max(0.15, Math.min(8.0, z * zoomDelta)));
+            return;
+        }
+
         event.preventDefault();
         const zoomDelta = event.deltaY < 0 ? -1 : 1;
         setVisibleBarsCount((c) => Math.max(4, Math.min(30, c + zoomDelta)));
@@ -757,6 +827,11 @@ export default function LeftFootprintExecutionPane({
                 onPointerUp={handlePointerUp}
                 onPointerLeave={handlePointerLeave}
                 onWheel={handleWheel}
+                onDoubleClick={() => {
+                    setSyncPriceScale(true);
+                    setPriceScaleZoom(1.0);
+                    setPriceScaleOffset(0);
+                }}
             />
 
             {/* Top Execution Controls Bar */}
@@ -879,6 +954,29 @@ export default function LeftFootprintExecutionPane({
                     >
                         <RefreshCw className={cn('size-2.5', syncWithMain && 'text-[#39A9F5]')} />
                         <span className="text-[8px] font-bold">{syncWithMain ? 'SYNCED' : 'UNSYNC'}</span>
+                    </button>
+
+                    <button
+                        type="button"
+                        data-testid="exec-price-sync-toggle"
+                        title={syncPriceScale ? 'Price scale locked 1:1 to candlestick chart. Drag axis or click to scale freely.' : 'Price scale free. Click or double-click price axis to re-sync 1:1 with main chart.'}
+                        onClick={() => {
+                            setSyncPriceScale((v) => {
+                                if (!v) {
+                                    setPriceScaleZoom(1.0);
+                                    setPriceScaleOffset(0);
+                                }
+                                return !v;
+                            });
+                        }}
+                        className={cn(
+                            'flex items-center gap-1 rounded border px-1.5 py-1',
+                            syncPriceScale
+                                ? 'border-[#39A9F5]/40 bg-[#39A9F5]/15 text-[#39A9F5]'
+                                : 'border-amber-500/40 bg-amber-500/15 text-amber-300',
+                        )}
+                    >
+                        <span className="text-[8px] font-bold">{syncPriceScale ? 'PRICE SYNC' : 'FREE SCALE'}</span>
                     </button>
 
                     {onClosePane && (

@@ -85,6 +85,7 @@ export interface TerminalState {
         footprint?: boolean;
         tradeVolumeProfile?: boolean;
         leftExecutionPane?: boolean;
+        sessions?: boolean;
     };
     toggleChartLayer: (layer: keyof TerminalState['chartLayers']) => void;
     resetWorkspaceUi: () => void;
@@ -102,6 +103,7 @@ const defaultChartLayers = {
     footprint: false,
     tradeVolumeProfile: false,
     leftExecutionPane: true,
+    sessions: true,
 };
 
 export const useTerminalStore = create<TerminalState>()(persist((set) => ({
