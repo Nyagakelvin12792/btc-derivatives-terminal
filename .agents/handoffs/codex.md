@@ -78,3 +78,17 @@ DeepSeek compatibility note: any pre-`dea002c` reconnect fixture that expected
 No UX16.3 liquidity surface, UX16.4 imbalance/persistence/add-pull,
 UX16.5 absorption/divergence, UX16.6 setup grading, UX16.7 AI decision, broker
 route, credential, or live execution path was added.
+
+## 2026-11-06 independent UX16–UX17 audit handoff
+
+>>> COMPLETED BY: Codex
+>>> STATUS: REVIEW REQUIRED
+>>> BRANCH: agent/codex-ux16-ux17-audit
+>>> COMMIT: d3a75f7
+>>> TESTS: 64 Vitest files / 417 tests passed; TypeScript passed; build passed; UX17 Playwright 3 passed / 1 mobile skip; ESLint 26 source errors and 103 warnings; synthetic snapshot benchmark 165 ms at 5,000 trades
+>>> NEXT AGENT: Architect
+>>> ACTION REQUIRED: Review P0 data-integrity findings and the file-organization plan; decide correction ownership and acceptance gates before merging audit branch
+>>> TARGET: docs/audit/UX16_UX17_INDEPENDENT_AUDIT_2026-11-06.md, docs/audit/FILE_ORGANIZATION_PLAN.md, docs/README.md
+
+Audit source code was not modified. Existing untracked `test_position_box.js`
+belongs to the user and was preserved. No deployment or remote push was made.
