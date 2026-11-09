@@ -184,3 +184,12 @@ describe('POST /api/orderflow/jev route (UX16.7)', () => {
         expect(rawJson).not.toMatch(/api[_-]?key|secret|password|bearer/i);
     });
 });
+
+it('caps UTF-8 bytes even without a Content-Length header', async () => {
+    const response = await POST(new NextRequest('http://localhost/api/orderflow/jev', {
+        method: 'POST',
+        body: JSON.stringify({ text: 'é'.repeat(40_000) }),
+    }));
+    expect(response.status).toBe(413);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+});

@@ -192,11 +192,14 @@ export interface TerrainKeyContract {
     confluenceScore: number;
     behaviorZone: DealerBehaviorZone;
     volume: number;
+    volumeUsd?: number;
 }
 
 export interface TerrainDataContractV2 {
     schemaVersion: TerrainSchemaVersion;
     timestamp: string;
+    sourceTime?: string;
+    coverage?: { received?: number; valid?: number; selected: number };
     dataMode: TerrainDataMode;
     assumptionModel: TerrainAssumptionModel;
     spotPrice: number;

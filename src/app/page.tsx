@@ -51,16 +51,17 @@ export default function TerminalPage() {
         selectedStrike,
         selectedDte,
         dteFilter,
+        optionsExpiryFilter,
         setSelectedStrike,
         setSelectedPoint,
     } = useTerminalStore();
 
     // Query live or demo terrain data using TanStack Query
-    const { data: queryData, isError } = useTerrainQuery(dataMode, dteFilter);
+    const { data: queryData, isError } = useTerrainQuery(dataMode, dteFilter, optionsExpiryFilter);
 
     // Fallback data when loading or in demo mode
     const fallbackDemoData = useMemo(() => createCanonicalDashboardData('DEMO') as unknown as TerrainDataContractV2, []);
-    const data: TerrainDataContractV2 = queryData || fallbackDemoData;
+    const data: TerrainDataContractV2 = queryData ?? fallbackDemoData;
 
     const currentStrike = selectedStrike || data.spotPrice || 68000;
     const currentProfile = useMemo(() => {
@@ -72,25 +73,25 @@ export default function TerminalPage() {
         return {
             ...data.summary,
             spotPrice: data.spotPrice || 68000,
-            spot24hChange: 1243.5,
-            spot24hChangePct: 1.86,
+            spot24hChange: data.dataMode === 'DEMO' ? 1243.5 : null,
+            spot24hChangePct: data.dataMode === 'DEMO' ? 1.86 : null,
             openInterestUsd: null,
             openInterestBtc: data.summary.totalOpenInterest,
-            openInterestChangePct: 2.7,
-            iv30d: 54.2,
-            iv30dChange: 0.8,
-            skew25d: 7.6,
-            skew25dChange: 0.3,
-            fundingRate: 0.0102,
+            openInterestChangePct: data.dataMode === 'DEMO' ? 2.7 : null,
+            iv30d: data.dataMode === 'DEMO' ? 54.2 : null,
+            iv30dChange: data.dataMode === 'DEMO' ? 0.8 : null,
+            skew25d: data.dataMode === 'DEMO' ? 7.6 : null,
+            skew25dChange: data.dataMode === 'DEMO' ? 0.3 : null,
+            fundingRate: data.dataMode === 'DEMO' ? 0.0102 : null,
             fundingPeriod: '8h',
             utcTime: new Date().toISOString().replace('T', ' ').substring(0, 19),
             netGex: data.summary.netGex,
             netVanna: data.summary.totalVannaExposure,
             netCharm: data.summary.totalCharmExposure,
-            gammaFlip: data.keyLevels?.gammaFlip?.strike || data.summary.gammaFlip || 65250,
-            callWall: data.keyLevels?.callWall?.strike || data.summary.callWallExposure || 72000,
-            putWall: data.keyLevels?.putWall?.strike || data.summary.putWallExposure || 62000,
-            maxPain: data.keyLevels?.primaryMaxPain?.strike || data.summary.maxPainStrike || 68500,
+            gammaFlip: data.keyLevels?.gammaFlip?.crossings?.length ? data.keyLevels.gammaFlip.strike : 0,
+            callWall: data.keyLevels?.callWall?.strike ?? 0,
+            putWall: data.keyLevels?.putWall?.strike ?? 0,
+            maxPain: data.keyLevels?.primaryMaxPain?.strike ?? 0,
             totalOiUsd: null,
             totalOiBtc: data.summary.totalOpenInterest,
             dealerRegime: data.summary.netGex > 0.3e9 ? 'LONG_GAMMA' : data.summary.netGex < -0.3e9 ? 'SHORT_GAMMA' : 'TRANSITIONAL',
@@ -108,6 +109,18 @@ export default function TerminalPage() {
 
     if (activeWorkspace === 'MARKET STRUCTURE') {
         return <MarketTerminal data={data} isError={isError} />;
+    }
+
+    if (dataMode !== 'DEMO' && (isError || queryData?.dataMode !== 'LIVE' || !queryData.summary.contractsCount)) {
+        return (
+            <div className="min-h-dvh bg-[#05080f] text-zinc-100 flex">
+                <Sidebar activeTab={activeWorkspace} onSelectTab={setActiveWorkspace} />
+                <main className="p-6">
+                    <p>Deribit options data unavailable for this selection.</p>
+                    <button type="button" onClick={() => setDataMode('DEMO')}>Switch to demo</button>
+                </main>
+            </div>
+        );
     }
 
     return (

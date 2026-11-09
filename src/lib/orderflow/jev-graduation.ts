@@ -35,6 +35,14 @@ export interface JevGraduationGateInput {
     weeklyLossLocked: boolean;
     consecutiveLossesInSession: number;
     userExplicitAutoPaperOptIn: boolean;
+    operationalEvidence?: {
+        shadowSessions: number;
+        completedManualTrades: number;
+        unexplainedMismatches: number;
+        duplicateSubmissions: number;
+        reconciledRecovery: boolean;
+        pauseAndRiskLocksVerified: boolean;
+    };
 }
 
 export interface JevGraduationGateStatus {
@@ -59,7 +67,7 @@ export function evaluateJevGraduationGates(
         input.deterministicStrategyResearchPassed && input.jevIncrementalEdgePassed;
     if (!input.deterministicStrategyResearchPassed) {
         blockingReasons.push(
-            'Deterministic NY_VALUE_RETEST_V1 has not yet passed the 40-trade OOS Research Gate.',
+            'Deterministic NY_VALUE_RETEST_V1 has not yet passed the 100-trade, 40-session untouched holdout gate.',
         );
     }
     if (!input.jevIncrementalEdgePassed) {
@@ -85,8 +93,13 @@ export function evaluateJevGraduationGates(
         !input.weeklyLossLocked &&
         input.consecutiveLossesInSession < 2;
 
-    const autoPaperEligible =
-        researchGatePassed && operationalGatePassed && input.userExplicitAutoPaperOptIn;
+    const evidence = input.operationalEvidence;
+    const forwardEvidencePassed = Boolean(evidence && Number.isInteger(evidence.shadowSessions) && evidence.shadowSessions >= 20
+        && Number.isInteger(evidence.completedManualTrades) && evidence.completedManualTrades >= 10
+        && evidence.unexplainedMismatches === 0 && evidence.duplicateSubmissions === 0
+        && evidence.reconciledRecovery && evidence.pauseAndRiskLocksVerified);
+    if (!forwardEvidencePassed) blockingReasons.push('Forward operating evidence has not met the 20-session and 10-trade minimums.');
+    const autoPaperEligible = researchGatePassed && operationalGatePassed && forwardEvidencePassed && input.userExplicitAutoPaperOptIn;
 
     let activeTier: JevExecutionTier = 'TIER_1_SHADOW_ONLY';
     if (autoPaperEligible) {
@@ -197,7 +210,7 @@ export class JevPaperTicketGatekeeper {
             return { allowed: false, reason: 'Ticket does not carry deterministic pass + Jev AGREE.' };
         }
 
-        if (nowMs > t.expiresAtMs) {
+        if (!Number.isFinite(nowMs) || nowMs < t.issuedAtMs || nowMs >= t.expiresAtMs || t.expiresAtMs - t.issuedAtMs > JEV_TICKET_TTL_MS) {
             return {
                 allowed: false,
                 reason: `Ticket expired (${Math.round((nowMs - t.expiresAtMs) / 1000)}s past 60s TTL).`,

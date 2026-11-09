@@ -39,9 +39,9 @@ export interface Ux20ReadinessEvaluation {
     };
     strategyResearchReadiness: {
         status: 'VERIFIED_PROFITABLE' | 'RESEARCH_RUNNER_READY_EVIDENCE_PENDING' | 'BLOCKED';
-        holdoutTradesCompleted: number;
+        holdoutTradesCompleted: number | null;
         holdoutTradesRequired: number;
-        eligibleSessionsCompleted: number;
+        eligibleSessionsCompleted: number | null;
         eligibleSessionsRequired: number;
         lower95CiExpectancyR: number | null;
         doubledFrictionPositive: boolean;
@@ -52,12 +52,12 @@ export interface Ux20ReadinessEvaluation {
         autoPaperEnabled: boolean;
         researchGatePassed: boolean;
         operationalGatePassed: boolean;
-        forwardShadowSessionsCompleted: number;
+        forwardShadowSessionsCompleted: number | null;
         forwardShadowSessionsRequired: number;
-        manualPaperTradesCompleted: number;
+        manualPaperTradesCompleted: number | null;
         manualPaperTradesRequired: number;
-        unexplainedMismatches: number;
-        duplicateSubmissions: number;
+        unexplainedMismatches: number | null;
+        duplicateSubmissions: number | null;
         summary: string;
     };
 }
@@ -540,24 +540,12 @@ interface Ux20TaskSeed {
 }
 
 function makeUx20Task(seed: Ux20TaskSeed): ProjectTaskV1 {
-    const status = seed.status ?? 'COMPLETE';
-    const evidenceStatus = seed.evidenceStatus ?? 'ACCEPTED';
-    const commit = seed.commit ?? '7ab2f19';
-    const reviewedBy = seed.reviewedBy ?? 'ARCHITECT';
-    const reviewedAt = seed.reviewedAt ?? UX20_CREATED_AT;
-    const defaultTests: ProjectTaskV1['evidence']['tests'] = seed.tests ?? [
-        {
-            id: `${seed.id.toLowerCase()}-vitest`,
-            command: 'npx vitest run',
-            result: 'PASS',
-            passed: 1,
-            failed: 0,
-            skipped: 0,
-            executedAt: UX20_CREATED_AT,
-            commit,
-            artifactPaths: ['docs/ui-ux/UX20_PROGRESS.md'],
-        },
-    ];
+    const status = seed.status ?? 'REVIEW_REQUIRED';
+    const evidenceStatus = seed.evidenceStatus ?? 'UNVERIFIED';
+    const commit = seed.commit ?? null;
+    const reviewedBy = seed.reviewedBy ?? null;
+    const reviewedAt = seed.reviewedAt ?? null;
+    const defaultTests = seed.tests ?? [];
     return {
         id: seed.id,
         milestoneId: seed.milestoneId,
@@ -1059,18 +1047,25 @@ export function buildUx20Milestones(): MilestoneProgressV1[] {
     ];
 }
 
-export function evaluateUx20ReadinessGates(milestones: readonly MilestoneProgressV1[]): Ux20ReadinessEvaluation {
+export function evaluateUx20ReadinessGates(milestones: readonly MilestoneProgressV1[], sourceCommit?: string | null): Ux20ReadinessEvaluation {
     const ux20Tasks = milestones
         .filter((m) => m.id.startsWith('UX20.'))
         .flatMap((m) => m.features.flatMap((f) => f.tasks));
 
     const p0Tasks = ux20Tasks.filter((t) => UX20_TASK_METADATA_MAP[t.id]?.priority === 'P0');
     const p1Tasks = ux20Tasks.filter((t) => UX20_TASK_METADATA_MAP[t.id]?.priority === 'P1');
-    const p0CompletedCount = p0Tasks.filter((t) => t.status === 'COMPLETE').length;
-    const p1CompletedCount = p1Tasks.filter((t) => t.status === 'COMPLETE').length;
+    const accepted = (t: ProjectTaskV1) => t.status === 'COMPLETE'
+        && Boolean(sourceCommit && /^[a-f0-9]{40}$/i.test(sourceCommit))
+        && t.evidence.commit === sourceCommit && t.evidence.evidenceStatus === 'ACCEPTED'
+        && t.evidence.reviewedBy !== null && t.evidence.reviewedBy !== t.owner
+        && t.evidence.reviewedAt !== null
+        && t.evidence.tests.some((test) => test.result === 'PASS' && test.commit === sourceCommit
+            && (test.passed ?? 0) > 0 && test.artifactPaths.some((path) => /\.(json|xml|log|zip)$/.test(path)));
+    const p0CompletedCount = p0Tasks.filter(accepted).length;
+    const p1CompletedCount = p1Tasks.filter(accepted).length;
     const anyBlocked = ux20Tasks.some((t) => t.status === 'BLOCKED');
 
-    const softwareReady = !anyBlocked && p0CompletedCount === p0Tasks.length && p1CompletedCount === p1Tasks.length && p0Tasks.length > 0;
+    const softwareReady = !anyBlocked && p0CompletedCount === p0Tasks.length && p1CompletedCount === p1Tasks.length && ux20Tasks.length === Object.keys(UX20_TASK_METADATA_MAP).length;
 
     return {
         softwareReadiness: {
@@ -1084,26 +1079,26 @@ export function evaluateUx20ReadinessGates(milestones: readonly MilestoneProgres
                 : `Software implementation in progress (${p0CompletedCount}/${p0Tasks.length} P0, ${p1CompletedCount}/${p1Tasks.length} P1 complete).`,
         },
         strategyResearchReadiness: {
-            status: 'RESEARCH_RUNNER_READY_EVIDENCE_PENDING',
-            holdoutTradesCompleted: 18,
+            status: 'BLOCKED',
+            holdoutTradesCompleted: null,
             holdoutTradesRequired: 100,
-            eligibleSessionsCompleted: 12,
+            eligibleSessionsCompleted: null,
             eligibleSessionsRequired: 40,
             lower95CiExpectancyR: null,
             doubledFrictionPositive: false,
-            summary: 'Deterministic NY_VALUE_RETEST_V1 evaluator and backtest runner are operational on local fixtures; promotion requires >=100 untouched holdout trades across >=40 eligible NY sessions (§6.5).',
+            summary: 'No accepted historical research evidence. Promotion requires >=100 untouched holdout trades across >=40 eligible NY sessions (§6.5).',
         },
         jevAutoPaperEligibility: {
             status: 'NOT_ELIGIBLE',
             autoPaperEnabled: false,
             researchGatePassed: false,
             operationalGatePassed: false,
-            forwardShadowSessionsCompleted: 12,
+            forwardShadowSessionsCompleted: null,
             forwardShadowSessionsRequired: 20,
-            manualPaperTradesCompleted: 5,
+            manualPaperTradesCompleted: null,
             manualPaperTradesRequired: 10,
-            unexplainedMismatches: 0,
-            duplicateSubmissions: 0,
+            unexplainedMismatches: null,
+            duplicateSubmissions: null,
             summary: 'Automatic paper execution is LOCKED OFF by default. Requires §6.5 Research Gate (>=100 holdout trades) AND Operational Gate (>=20 forward shadow sessions, >=10 manual paper trades) plus explicit user opt-in.',
         },
     };

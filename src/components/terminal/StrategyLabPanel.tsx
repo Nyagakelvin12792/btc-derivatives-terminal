@@ -6,6 +6,9 @@ import {
     runChronologicalStrategyBacktest,
     type BacktestRunReportV1,
 } from '../../lib/strategy/backtest-runner';
+import { LocalRetestInputSchema } from '../../lib/strategy/local-retest-input';
+import { evaluatePointInTimeNyValueRetest } from '../../lib/strategy/ny-value-retest-point-in-time';
+import { computeFnva32Hex } from '../../lib/replay/replay-clock';
 import { buildCandleEvidenceMarkers } from '../../lib/strategy/candle-evidence';
 import { evaluateJevGraduationGates } from '../../lib/orderflow/jev-graduation';
 import type { NyValueRetestBar5m } from '../../lib/strategy/ny-value-retest';
@@ -52,44 +55,62 @@ export default function StrategyLabPanel({
     const [showRejectedCandidates, setShowRejectedCandidates] = useState<boolean>(false);
     const [autoPaperOptIn, setAutoPaperOptIn] = useState<boolean>(false);
     const [selectedMarkerId, setSelectedMarkerId] = useState<string | null>(null);
-    const [runCounter, setRunCounter] = useState<number>(1);
+    const [localDecision, setLocalDecision] = useState<{
+        datasetId: string; checksum: string; result: ReturnType<typeof evaluatePointInTimeNyValueRetest>;
+    } | null>(null);
+    const [loadError, setLoadError] = useState<string | null>(null);
+    const [loadingDecision, setLoadingDecision] = useState(false);
+    const [backtestReport, setBacktestReport] = useState<BacktestRunReportV1 | null>(null);
 
     const dataset = useMemo(() => buildDefaultLabDataset(spotPrice), [spotPrice]);
 
-    const backtestReport = useMemo<BacktestRunReportV1>(() => {
-        return runChronologicalStrategyBacktest({
-            datasetId: `ny-value-retest-v1-run-${runCounter}`,
+    async function inspectLocalDecision(file: File) {
+        setLoadingDecision(true);
+        setLocalDecision(null);
+        setLoadError(null);
+        try {
+            if (file.size > 5 * 1024 * 1024) throw new Error('Dataset file exceeds 5 MiB.');
+            const raw = await file.text();
+            const input = LocalRetestInputSchema.parse(JSON.parse(raw));
+            setLocalDecision({ datasetId: input.datasetId, checksum: computeFnva32Hex(raw), result: evaluatePointInTimeNyValueRetest(input) });
+        } catch {
+            setLoadError('The local file did not match the BTC/USDT point-in-time dataset contract or exceeded 5 MiB.');
+        } finally {
+            setLoadingDecision(false);
+        }
+    }
+
+    function runDiagnostic() {
+        setSelectedMarkerId(null);
+        setBacktestReport(runChronologicalStrategyBacktest({
+            datasetId: 'synthetic-ohlc-diagnostic-v1',
             bars: dataset,
             startingCapitalUsdt,
             inSampleFraction: 0.35,
-        });
-    }, [dataset, runCounter, startingCapitalUsdt]);
+        }));
+    }
 
     const evidenceMarkers = useMemo(
         () =>
             buildCandleEvidenceMarkers({
-                journal: backtestReport.oosJournal,
-                rejectedCandidates: backtestReport.rejectedCandidates,
+                journal: backtestReport?.oosJournal ?? [],
+                rejectedCandidates: backtestReport?.rejectedCandidates ?? [],
                 includeRejectedCandidates: showRejectedCandidates,
             }),
-        [backtestReport.oosJournal, backtestReport.rejectedCandidates, showRejectedCandidates],
+        [backtestReport?.oosJournal, backtestReport?.rejectedCandidates, showRejectedCandidates],
     );
 
     const jevGraduation = useMemo(
         () =>
             evaluateJevGraduationGates({
-                deterministicStrategyResearchPassed: backtestReport.researchGateVerdict.passed,
+                deterministicStrategyResearchPassed: false,
                 jevIncrementalEdgePassed: false,
                 operationalHealthOk: true,
-                weeklyLossLocked: backtestReport.ledgerSnapshot.weeklyLossLocked,
+                weeklyLossLocked: backtestReport?.ledgerSnapshot.weeklyLossLocked ?? false,
                 consecutiveLossesInSession: 0,
                 userExplicitAutoPaperOptIn: autoPaperOptIn,
             }),
-        [
-            autoPaperOptIn,
-            backtestReport.ledgerSnapshot.weeklyLossLocked,
-            backtestReport.researchGateVerdict.passed,
-        ],
+        [autoPaperOptIn, backtestReport?.ledgerSnapshot.weeklyLossLocked],
     );
 
     const selectedMarker =
@@ -103,15 +124,34 @@ export default function StrategyLabPanel({
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-1.5 font-mono text-[9px] font-bold uppercase tracking-wider text-[#39A9F5]">
                     <FlaskConical className="size-3.5" />
-                    <span>STRATEGY LAB · NY_VALUE_RETEST_V1</span>
+                    <span>STRATEGY LAB · SYNTHETIC OHLC DIAGNOSTIC</span>
                 </div>
                 <span
                     className="rounded border border-[#18212C] bg-[#070A0F] px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#E6B450]"
                     data-testid="strategy-lab-isolation-badge"
                     title="Backtest runs in an isolated BACKTEST_ACCOUNT and never mutates live PAPER_ACCOUNT"
                 >
-                    {backtestReport.accountScope}
+                    BACKTEST_ACCOUNT
                 </span>
+            </div>
+
+            <div className="mt-2 space-y-1 rounded border border-[#18212C] p-2 text-[9px]">
+                <label className="block font-bold" htmlFor="strategy-lab-local-data">Inspect a local point-in-time dataset</label>
+                <input id="strategy-lab-local-data" type="file" accept=".json,application/json" disabled={loadingDecision}
+                    onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        if (file) void inspectLocalDecision(file);
+                        event.currentTarget.value = '';
+                    }} />
+                <p>This browser reads the file locally. Results are single-decision evidence and are ineligible for graduation.</p>
+                {loadingDecision && <p role="status">Evaluating local dataset</p>}
+                {loadError && <p role="alert">{loadError}</p>}
+                {localDecision && (
+                    <details open>
+                        <summary>{localDecision.result.status} · {localDecision.result.reason}</summary>
+                        <pre className="overflow-x-auto">{JSON.stringify(localDecision, null, 2)}</pre>
+                    </details>
+                )}
             </div>
 
             {/* Controls Row */}
@@ -130,21 +170,22 @@ export default function StrategyLabPanel({
                 </div>
                 <button
                     type="button"
-                    onClick={() => setRunCounter((c) => c + 1)}
+                    onClick={runDiagnostic}
                     data-testid="strategy-lab-run-btn"
                     className="flex items-center gap-1 rounded border border-[#39A9F5]/40 bg-[#39A9F5]/15 px-2 py-1 font-bold text-[#39A9F5] hover:bg-[#39A9F5]/25"
                 >
                     <Play className="size-2.5" />
-                    Run OOS &amp; Ablation Suite
+                    Run synthetic diagnostic
                 </button>
             </div>
 
+            {!backtestReport ? <p className="mt-2 text-xs text-[#8390A0]">Historical data unavailable. The synthetic diagnostic is ineligible for graduation.</p> : <>
             {/* Primary OOS Summary */}
             <div className="mt-2 grid grid-cols-3 gap-1.5 font-mono text-[8.5px]">
                 <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                     <span className="text-[7.5px] text-[#8390A0]">OOS TRADES</span>
                     <div className="mt-0.5 font-bold text-[#D8DEE8]" data-testid="strategy-lab-oos-trades">
-                        {backtestReport.primaryOosSummary.tradeCount} / 40 REQ
+                        {backtestReport.primaryOosSummary.tradeCount} / 100 REQ
                     </div>
                 </div>
                 <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
@@ -289,6 +330,7 @@ export default function StrategyLabPanel({
                     </div>
                 )}
             </div>
+            </>}
         </div>
     );
 }

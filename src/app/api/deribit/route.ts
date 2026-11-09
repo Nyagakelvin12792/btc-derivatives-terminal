@@ -1,69 +1,41 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { FALLBACK_SPOT_PRICE, fetchDeribitOptionChain } from '@/lib/deribit/client.server';
-import {
-    filterDeribitOptionsByDte,
-    filterDeribitOptionsByExactExpiry,
-    isDeribitDteFilter,
-} from '@/lib/deribit/dte-filter';
-import { buildDemoTerrainDataContract, buildTerrainDataContract } from '@/lib/terrain/engine';
+import { FALLBACK_SPOT_PRICE, fetchDeribitOptionChain } from '../../../lib/deribit/client.server';
+import { filterDeribitOptionsByDte, filterDeribitOptionsByExactExpiry, isDeribitDteFilter, refreshDeribitOptionDte } from '../../../lib/deribit/dte-filter';
+import { buildDemoTerrainDataContract, buildTerrainDataContract } from '../../../lib/terrain/engine';
 
-const DERIBIT_RESPONSE_CACHE_CONTROL = 'public, max-age=5, s-maxage=15, stale-while-revalidate=30';
+const headers = { 'Cache-Control': 'no-store' };
 
 export async function GET(request: NextRequest) {
     const now = new Date();
-    const mode = request.nextUrl.searchParams.get('mode');
-    const strictLive = request.nextUrl.searchParams.get('strict') === '1';
-    const dteParam = request.nextUrl.searchParams.get('dte') ?? 'ALL';
-    const expiryParam = request.nextUrl.searchParams.get('expiry');
-
-    if (!isDeribitDteFilter(dteParam)) {
-        return NextResponse.json({ error: 'Unsupported DTE filter' }, { status: 400, headers: { 'Cache-Control': 'no-store' } });
+    const params = request.nextUrl.searchParams;
+    const dte = params.get('dte') ?? 'ALL';
+    const expiry = params.get('expiry');
+    const windows = params.get('expiries')?.split(',');
+    if (!isDeribitDteFilter(dte) || windows?.some((window) => !/^(2|7|14|30)$/.test(window))) {
+        return NextResponse.json({ error: 'Unsupported DTE filter' }, { status: 400, headers });
     }
-
-    if (mode === 'demo') {
-        return NextResponse.json(buildDemoTerrainDataContract(FALLBACK_SPOT_PRICE, now), {
-            headers: { 'Cache-Control': 'no-store' },
-        });
+    const maxWindow = windows ? Math.max(...windows.map(Number)) : Infinity;
+    const selectOptions = (options: Parameters<typeof filterDeribitOptionsByDte>[0]) =>
+        filterDeribitOptionsByExactExpiry(filterDeribitOptionsByDte(options, dte), expiry)
+            .filter((option) => option.dte <= maxWindow);
+    if (params.get('mode') === 'demo') {
+        return NextResponse.json(buildDemoTerrainDataContract(FALLBACK_SPOT_PRICE, now, selectOptions), { headers });
     }
 
     try {
         const chain = await fetchDeribitOptionChain(now);
-        const dteFiltered = filterDeribitOptionsByDte(chain.options, dteParam);
-        const filteredOptions = expiryParam
-            ? filterDeribitOptionsByExactExpiry(dteFiltered, expiryParam)
-            : dteFiltered;
-
-        return NextResponse.json(
-            buildTerrainDataContract({
-                options: filteredOptions,
-                spotPrice: chain.spotPrice,
-                now,
-                dataMode: 'LIVE',
-            }),
-            {
-                headers: {
-                    'Cache-Control': DERIBIT_RESPONSE_CACHE_CONTROL,
-                },
-            }
-        );
-    } catch (err: unknown) {
-        console.error('Error fetching Deribit data:', err);
-        if (strictLive) {
-            return NextResponse.json(
-                {
-                    error: 'Deribit upstream unavailable in strict LIVE mode',
-                    dataMode: 'DEGRADED',
-                },
-                {
-                    status: 503,
-                    headers: { 'Cache-Control': 'no-store' },
-                }
-            );
+        if (chain.sourceTimeMs === undefined || Date.now() - chain.sourceTimeMs > 60_000) {
+            throw new Error('Deribit chain freshness unavailable');
         }
-        return NextResponse.json(buildDemoTerrainDataContract(FALLBACK_SPOT_PRICE, now), {
-            headers: {
-                'Cache-Control': 'no-store',
-            },
-        });
+        const active = refreshDeribitOptionDte(chain.options, now);
+        const filtered = selectOptions(active);
+        const terrain = buildTerrainDataContract({ options: filtered, spotPrice: chain.spotPrice, now, dataMode: 'LIVE' });
+        return NextResponse.json({
+            ...terrain,
+            sourceTime: new Date(chain.sourceTimeMs).toISOString(),
+            coverage: { ...chain.coverage, selected: filtered.length },
+        }, { headers });
+    } catch {
+        return NextResponse.json({ error: 'Deribit live data unavailable', dataMode: 'DEGRADED' }, { status: 503, headers });
     }
 }

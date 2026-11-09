@@ -1,7 +1,7 @@
 import {
     normalizeBookSummaryPayload,
-    normalizeDeribitOptions,
-    normalizeIndexPricePayload,
+    normalizeDeribitOptionsStrict,
+    normalizeIndexPriceStrict,
 } from './normalization';
 import type { NormalizedDeribitChain, Usd } from './types';
 
@@ -13,12 +13,6 @@ const CHAIN_CACHE_TTL_MS = REVALIDATE_SECONDS * 1000;
 const REQUEST_TIMEOUT_MS = 8000;
 
 export const FALLBACK_SPOT_PRICE = 69000 as Usd;
-
-type NextFetchInit = RequestInit & {
-    next?: {
-        revalidate?: number;
-    };
-};
 
 export class DeribitUpstreamError extends Error {
     constructor(message: string) {
@@ -48,11 +42,9 @@ async function fetchJson(url: string): Promise<unknown> {
         headers: {
             accept: 'application/json',
         },
-        next: {
-            revalidate: REVALIDATE_SECONDS,
-        },
+        cache: 'no-store',
         signal: requestSignal(),
-    } satisfies NextFetchInit);
+    });
 
     if (!response.ok) {
         throw new DeribitUpstreamError(`Deribit request failed with ${response.status}`);
@@ -95,30 +87,23 @@ export async function fetchDeribitOptionChain(now: Date): Promise<NormalizedDeri
 
 async function fetchFreshDeribitOptionChain(now: Date): Promise<NormalizedDeribitChain> {
     const [indexResult, bookPayload] = await Promise.all([
-        fetchJson(BTC_INDEX_URL).catch(() => null),
+        fetchJson(BTC_INDEX_URL),
         fetchJson(BTC_OPTIONS_BOOK_URL),
     ]);
-
-    let spotPrice = FALLBACK_SPOT_PRICE;
-    if (indexResult !== null) {
-        try {
-            spotPrice = normalizeIndexPricePayload(indexResult, FALLBACK_SPOT_PRICE);
-        } catch {
-            spotPrice = FALLBACK_SPOT_PRICE;
-        }
-    }
-
+    const spotPrice = normalizeIndexPriceStrict(indexResult);
     const bookItems = normalizeBookSummaryPayload(bookPayload);
-    const options = normalizeDeribitOptions(bookItems, now);
-
+    const asOf = Date.now();
+    const fresh = bookItems.filter((item) =>
+        item.sourceTimeMs !== undefined && item.sourceTimeMs <= asOf + 5_000 && asOf - item.sourceTimeMs <= 60_000
+    );
+    const { options } = normalizeDeribitOptionsStrict(fresh, now);
     if (options.length === 0) {
-        throw new DeribitUpstreamError('Deribit returned no active BTC option contracts');
+        throw new DeribitUpstreamError('No fresh BTC option contracts with valid OI and IV');
     }
-
-    return {
-        spotPrice,
-        options,
-    };
+    const validNames = new Set(options.map((option) => option.instrument));
+    const sourceTimeMs = Math.min(...fresh.filter((item) => validNames.has(item.instrumentName)).map((item) => item.sourceTimeMs!));
+    const received = (bookPayload as { result: unknown[] }).result.length;
+    return { spotPrice, options, sourceTimeMs, coverage: { received, valid: options.length } };
 }
 
 export function clearDeribitOptionChainCacheForTests(): void {

@@ -22,9 +22,9 @@ describe('UX20.4-LEDGER-01 Paper Capital & Fee-Inclusive Sizing Engine', () => {
 
         expect(res.valid).toBe(true);
         expect(res.riskBudgetUsdt).toBe(25);
-        // loss_per_btc = 70000 * 1.0002 - 69500 * (1 - 0.0007) = 70014 - 69451.35 = 562.65
-        expect(res.lossPerBtcUsdt).toBeCloseTo(562.65, 4);
-        // raw_qty = 25 / 562.65 = 0.04443259... -> floored to 0.0001 = 0.0444 BTC
+        // loss_per_btc = 70000 * 1.0002 - 69500 * (1 - 0.0007) = 70014 - 69451.35 = 562.64305
+        expect(res.lossPerBtcUsdt).toBeCloseTo(562.64305, 4);
+        // raw_qty = 25 / 562.64305 = 0.04443259... -> floored to 0.0001 = 0.0444 BTC
         expect(res.finalQuantityBtc).toBe(0.0444);
         expect(res.estimatedStopLossUsdt).toBeLessThanOrEqual(25);
         expect(res.netRewardToRisk).toBeGreaterThan(2.0);
@@ -47,14 +47,13 @@ describe('UX20.4-LEDGER-01 Paper Capital & Fee-Inclusive Sizing Engine', () => {
                 entryPrice: 70_000,
                 stopPrice: 69_500,
                 targetPrice: 71_200,
-                riskFraction: 0.0026, // slightly above 0.25% so lot rounding hits ~$25.88 loss
-            });
+                });
             expect(opened.accepted).toBe(true);
             ledger.processBar({
                 timestampMs: t + 300_000,
-                open: 70_000,
+                open: i === 5 ? 69_200 : 70_000,
                 high: 70_050,
-                low: 69_400, // hits stop
+                low: 69_100, // hits stop; final bar gaps through it
                 close: 69_450,
             });
         }
@@ -106,4 +105,16 @@ describe('UX20.4-LEDGER-01 Paper Capital & Fee-Inclusive Sizing Engine', () => {
         ).toThrow();
         expect(floorToLot(Number.NaN, 0.0001)).toBe(0);
     });
+});
+
+it('uses available volume for trade-through and reconciles reversal residuals', () => {
+    const engine = new SimulatedOrderFillEngine();
+    const limit = engine.submitOrder({ side: 'BUY', type: 'LIMIT', limitPrice: 100, quantity: 1 });
+    const tick = { time: 1000, bid: 98, ask: 99, last: 99, low: 99, high: 101, volume: 0 };
+    engine.processTick(tick);
+    expect(engine.getOrders().find((order) => order.id === limit.id)?.filledQuantity).toBe(0);
+    engine.processTick({ ...tick, time: 2000, volume: 0.25 });
+    expect(engine.getPosition().quantity).toBe(0.25);
+    engine.submitOrder({ side: 'SELL', type: 'MARKET', currentPrice: 99, quantity: 0.5 });
+    expect(engine.getPosition()).toMatchObject({ side: 'SHORT', quantity: 0.25 });
 });

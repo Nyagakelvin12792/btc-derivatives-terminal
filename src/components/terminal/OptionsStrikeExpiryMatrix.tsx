@@ -22,7 +22,7 @@ export interface MatrixCellRow {
         {
             signedGexUsd: number;
             openInterestBtc: number;
-            ivPercent: number;
+            ivPercent: number | null;
         }
     >;
 }
@@ -42,12 +42,13 @@ export function buildStrikeExpiryMatrixRows(
         const strikeMap = new Map<number, MatrixCellRow['byExpiry']>();
 
         for (const cell of cells) {
+            if (!cell.observed) continue;
             expirySet.add(cell.expiry);
             const row = strikeMap.get(cell.strike) ?? {};
             row[cell.expiry] = {
                 signedGexUsd: cell.gexExposure,
                 openInterestBtc: cell.openInterestBtc,
-                ivPercent: cell.iv ?? 0,
+                ivPercent: cell.iv,
             };
             strikeMap.set(cell.strike, row);
         }
@@ -68,43 +69,11 @@ export function buildStrikeExpiryMatrixRows(
         };
     }
 
-    // Fallback structural summary around callWall / gammaFlip / putWall when full surfaceGrid is not passed
-    const expiries = ['2D', '7D', '14D', '30D'];
-    const baseStrike = Math.round(spotPrice / 1000) * 1000;
-    const candidateStrikes = Array.from(
-        new Set([
-            Math.round(callWall),
-            baseStrike + 1000,
-            Math.round(gammaFlip),
-            baseStrike,
-            Math.round(putWall),
-        ]),
-    )
-        .filter((s) => Number.isFinite(s) && s > 0)
-        .sort((a, b) => b - a)
-        .slice(0, 5);
-
-    const rows: MatrixCellRow[] = candidateStrikes.map((strike) => {
-        const distFromFlip = strike - gammaFlip;
-        const byExpiry: MatrixCellRow['byExpiry'] = {};
-        expiries.forEach((exp, idx) => {
-            const weight = 1 / (idx + 1);
-            const gexSign = distFromFlip >= 0 ? 1 : -1;
-            const isWall = strike === Math.round(callWall) || strike === Math.round(putWall);
-            byExpiry[exp] = {
-                signedGexUsd: Math.round(gexSign * (isWall ? 42_000_000 : 14_500_000) * weight),
-                openInterestBtc: Number(((isWall ? 820 : 310) * weight).toFixed(1)),
-                ivPercent: Number((52 + Math.abs(strike - spotPrice) / spotPrice * 85 + idx * 1.4).toFixed(1)),
-            };
-        });
-        return { strike, byExpiry };
-    });
-
-    return { expiries, rows, isSyntheticPreview: true };
+    return { expiries: [], rows: [], isSyntheticPreview: false };
 }
 
 function formatMatrixValue(
-    cell: { signedGexUsd: number; openInterestBtc: number; ivPercent: number } | undefined,
+    cell: { signedGexUsd: number; openInterestBtc: number; ivPercent: number | null } | undefined,
     mode: MatrixMetricMode,
 ): string {
     if (!cell) return '—';
@@ -113,9 +82,9 @@ function formatMatrixValue(
         return `${m >= 0 ? '+' : ''}${m.toFixed(1)}M`;
     }
     if (mode === 'OPEN_INTEREST') {
-        return `${cell.openInterestBtc.toFixed(0)}B`;
+        return `${cell.openInterestBtc.toFixed(1)} BTC`;
     }
-    return `${cell.ivPercent.toFixed(1)}%`;
+    return cell.ivPercent === null ? '—' : `${cell.ivPercent.toFixed(1)}%`;
 }
 
 export default function OptionsStrikeExpiryMatrix({
@@ -172,6 +141,10 @@ export default function OptionsStrikeExpiryMatrix({
                 </div>
             </div>
 
+            <p className="mb-1 font-mono text-[8px] text-[#8390A0]">
+                {contract?.dataMode === 'DEMO' ? 'SYNTHETIC DEMO' : contract?.sourceTime ? `Deribit UTC · ${contract.sourceTime}` : 'Deribit chain unavailable'}
+                {contract?.coverage && ` · ${contract.coverage.selected} selected / ${contract.coverage.valid ?? '—'} valid / ${contract.coverage.received ?? '—'} received`}
+            </p>
             <div className="overflow-x-auto">
                 <table className="w-full border-collapse font-mono text-[8px]">
                     <thead>

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { WorkspaceTab } from '@/lib/dashboard/types';
 import { TerrainSurfaceCell } from '@/lib/terrain/types';
+import type { WorkspacePresetId } from '../ui/design-tokens';
 import { resolveUx16PublicFeatureFlags } from '../orderflow/feature-flags';
 
 const calmWorkspaceEnabled = process.env.NEXT_PUBLIC_UX16_CALM_WORKSPACE !== 'false';
@@ -67,6 +68,10 @@ export interface TerminalState {
     setStudyPaneOpen: (open: boolean) => void;
     activeOrderFlowStudy: 'CVD' | 'DELTA' | 'BOOK' | 'LIQUIDITY';
     setActiveOrderFlowStudy: (study: 'CVD' | 'DELTA' | 'BOOK' | 'LIQUIDITY') => void;
+    workspacePreset: WorkspacePresetId | null;
+    setWorkspacePreset: (preset: WorkspacePresetId) => void;
+    optionsExpiryFilter: string | null;
+    setOptionsExpiryFilter: (expiry: string | null) => void;
     dteFilter: '0-2D' | '7D' | '14D' | '30D' | 'ALL';
     setDteFilter: (filter: '0-2D' | '7D' | '14D' | '30D' | 'ALL') => void;
     optionsDisplay: 'GEX' | 'OI';
@@ -114,7 +119,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     setWorkspaceMode: (mode) => set({ workspaceMode: mode }),
 
     dataMode: 'LIVE',
-    setDataMode: (mode) => set({ dataMode: mode }),
+    setDataMode: (mode) => set({ dataMode: mode, optionsExpiryFilter: null }),
 
     selectedStrike: 72000,
     selectedExpiry: '2025-06-27',
@@ -165,8 +170,12 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
     setStudyPaneOpen: (open) => set({ studyPaneOpen: open }),
     activeOrderFlowStudy: 'CVD',
     setActiveOrderFlowStudy: (study) => set({ activeOrderFlowStudy: study }),
+    workspacePreset: null,
+    setWorkspacePreset: (workspacePreset) => set({ workspacePreset }),
+    optionsExpiryFilter: null,
+    setOptionsExpiryFilter: (optionsExpiryFilter) => set({ optionsExpiryFilter, dteFilter: 'ALL' }),
     dteFilter: 'ALL',
-    setDteFilter: (filter) => set({ dteFilter: filter }),
+    setDteFilter: (filter) => set({ dteFilter: filter, optionsExpiryFilter: null }),
     optionsDisplay: 'GEX',
     setOptionsDisplay: (display) => set({ optionsDisplay: display }),
     chartLayers: defaultChartLayers,
@@ -185,6 +194,8 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         inspectorTab: calmWorkspaceEnabled ? 'DECISION' : 'OPTIONS',
         studyPaneOpen: true,
         activeOrderFlowStudy: 'CVD',
+        workspacePreset: null,
+        optionsExpiryFilter: null,
         dteFilter: 'ALL',
         optionsDisplay: 'GEX',
         chartLayers: defaultChartLayers,
@@ -202,6 +213,7 @@ export const useTerminalStore = create<TerminalState>()(persist((set) => ({
         studyPaneOpen: state.studyPaneOpen,
         activeOrderFlowStudy: state.activeOrderFlowStudy,
         dteFilter: state.dteFilter,
+        workspacePreset: state.workspacePreset,
         optionsDisplay: state.optionsDisplay,
         chartLayers: state.chartLayers,
         vpApproachMode: state.vpApproachMode,

@@ -35,6 +35,7 @@ export interface FeeInclusiveSizingInput {
     entryPrice: number;
     stopPrice: number;
     targetPrice?: number;
+    riskBudgetCapUsdt?: number;
     riskFraction?: number; // default 0.0025 (0.25%)
     entryIsMaker?: boolean; // default true for NY_VALUE_RETEST_V1 limit entry
     schedule?: PaperFeeSchedule;
@@ -99,7 +100,10 @@ export function calculateFeeInclusivePositionSize(
         !Number.isFinite(input.stopPrice) ||
         input.stopPrice <= 0 ||
         !Number.isFinite(riskFraction) ||
-        riskFraction <= 0
+        riskFraction <= 0 ||
+        riskFraction > 0.0025 ||
+        (input.riskBudgetCapUsdt !== undefined && (!Number.isFinite(input.riskBudgetCapUsdt) || input.riskBudgetCapUsdt <= 0)) ||
+        ![schedule.makerFeeRate, schedule.takerFeeRate, schedule.stopSlippageRate].every((rate) => Number.isFinite(rate) && rate >= 0 && rate < 1)
     ) {
         return {
             valid: false,
@@ -140,12 +144,14 @@ export function calculateFeeInclusivePositionSize(
     }
 
     const fIn = input.entryIsMaker !== false ? schedule.makerFeeRate : schedule.takerFeeRate;
-    const fStop = schedule.takerFeeRate + schedule.stopSlippageRate;
-    const riskBudgetUsdt = input.equityUsdt * riskFraction;
+    const stopFill = input.stopPrice * (isLong ? 1 - schedule.stopSlippageRate : 1 + schedule.stopSlippageRate);
+    const fStop = schedule.takerFeeRate + schedule.stopSlippageRate
+        + (isLong ? -1 : 1) * schedule.takerFeeRate * schedule.stopSlippageRate;
+    const riskBudgetUsdt = Math.min(input.equityUsdt * riskFraction, input.riskBudgetCapUsdt ?? Infinity);
 
     const lossPerBtcUsdt = isLong
-        ? input.entryPrice * (1 + fIn) - input.stopPrice * (1 - fStop)
-        : input.stopPrice * (1 + fStop) - input.entryPrice * (1 - fIn);
+        ? input.entryPrice * (1 + fIn) - stopFill * (1 - schedule.takerFeeRate)
+        : stopFill * (1 + schedule.takerFeeRate) - input.entryPrice * (1 - fIn);
 
     if (lossPerBtcUsdt <= 0) {
         return {
@@ -320,6 +326,7 @@ export interface PaperAccountSnapshotV1 {
  */
 export class PaperAccountLedger {
     private state: PaperAccountSnapshotV1;
+    private exits = { quantity: 0, notional: 0, fees: 0, gross: 0 };
     private readonly schedule: PaperFeeSchedule;
     private readonly weeklyLossLimitFraction: number;
 
@@ -368,6 +375,7 @@ export class PaperAccountLedger {
     }
 
     public resetAccount(timestampMs = Date.now()): PaperAccountSnapshotV1 {
+        this.exits = { quantity: 0, notional: 0, fees: 0, gross: 0 };
         const startCap = this.state.startingCapitalUsdt;
         const weekKey = getNewYorkCalendarWeekKey(timestampMs);
         this.state = {
@@ -441,7 +449,18 @@ export class PaperAccountLedger {
         sessionTag?: PaperJournalEntryV1['sessionTag'];
         regimeTag?: string;
         maxHoldBars5m?: number;
+        timeExitMs?: number;
+        availableAskBtc?: number;
     }): { accepted: boolean; reason?: string; sizing?: FeeInclusiveSizingResult } {
+        if (!Number.isFinite(params.timestampMs) || params.side !== 'LONG'
+            || !Number.isFinite(params.targetPrice) || params.targetPrice <= params.entryPrice
+            || params.stopPrice >= params.entryPrice
+            || params.timeExitMs !== undefined && (!Number.isFinite(params.timeExitMs) || params.timeExitMs <= params.timestampMs)) {
+            return { accepted: false, reason: 'Invalid long-only spot order geometry or time.' };
+        }
+        if (params.tradeId && (this.state.openPosition?.tradeId === params.tradeId || this.state.journal.some((trade) => trade.tradeId === params.tradeId))) {
+            return { accepted: false, reason: 'Duplicate paper trade ID.' };
+        }
         this.syncWeekRollover(params.timestampMs);
         this.recomputeEquityAndLocks();
 
@@ -468,6 +487,7 @@ export class PaperAccountLedger {
             stopPrice: params.stopPrice,
             targetPrice: params.targetPrice,
             riskFraction: params.riskFraction ?? 0.0025,
+            riskBudgetCapUsdt: this.state.equityUsdt - this.state.weeklyStartEquityUsdt * (1 - this.weeklyLossLimitFraction),
             entryIsMaker: params.entryIsMaker ?? true,
             schedule: this.schedule,
         });
@@ -480,8 +500,15 @@ export class PaperAccountLedger {
             };
         }
 
-        const entryFeeUsdt = sizing.notionalEntryUsdt * sizing.entryFeeRate;
-        const totalCostUsdt = sizing.notionalEntryUsdt + entryFeeUsdt;
+        if (params.availableAskBtc !== undefined && (!Number.isFinite(params.availableAskBtc) || params.availableAskBtc <= 0)) {
+            return { accepted: false, reason: 'Invalid ask liquidity.', sizing };
+        }
+        const filledQuantity = floorToLot(Math.min(sizing.finalQuantityBtc, params.availableAskBtc ?? Infinity), this.schedule.lotStepBtc);
+        if (filledQuantity < this.schedule.minLotBtc) return { accepted: false, reason: 'Ask liquidity below minimum lot.', sizing };
+        const entryNotional = filledQuantity * params.entryPrice;
+        const entryFeeUsdt = entryNotional * sizing.entryFeeRate;
+        const totalCostUsdt = entryNotional + entryFeeUsdt;
+        this.exits = { quantity: 0, notional: 0, fees: 0, gross: 0 };
 
         this.state.reservedCapitalUsdt = Number(totalCostUsdt.toFixed(4));
         this.state.realizedPnlUsdt = Number((this.state.realizedPnlUsdt - entryFeeUsdt).toFixed(4));
@@ -493,14 +520,14 @@ export class PaperAccountLedger {
             sessionTag: params.sessionTag ?? 'NEW_YORK',
             regimeTag: params.regimeTag ?? 'BALANCED_ROTATION',
             side: params.side,
-            quantityBtc: sizing.finalQuantityBtc,
+            quantityBtc: filledQuantity,
             avgEntryPrice: params.entryPrice,
             stopPrice: params.stopPrice,
             targetPrice: params.targetPrice,
-            initialRiskUsdt: sizing.estimatedStopLossUsdt,
+            initialRiskUsdt: filledQuantity * sizing.lossPerBtcUsdt,
             entryFeePaidUsdt: entryFeeUsdt,
             openedAtMs: params.timestampMs,
-            maxHoldUntilMs: params.timestampMs + maxHoldBars * 5 * 60 * 1000,
+            maxHoldUntilMs: params.timeExitMs ?? params.timestampMs + maxHoldBars * 5 * 60 * 1000,
             maeUsdt: 0,
             mfeUsdt: 0,
         };
@@ -516,9 +543,11 @@ export class PaperAccountLedger {
         low: number;
         close: number;
     }): { closedTrade?: PaperJournalEntryV1 } {
+        if (![bar.timestampMs, bar.open, bar.high, bar.low, bar.close].every((value) => Number.isFinite(value) && value > 0)
+            || bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close)) return {};
         this.syncWeekRollover(bar.timestampMs);
         const pos = this.state.openPosition;
-        if (!pos) {
+        if (!pos || bar.timestampMs <= pos.openedAtMs) {
             return {};
         }
 
@@ -538,8 +567,8 @@ export class PaperAccountLedger {
             const stopSlippage = this.schedule.stopSlippageRate;
             const execExitPrice =
                 pos.side === 'LONG'
-                    ? pos.stopPrice * (1 - stopSlippage)
-                    : pos.stopPrice * (1 + stopSlippage);
+                    ? Math.min(bar.open, pos.stopPrice) * (1 - stopSlippage)
+                    : Math.max(bar.open, pos.stopPrice) * (1 + stopSlippage);
             return {
                 closedTrade: this.closeOpenPosition({
                     timestampMs: bar.timestampMs,
@@ -583,6 +612,20 @@ export class PaperAccountLedger {
         return {};
     }
 
+    public markOpenPosition(timestampMs: number, bid: number): void {
+        if (!Number.isFinite(timestampMs) || !Number.isFinite(bid) || bid <= 0) throw new Error('Invalid paper mark.');
+        const pos = this.state.openPosition;
+        if (pos) {
+            if (timestampMs < pos.openedAtMs) throw new Error('Paper mark predates entry.');
+            const pnl = (bid - pos.avgEntryPrice) * pos.quantityBtc;
+            this.state.unrealizedPnlUsdt = pnl;
+            pos.maeUsdt = Math.min(pos.maeUsdt, pnl);
+            pos.mfeUsdt = Math.max(pos.mfeUsdt, pnl);
+        }
+        this.recomputeEquityAndLocks();
+        this.syncWeekRollover(timestampMs);
+    }
+
     public closeOpenPosition(params: {
         timestampMs: number;
         exitPrice: number;
@@ -590,22 +633,48 @@ export class PaperAccountLedger {
         exitReason: PaperJournalEntryV1['exitReason'];
         notes?: string;
     }): PaperJournalEntryV1 {
-        const pos = this.state.openPosition;
-        if (!pos) {
-            throw new Error('No open position to close.');
-        }
+        const quantity = this.state.openPosition?.quantityBtc;
+        if (!quantity) throw new Error('No open position to close.');
+        return this.fillExit({ ...params, quantity })!;
+    }
 
+    public fillExit(params: {
+        timestampMs: number;
+        exitPrice: number;
+        quantity: number;
+        isMakerExit: boolean;
+        exitReason: PaperJournalEntryV1['exitReason'];
+        notes?: string;
+    }): PaperJournalEntryV1 | null {
+        const pos = this.state.openPosition;
+        if (!pos || ![params.quantity, params.exitPrice, params.timestampMs].every(Number.isFinite)
+            || params.quantity <= 0 || params.quantity > pos.quantityBtc || params.exitPrice <= 0
+            || params.timestampMs < pos.openedAtMs) throw new Error('Invalid paper exit fill.');
+        this.markOpenPosition(params.timestampMs, params.exitPrice);
         const sign = pos.side === 'LONG' ? 1 : -1;
         const exitFeeRate = params.isMakerExit ? this.schedule.makerFeeRate : this.schedule.takerFeeRate;
-        const exitNotionalUsdt = pos.quantityBtc * params.exitPrice;
+        const exitNotionalUsdt = params.quantity * params.exitPrice;
         const exitFeeUsdt = exitNotionalUsdt * exitFeeRate;
-        const grossPnlUsdt = (params.exitPrice - pos.avgEntryPrice) * sign * pos.quantityBtc;
-        const totalFeesUsdt = pos.entryFeePaidUsdt + exitFeeUsdt;
-        const netPnlUsdt = grossPnlUsdt - totalFeesUsdt;
+        const fillGross = (params.exitPrice - pos.avgEntryPrice) * sign * params.quantity;
+        this.exits.quantity += params.quantity;
+        this.exits.notional += exitNotionalUsdt;
+        this.exits.fees += exitFeeUsdt;
+        this.exits.gross += fillGross;
 
         // Entry fee was already deducted from realizedPnlUsdt at open; add grossPnl - exitFee now
-        this.state.realizedPnlUsdt = Number((this.state.realizedPnlUsdt + grossPnlUsdt - exitFeeUsdt).toFixed(4));
+        this.state.realizedPnlUsdt = Number((this.state.realizedPnlUsdt + fillGross - exitFeeUsdt).toFixed(4));
         this.state.cashBalanceUsdt = Number((this.state.startingCapitalUsdt + this.state.realizedPnlUsdt).toFixed(4));
+        const remaining = Number((pos.quantityBtc - params.quantity).toFixed(12));
+        if (remaining > 0) {
+            this.state.reservedCapitalUsdt *= remaining / pos.quantityBtc;
+            pos.quantityBtc = remaining;
+            this.state.unrealizedPnlUsdt = (params.exitPrice - pos.avgEntryPrice) * sign * remaining;
+            this.recomputeEquityAndLocks();
+            return null;
+        }
+        const grossPnlUsdt = this.exits.gross;
+        const totalFeesUsdt = pos.entryFeePaidUsdt + this.exits.fees;
+        const netPnlUsdt = grossPnlUsdt - totalFeesUsdt;
         this.state.reservedCapitalUsdt = 0;
         this.state.unrealizedPnlUsdt = 0;
         this.state.openPosition = null;
@@ -623,10 +692,10 @@ export class PaperAccountLedger {
             openedAtMs: pos.openedAtMs,
             closedAtMs: params.timestampMs,
             entryPrice: pos.avgEntryPrice,
-            exitPrice: params.exitPrice,
+            exitPrice: this.exits.notional / this.exits.quantity,
             stopPrice: pos.stopPrice,
             targetPrice: pos.targetPrice,
-            quantityBtc: pos.quantityBtc,
+            quantityBtc: this.exits.quantity,
             grossPnlUsdt: Number(grossPnlUsdt.toFixed(4)),
             feesPaidUsdt: Number(totalFeesUsdt.toFixed(4)),
             netPnlUsdt: Number(netPnlUsdt.toFixed(4)),

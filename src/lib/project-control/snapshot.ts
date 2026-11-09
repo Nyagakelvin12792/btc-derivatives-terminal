@@ -28,13 +28,11 @@ export function buildProjectControlResponseV1(
     const branchCandidate = (options.sourceBranch ?? process.env.VERCEL_GIT_COMMIT_REF ?? '').trim();
     const sourceBranch = branchCandidate.length > 0 ? branchCandidate : 'main';
     const parsedCheckpoint = ExecutionCheckpointV1Schema.safeParse(checkpointJson);
-    const checkpointCommit = parsedCheckpoint.success ? parsedCheckpoint.data.codeRevision : null;
     const commitCandidate = (
         options.sourceCommit ??
         process.env.VERCEL_GIT_COMMIT_SHA ??
         process.env.UX16_SOURCE_COMMIT ??
-        checkpointCommit ??
-        '7ab2f19'
+        ''
     ).trim();
     const sourceCommit = commitCandidate.length >= 7 ? commitCandidate : null;
     const usageFiles = [codexUsageJson, geminiUsageJson, deepseekUsageJson, otherUsageJson]

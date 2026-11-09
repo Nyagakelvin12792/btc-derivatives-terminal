@@ -41,10 +41,10 @@ describe('UX20.6-STRAT-02 Chronological Backtest Runner & Ablation Suite', () =>
 
         expect(report.accountScope).toBe('BACKTEST_ACCOUNT');
         expect(report.ablationSummaries).toHaveLength(6);
-        expect(report.primaryOosSummary.ablationId).toBe('FULL_NY_VALUE_RETEST_V1');
+        expect(report.primaryOosSummary.ablationId).toBe('OHLC_DIAGNOSTIC');
         // Since sample size is < 40 OOS trades, research gate must honestly report not passed
         expect(report.researchGateVerdict.passed).toBe(false);
-        expect(report.researchGateVerdict.reasons[0]).toContain('below the minimum 40-trade sample size');
+        expect(report.researchGateVerdict.reasons[0]).toContain('No verified untouched holdout dataset.');
     });
 
     it('computes deterministic bootstrap 95% lower bound and passes research gate when all §6.5 criteria hold', () => {
@@ -55,8 +55,8 @@ describe('UX20.6-STRAT-02 Chronological Backtest Runner & Ablation Suite', () =>
 
         const verdict = evaluateStrategyResearchGate(
             {
-                ablationId: 'FULL_NY_VALUE_RETEST_V1',
-                tradeCount: 45,
+                ablationId: 'OHLC_DIAGNOSTIC',
+                tradeCount: 100,
                 winRatePct: 55.5,
                 profitFactor: 1.65,
                 expectancyR: 0.38,
@@ -67,7 +67,7 @@ describe('UX20.6-STRAT-02 Chronological Backtest Runner & Ablation Suite', () =>
             },
             {
                 ablationId: 'FRICTION_2X_STRESS',
-                tradeCount: 45,
+                tradeCount: 100,
                 winRatePct: 51.1,
                 profitFactor: 1.28,
                 expectancyR: 0.12,
@@ -76,7 +76,7 @@ describe('UX20.6-STRAT-02 Chronological Backtest Runner & Ablation Suite', () =>
                 netReturnPct: 1.4,
                 endingEquityUsdt: 10_140,
             },
-            40,
+            { untouchedHoldout: true, eligibleSessions: 40, lower95WeekBlockExpectancyR: 0.14, largestPositiveMonthShare: 0.4 },
         );
         expect(verdict.passed).toBe(true);
         expect(verdict.reasons).toHaveLength(0);

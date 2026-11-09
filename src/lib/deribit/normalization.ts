@@ -198,6 +198,8 @@ function normalizeBookSummaryItem(item: unknown): DeribitBookSummaryItem | null 
             openInterest: asBtcOpenInterest(openInterest),
             markIv: markIv !== null && markIv > 0 ? asVolatilityPercent(markIv) : null,
             volume: asBtcVolume(volume !== null ? volume : 0),
+            volumeUsd: finiteNumberInRange(item.volume_usd, 0, Number.MAX_SAFE_INTEGER) ?? undefined,
+            sourceTimeMs: finiteNumberInRange(item.creation_timestamp, 1, Number.MAX_SAFE_INTEGER) ?? undefined,
         };
     } catch {
         return null;
@@ -233,7 +235,7 @@ function normalizeDeribitOption(
         const msDiff = parsed.expiryDate.getTime() - now.getTime();
         if (msDiff <= 0) return null;
 
-        const dte = Math.max(0.1, msDiff / (1000 * 60 * 60 * 24));
+        const dte = msDiff / (1000 * 60 * 60 * 24);
         const ivPercent = item.markIv === null ? 50 : clamp(item.markIv, 5, 300);
         const ivDecimal = ivPercent / 100;
 
@@ -245,6 +247,7 @@ function normalizeDeribitOption(
             ivDecimal: asVolatilityDecimal(ivDecimal),
             ivPercent: asVolatilityPercent(ivPercent),
             volume: item.volume,
+            volumeUsd: item.volumeUsd,
         };
     } catch {
         return null;
@@ -287,7 +290,7 @@ export function normalizeDeribitOptionsStrict(
         if (msDiff <= 0) continue;
         totalActiveCount += 1;
 
-        if (item.markIv === null || !Number.isFinite(item.markIv) || item.markIv <= 0) {
+        if (item.markIv === null || !Number.isFinite(item.markIv) || item.markIv < 5 || item.markIv > 300) {
             droppedMissingIvCount += 1;
             continue;
         }

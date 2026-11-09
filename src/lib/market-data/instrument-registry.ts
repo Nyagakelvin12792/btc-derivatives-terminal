@@ -250,7 +250,7 @@ export function reconcileAdapterTradeEvents(
 ): TradeReconciliationResult {
     const accepted: CanonicalTradeEvent[] = [];
     const exceptions: MarketDataExceptionEntry[] = [];
-    let lastTradeIdByInstrument = new Map<string, number>();
+    const lastTradeIdByInstrument = new Map<string, number>();
     let totalVolumeBtc = 0;
     let totalNotionalQuote = 0;
 
@@ -468,4 +468,34 @@ export function validateBookTopSnapshot(input: {
               }
             : null,
     };
+}
+
+/** Convert BTC-based quantities without treating USD and USDT as interchangeable. */
+export function convertBtcQuantity(
+    quantity: number,
+    from: 'BTC' | 'USD' | 'CONTRACTS',
+    to: 'BTC' | 'USD' | 'CONTRACTS',
+    spotUsd: number,
+    contractMultiplierBtc: number,
+): number {
+    if (!Number.isFinite(quantity) || quantity < 0 || !Number.isFinite(spotUsd) || spotUsd <= 0
+        || !Number.isFinite(contractMultiplierBtc) || contractMultiplierBtc <= 0) {
+        throw new RangeError('Invalid quantity, USD reference or BTC contract multiplier.');
+    }
+    const btc = from === 'USD' ? quantity / spotUsd : from === 'CONTRACTS' ? quantity * contractMultiplierBtc : quantity;
+    const result = to === 'USD' ? btc * spotUsd : to === 'CONTRACTS' ? btc / contractMultiplierBtc : btc;
+    if (!Number.isFinite(result)) throw new RangeError('Converted quantity is outside numeric range.');
+    return result;
+}
+
+/** Simple annualized basis for a dated future and a same-currency spot mark. */
+export function calculateAnnualizedBasis(
+    futures: { price: number; quote: QuoteCurrency; expiryMs: number },
+    spot: { price: number; quote: QuoteCurrency },
+    asOfMs: number,
+): number | null {
+    const time = futures.expiryMs - asOfMs;
+    if (futures.quote !== spot.quote || ![futures.price, spot.price, time].every((value) => Number.isFinite(value) && value > 0)) return null;
+    const basis = (futures.price / spot.price - 1) * (365 * 86_400_000 / time);
+    return Number.isFinite(basis) ? basis : null;
 }

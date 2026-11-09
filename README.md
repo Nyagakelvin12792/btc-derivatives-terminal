@@ -34,3 +34,9 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## UX20 review
+
+The existing terminal deployment is https://beatcoin-terminal.vercel.app. The UX20 remediation status, evidence and open acceptance checks are in [UX20 progress](docs/ui-ux/UX20_PROGRESS.md).
+
+For a pinned local check, run `npm ci`, `npx tsc --noEmit`, `npx vitest run`, `npm run build`, then `npm run start`. Use `npx playwright test --list` to inspect the browser matrix. Browser runs require the browser configured in Playwright. Paper and strategy evidence remain separate.

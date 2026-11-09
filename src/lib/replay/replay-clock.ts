@@ -2,6 +2,7 @@ import type { TerrainDataContractV2 } from '../terrain/types';
 
 export interface Candlestick {
     time: number;
+    availableAtMs?: number;
     open: number;
     high: number;
     low: number;
@@ -15,6 +16,7 @@ export interface Candlestick {
 export interface TradeTick {
     id?: string;
     timestamp: number;
+    availableAtMs?: number;
     price: number;
     size: number;
     side: 'BUY' | 'SELL' | 'buy' | 'sell';
@@ -22,6 +24,7 @@ export interface TradeTick {
 }
 
 export interface OrderBookSnapshot {
+    availableAtMs?: number;
     bids: Array<{ price: number; size: number; total?: number }>;
     asks: Array<{ price: number; size: number; total?: number }>;
     midPrice?: number;
@@ -42,7 +45,8 @@ export interface ReplayDatasetV1 {
     candles: Candlestick[];
     trades?: TradeTick[];
     bookSnapshots?: Array<OrderBookSnapshot & { timestampMs: number }>;
-    optionsSnapshots?: Array<{ timestampMs: number; contract: TerrainDataContractV2 }>;
+    releases?: Array<{ timestampMs: number; availableAtMs: number; id: string; value: number }>;
+    optionsSnapshots?: Array<{ timestampMs: number; availableAtMs?: number; contract: TerrainDataContractV2 }>;
 }
 
 export interface ReplaySnapshotV1 {
@@ -54,6 +58,7 @@ export interface ReplaySnapshotV1 {
     visibleTrades: TradeTick[];
     latestBookSnapshot: (OrderBookSnapshot & { timestampMs: number }) | null;
     latestOptionsSnapshot: TerrainDataContractV2 | null;
+    visibleReleases: NonNullable<ReplayDatasetV1['releases']>;
     deterministicRunHash: string;
 }
 
@@ -62,8 +67,9 @@ export interface ReplaySnapshotV1 {
  */
 export function computeFnva32Hex(input: string): string {
     let hash = 0x811c9dc5;
-    for (let i = 0; i < input.length; i++) {
-        hash ^= input.charCodeAt(i);
+    const bytes = new TextEncoder().encode(input);
+    for (let i = 0; i < bytes.length; i++) {
+        hash ^= bytes[i];
         hash = Math.imul(hash, 0x01000193);
     }
     return `fnv1a-${(hash >>> 0).toString(16).padStart(8, '0')}`;
@@ -84,6 +90,9 @@ export class ReplayClockEngine {
         if (!dataset.datasetId || dataset.datasetId.trim().length === 0) {
             throw new Error('ReplayClockEngine requires a non-empty datasetId.');
         }
+        if (![dataset.startTimeMs, dataset.endTimeMs, initialCursorTimeMs ?? dataset.startTimeMs].every(Number.isFinite)
+            || dataset.startTimeMs > dataset.endTimeMs) throw new Error('Invalid replay bounds');
+        dataset = structuredClone(dataset);
         this.dataset = {
             ...dataset,
             candles: [...dataset.candles].sort((a, b) => a.time - b.time),
@@ -140,62 +149,37 @@ export class ReplayClockEngine {
     }
 
     public stepNextCandle(): ReplaySnapshotV1 {
-        const cursorSec = Math.floor(this.cursorTimeMs / 1000);
-        const nextCandle = this.dataset.candles.find((c) => c.time > cursorSec);
-        if (nextCandle) {
-            return this.seek(nextCandle.time * 1000);
-        }
+        const next = this.dataset.candles.reduce((earliest, candle) => {
+            const available = Math.max(candle.time * 1000, candle.availableAtMs ?? 0);
+            return available > this.cursorTimeMs ? Math.min(earliest, available) : earliest;
+        }, Infinity);
+        if (Number.isFinite(next)) return this.seek(next);
         this.isPlaying = false;
         return this.seek(this.dataset.endTimeMs);
     }
 
     public getSnapshot(): ReplaySnapshotV1 {
-        const cursorSec = Math.floor(this.cursorTimeMs / 1000);
-        const visibleCandles = this.dataset.candles.filter((c) => c.time <= cursorSec);
-        const visibleTrades = (this.dataset.trades ?? []).filter(
-            (t) => t.timestamp <= this.cursorTimeMs
-        );
-
-        let latestBookSnapshot: (OrderBookSnapshot & { timestampMs: number }) | null = null;
-        for (const snap of this.dataset.bookSnapshots ?? []) {
-            if (snap.timestampMs <= this.cursorTimeMs) {
-                latestBookSnapshot = snap;
-            } else {
-                break;
-            }
-        }
-
-        let latestOptionsSnapshot: TerrainDataContractV2 | null = null;
-        for (const opt of this.dataset.optionsSnapshots ?? []) {
-            if (opt.timestampMs <= this.cursorTimeMs) {
-                latestOptionsSnapshot = opt.contract;
-            } else {
-                break;
-            }
-        }
-
-        const lastCandle = visibleCandles[visibleCandles.length - 1];
-        const canonicalPayload = JSON.stringify({
+        const visible = (event: number, available = event) =>
+            event <= this.cursorTimeMs && available <= this.cursorTimeMs;
+        const visibleCandles = this.dataset.candles.filter((c) => visible(c.time * 1000, c.availableAtMs));
+        const visibleTrades = (this.dataset.trades ?? []).filter((t) => visible(t.timestamp, t.availableAtMs));
+        const latestBookSnapshot = (this.dataset.bookSnapshots ?? []).filter((b) => visible(b.timestampMs, b.availableAtMs)).at(-1) ?? null;
+        const latestOptions = (this.dataset.optionsSnapshots ?? []).filter((o) => visible(o.timestampMs, o.availableAtMs)).at(-1) ?? null;
+        const visibleReleases = (this.dataset.releases ?? []).filter((r) => visible(r.timestampMs, r.availableAtMs));
+        const payload = {
             datasetId: this.dataset.datasetId,
             cursorTimeMs: this.cursorTimeMs,
-            candleCount: visibleCandles.length,
-            lastCandleTime: lastCandle?.time ?? null,
-            lastCandleClose: lastCandle?.close ?? null,
-            tradeCount: visibleTrades.length,
-            bookTimestampMs: latestBookSnapshot?.timestampMs ?? null,
-            optionsSpot: latestOptionsSnapshot?.spotPrice ?? null,
-        });
-
-        return {
-            datasetId: this.dataset.datasetId,
-            cursorTimeMs: this.cursorTimeMs,
-            isPlaying: this.isPlaying,
-            speed: this.speed,
             visibleCandles,
             visibleTrades,
             latestBookSnapshot,
-            latestOptionsSnapshot,
-            deterministicRunHash: computeFnva32Hex(canonicalPayload),
+            latestOptionsSnapshot: latestOptions?.contract ?? null,
+            visibleReleases,
+        };
+        return {
+            ...structuredClone(payload),
+            isPlaying: this.isPlaying,
+            speed: this.speed,
+            deterministicRunHash: computeFnva32Hex(JSON.stringify({ ...payload, optionsTime: latestOptions?.timestampMs })),
         };
     }
 }

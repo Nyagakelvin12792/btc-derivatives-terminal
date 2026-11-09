@@ -103,6 +103,9 @@ export async function evaluateJevShadow(options: EvaluateJevShadowOptions): Prom
     const validatedRequest = JevShadowRequestV1Schema.parse(request);
     const serverCanonicalHash = computeServerCanonicalPacketHash(validatedRequest);
     const responseHash = validatedRequest.featurePacketHash;
+    if (model !== 'jev-v1-local-deterministic') {
+        return createAbstainResponse(responseHash, 'Unsupported Jev model.');
+    }
 
     // 2. Kill Switch Safeguard
     if (!enabled) {
@@ -216,8 +219,7 @@ export async function evaluateJevShadow(options: EvaluateJevShadowOptions): Prom
 
         setBoundedCache(cacheKey, responsePayload);
         return responsePayload;
-    } catch (err: unknown) {
-        const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        return createAbstainResponse(responseHash, `Jev shadow evaluation degraded: ${errorMsg}`, model);
+    } catch {
+        return createAbstainResponse(responseHash, 'Jev shadow evaluation unavailable.', model);
     }
 }

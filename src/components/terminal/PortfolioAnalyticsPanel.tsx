@@ -1,91 +1,12 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import type { ManagedTrade } from '../../lib/risk/trade-manager';
 import {
     buildPortfolioAnalyticsReport,
     type AttributionSliceV1,
 } from '../../lib/execution/portfolio-analytics';
-import type { PaperAccountSnapshotV1, PaperJournalEntryV1 } from '../../lib/execution/paper-ledger';
+import type { PaperAccountSnapshotV1 } from '../../lib/execution/paper-ledger';
 import { cn } from '../../lib/ui/cn';
-
-interface PortfolioAnalyticsPanelProps {
-    trades: readonly ManagedTrade[];
-    startingCapitalUsdt?: number;
-}
-
-function convertManagedTradesToPaperSnapshot(
-    trades: readonly ManagedTrade[],
-    startingCapitalUsdt = 10_000,
-): PaperAccountSnapshotV1 {
-    const completed = trades.filter((t) => t.status === 'CLOSED' || t.status === 'STOPPED_OUT');
-    const journal: PaperJournalEntryV1[] = completed
-        .slice()
-        .reverse()
-        .map((t) => {
-            const r = t.initialRiskUsd > 0 ? t.realizedPnlUsd / t.initialRiskUsd : 0;
-            const exitPrice =
-                t.status === 'STOPPED_OUT'
-                    ? t.currentStopPrice
-                    : t.takeProfits.find((tp) => tp.filled)?.price ?? t.entryPrice;
-            return {
-                tradeId: t.id,
-                accountScope: 'PAPER_ACCOUNT',
-                strategyId: t.journal.setupScenario || 'NY_VALUE_RETEST_V1',
-                executionSource: t.executionMode === 'HISTORICAL_REPLAY' ? 'STRATEGY_LAB' : 'MANUAL',
-                sessionTag: t.journal.sessionTag,
-                regimeTag: `${t.journal.htfBias}_${t.journal.qualityGrade}`,
-                side: t.direction,
-                openedAtMs: (t.openedAt ?? t.startTime) * 1000,
-                closedAtMs: (t.closedAt ?? t.endTime) * 1000,
-                entryPrice: t.entryPrice,
-                exitPrice,
-                stopPrice: t.initialStopPrice,
-                targetPrice: t.takeProfits.at(-1)?.price ?? t.entryPrice,
-                quantityBtc: t.positionSizeBtc,
-                grossPnlUsdt: t.realizedPnlUsd,
-                feesPaidUsdt: 0,
-                netPnlUsdt: t.realizedPnlUsd,
-                initialRiskUsdt: t.initialRiskUsd,
-                rMultipleNet: r,
-                maeUsdt: t.maeUsd,
-                mfeUsdt: t.mfeUsd,
-                holdingDurationMs: Math.max(0, ((t.closedAt ?? t.endTime) - (t.openedAt ?? t.startTime)) * 1000),
-                exitReason: t.status === 'STOPPED_OUT' ? 'STOP_LOSS' : 'TAKE_PROFIT',
-                notes: t.journal.entryRationale,
-            };
-        });
-
-    const realizedPnlUsdt = journal.reduce((acc, j) => acc + j.netPnlUsdt, 0);
-    const equityUsdt = startingCapitalUsdt + realizedPnlUsdt;
-
-    return {
-        accountId: 'paper-default-10k',
-        accountScope: 'PAPER_ACCOUNT',
-        startingCapitalUsdt,
-        cashBalanceUsdt: equityUsdt,
-        realizedPnlUsdt,
-        unrealizedPnlUsdt: 0,
-        equityUsdt,
-        peakEquityUsdt: Math.max(startingCapitalUsdt, equityUsdt),
-        drawdownUsdt: Math.max(0, startingCapitalUsdt - equityUsdt),
-        drawdownPct:
-            startingCapitalUsdt > 0
-                ? Math.max(0, ((startingCapitalUsdt - equityUsdt) / startingCapitalUsdt) * 100)
-                : 0,
-        reservedCapitalUsdt: 0,
-        availableCashUsdt: equityUsdt,
-        weeklyStartEquityUsdt: startingCapitalUsdt,
-        currentWeekKey: '2026-W45',
-        weeklyLossPct:
-            startingCapitalUsdt > 0 && realizedPnlUsdt < 0
-                ? (Math.abs(realizedPnlUsdt) / startingCapitalUsdt) * 100
-                : 0,
-        weeklyLossLocked: realizedPnlUsdt <= -startingCapitalUsdt * 0.015,
-        openPosition: null,
-        journal,
-    };
-}
 
 function renderSliceTable(title: string, slices: readonly AttributionSliceV1[], testId: string) {
     return (
@@ -125,13 +46,12 @@ function renderSliceTable(title: string, slices: readonly AttributionSliceV1[], 
 }
 
 export default function PortfolioAnalyticsPanel({
-    trades,
-    startingCapitalUsdt = 10_000,
-}: PortfolioAnalyticsPanelProps) {
+    snapshot,
+}: { snapshot: PaperAccountSnapshotV1 }) {
     const [subTab, setSubTab] = useState<'ACCOUNT' | 'ATTRIBUTION'>('ACCOUNT');
     const report = useMemo(
-        () => buildPortfolioAnalyticsReport(convertManagedTradesToPaperSnapshot(trades, startingCapitalUsdt)),
-        [trades, startingCapitalUsdt],
+        () => buildPortfolioAnalyticsReport(snapshot),
+        [snapshot],
     );
 
     return (

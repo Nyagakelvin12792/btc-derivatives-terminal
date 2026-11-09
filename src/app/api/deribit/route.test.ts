@@ -1,132 +1,78 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NextRequest } from 'next/server';
-import type { NormalizedDeribitChain } from '@/lib/deribit/types';
+import { clearDeribitOptionChainCacheForTests } from '../../../lib/deribit/client.server';
+import { GET } from './route';
 
-vi.mock('@/lib/deribit/client.server', () => ({
-    FALLBACK_SPOT_PRICE: 69000,
-    fetchDeribitOptionChain: vi.fn(),
-}));
+const time = new Date('2026-11-09T07:59:59.000Z');
+const contract = (expiry: string, mark_iv: number | null = 45) => ({
+    instrument_name: `BTC-${expiry}-70000-C`,
+    open_interest: 2,
+    volume: 3,
+    volume_usd: 122,
+    mark_iv,
+    creation_timestamp: time.getTime(),
+});
+const request = (query = '') => GET(new NextRequest(`http://localhost/api/deribit${query}`));
+const fixture = (options: unknown[], indexAvailable = true) => {
+    const fetchMock = vi.fn(async (url: string) => url.includes('get_index_price')
+        ? indexAvailable ? Response.json({ result: { index_price: 70_000 } }) : new Response('', { status: 503 })
+        : Response.json({ result: options }));
+    vi.stubGlobal('fetch', fetchMock);
+    return fetchMock;
+};
 
-vi.mock('@/lib/deribit/dte-filter', () => ({
-    isDeribitDteFilter: (value: string) => ['0-2D', '7D', '14D', '30D', 'ALL'].includes(value),
-    filterDeribitOptionsByDteOrExpiry: (options: NormalizedDeribitChain['options'], filter: string, exactExpiry?: string | null) => {
-        if (exactExpiry && exactExpiry !== 'ALL') {
-            return options.filter((option) => option.expiryStr === exactExpiry);
-        }
-        const limit = filter === '0-2D' ? 2 : filter === '7D' ? 7 : filter === '14D' ? 14 : filter === '30D' ? 30 : Number.POSITIVE_INFINITY;
-        return options.filter((option) => option.dte <= limit);
-    },
-    filterDeribitOptionsByDte: (options: NormalizedDeribitChain['options'], filter: string) => {
-        const limit = filter === '0-2D' ? 2 : filter === '7D' ? 7 : filter === '14D' ? 14 : filter === '30D' ? 30 : Number.POSITIVE_INFINITY;
-        return options.filter((option) => option.dte <= limit);
-    },
-}));
-
-vi.mock('@/lib/terrain/engine', () => ({
-    buildTerrainDataContract: vi.fn((params: { dataMode: string }) => ({
-        schemaVersion: 2,
-        dataMode: params.dataMode,
-        assumptionModel: 'OI_SIGN_PROXY_V1',
-        surfaceGrid: [],
-    })),
-    buildDemoTerrainDataContract: vi.fn(() => ({
-        schemaVersion: 2,
-        dataMode: 'DEMO',
-        assumptionModel: 'OI_SIGN_PROXY_V1',
-        surfaceGrid: [],
-    })),
-}));
-
-const { fetchDeribitOptionChain } = await import('@/lib/deribit/client.server');
-const { buildDemoTerrainDataContract, buildTerrainDataContract } = await import('@/lib/terrain/engine');
-const { GET } = await import('./route');
-
-const mockedFetchDeribitOptionChain = vi.mocked(fetchDeribitOptionChain);
-const mockedBuildTerrainDataContract = vi.mocked(buildTerrainDataContract);
-const mockedBuildDemoTerrainDataContract = vi.mocked(buildDemoTerrainDataContract);
-const responseTime = new Date(Date.UTC(2026, 7, 20, 8, 0, 0));
-
-describe('/api/deribit route', () => {
+describe('/api/deribit route through live normalization', () => {
     beforeEach(() => {
         vi.useFakeTimers();
-        vi.setSystemTime(responseTime);
-        mockedFetchDeribitOptionChain.mockReset();
-        mockedBuildTerrainDataContract.mockClear();
-        mockedBuildDemoTerrainDataContract.mockClear();
+        vi.setSystemTime(time);
+        clearDeribitOptionChainCacheForTests();
     });
-
     afterEach(() => {
+        vi.unstubAllGlobals();
         vi.useRealTimers();
-        vi.restoreAllMocks();
     });
 
-    it('returns LIVE Terrain Data Contract V2 with cache headers', async () => {
-        mockedFetchDeribitOptionChain.mockResolvedValue({
-            spotPrice: 68000,
-            options: [],
-        } as unknown as NormalizedDeribitChain);
-
-        const response = await GET(new NextRequest('http://localhost/api/deribit'));
-        const body = await response.json();
-
-        expect(response.headers.get('cache-control')).toBe(
-            'public, max-age=5, s-maxage=15, stale-while-revalidate=30'
-        );
-        expect(mockedFetchDeribitOptionChain).toHaveBeenCalledWith(responseTime);
-        expect(mockedBuildTerrainDataContract).toHaveBeenCalledWith({
-            options: [],
-            spotPrice: 68000,
-            now: responseTime,
-            dataMode: 'LIVE',
-        });
-        expect(body).toEqual({
-            schemaVersion: 2,
-            dataMode: 'LIVE',
-            assumptionModel: 'OI_SIGN_PROXY_V1',
-            surfaceGrid: [],
-        });
-    });
-
-    it('filters the live chain by the requested cumulative DTE horizon', async () => {
-        const near = { dte: 1 } as unknown as NormalizedDeribitChain['options'][number];
-        const far = { dte: 21 } as unknown as NormalizedDeribitChain['options'][number];
-        mockedFetchDeribitOptionChain.mockResolvedValue({ spotPrice: 68000, options: [near, far] } as unknown as NormalizedDeribitChain);
-
-        const response = await GET(new NextRequest('http://localhost/api/deribit?dte=7D'));
-
-        expect(response.status).toBe(200);
-        expect(mockedBuildTerrainDataContract).toHaveBeenCalledWith(expect.objectContaining({ options: [near] }));
-    });
-
-    it('serves explicit demo mode without contacting Deribit', async () => {
-        const response = await GET(new NextRequest('http://localhost/api/deribit?mode=demo&dte=ALL'));
-
-        expect(response.status).toBe(200);
-        expect(mockedFetchDeribitOptionChain).not.toHaveBeenCalled();
-        expect(mockedBuildDemoTerrainDataContract).toHaveBeenCalledWith(69000, responseTime);
-    });
-
-    it('rejects unsupported DTE filters', async () => {
-        const response = await GET(new NextRequest('http://localhost/api/deribit?dte=90D'));
-        expect(response.status).toBe(400);
-        expect(mockedFetchDeribitOptionChain).not.toHaveBeenCalled();
-    });
-
-    it('returns explicit DEMO fallback with no-store headers when upstream fails', async () => {
-        mockedFetchDeribitOptionChain.mockRejectedValue(new Error('upstream unavailable'));
-        const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-        const response = await GET(new NextRequest('http://localhost/api/deribit'));
-        const body = await response.json();
-
+    it('fails closed on index failure even with a valid chain', async () => {
+        fixture([contract('13NOV26')], false);
+        const response = await request('?strict=1');
+        expect(response.status).toBe(503);
         expect(response.headers.get('cache-control')).toBe('no-store');
-        expect(mockedBuildDemoTerrainDataContract).toHaveBeenCalledWith(69000, responseTime);
-        expect(consoleError).toHaveBeenCalledOnce();
-        expect(body).toEqual({
-            schemaVersion: 2,
-            dataMode: 'DEMO',
-            assumptionModel: 'OI_SIGN_PROXY_V1',
-            surfaceGrid: [],
-        });
+        expect(await response.json()).toEqual({ error: 'Deribit live data unavailable', dataMode: 'DEGRADED' });
+    });
+
+    it('drops invalid IV, retains independent BTC and USD volume, and filters the entire chain', async () => {
+        fixture([contract('13NOV26'), contract('25DEC26'), contract('14NOV26', null), { ...contract('15NOV26'), open_interest: null }]);
+        const response = await request('?expiries=7,14,30');
+        expect(response.status).toBe(200);
+        const data = await response.json();
+        expect(data.expirations).toEqual(['13NOV26']);
+        expect(data.sourceTime).toBe(time.toISOString());
+        expect(data.coverage).toEqual({ received: 4, valid: 2, selected: 1 });
+        expect(data.keyContracts[0]).toMatchObject({ volume: 3, volumeUsd: 122, openInterestUsd: 140_000 });
+        expect((await (await request('?expiry=25DEC26')).json()).expirations).toEqual(['25DEC26']);
+        expect((await (await request('?expiry=1JAN27')).json()).summary.contractsCount).toBe(0);
+    });
+
+    it('excludes an expired option from a still-cached chain at 08:00 UTC', async () => {
+        const fetchMock = fixture([contract('9NOV26'), contract('13NOV26')]);
+        expect((await (await request()).json()).expirations).toContain('9NOV26');
+        vi.setSystemTime(new Date('2026-11-09T08:00:00.000Z'));
+        expect((await (await request()).json()).expirations).toEqual(['13NOV26']);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects stale and entirely invalid chains', async () => {
+        fixture([{ ...contract('13NOV26'), creation_timestamp: time.getTime() - 60_001 }]);
+        expect((await request()).status).toBe(503);
+        fixture([contract('13NOV26', null)]);
+        expect((await request()).status).toBe(503);
+    });
+
+    it('uses synthetic data only in explicit demo mode and rejects unsupported windows', async () => {
+        const fetchMock = fixture([]);
+        expect((await (await request('?mode=demo')).json()).dataMode).toBe('DEMO');
+        expect((await request('?dte=90D')).status).toBe(400);
+        expect((await request('?expiries=7,foo')).status).toBe(400);
+        expect(fetchMock).not.toHaveBeenCalled();
     });
 });

@@ -269,6 +269,7 @@ export default function CandleFootprintCanvasOverlay({
     onOverlayOpacityChange,
 }: CandleFootprintCanvasOverlayProps) {
     const canvasRef = useRef<HTMLCanvasElement>(null);
+    const lastAutomaticZoom = useRef<FootprintZoomLevel>('OVERVIEW');
 
     useEffect(() => {
         const canvas = canvasRef.current;
@@ -372,23 +373,28 @@ export default function CandleFootprintCanvasOverlay({
 
         // 2. Draw ATAS/NinjaTrader-style Footprint clusters directly on each candle
         if (showFootprint && projectedBars.length > 0) {
+            const previous = lastAutomaticZoom.current;
+            const column = projectedBars[Math.floor(projectedBars.length / 2)].columnWidth;
+            const autoZoom = column >= (previous === 'DETAILED' ? 48 : 54) ? 'DETAILED'
+                : column >= (previous === 'OVERVIEW' ? 28 : 24) ? 'COMPACT' : 'OVERVIEW';
+            lastAutomaticZoom.current = autoZoom;
+            const effectiveZoom = zoomMode === 'AUTO' ? autoZoom : zoomMode;
             for (const bar of projectedBars) {
                 const halfW = bar.columnWidth / 2;
                 const xLeft = bar.xCenter - halfW;
                 const xRight = bar.xCenter + halfW;
 
-                // Determine semantic zoom for this bar width
-                const effectiveZoom: FootprintZoomLevel = zoomMode !== 'AUTO'
-                    ? zoomMode
-                    : bar.columnWidth >= 52
-                        ? 'DETAILED'
-                        : bar.columnWidth >= 26
-                            ? 'COMPACT'
-                            : 'OVERVIEW';
-
                 // Find top and bottom of the bar cluster
                 const minY = Math.min(...bar.cells.map((c) => c.yTop));
                 const maxY = Math.max(...bar.cells.map((c) => c.yBottom));
+
+                if (effectiveZoom === 'OVERVIEW') {
+                    if (bar.cells.some((cell) => cell.buyImbalance || cell.sellImbalance)) {
+                        ctx.fillStyle = bar.deltaNotionalUsd >= 0 ? '#2CC7A0' : '#E06379';
+                        ctx.fillRect(bar.xCenter - 2, maxY + 3, 4, 3);
+                    }
+                    continue;
+                }
 
                 // Subtle cluster container background
                 ctx.fillStyle = 'rgba(7, 10, 15, 0.78)';
