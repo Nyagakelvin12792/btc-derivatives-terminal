@@ -78,3 +78,14 @@ DeepSeek compatibility note: any pre-`dea002c` reconnect fixture that expected
 No UX16.3 liquidity surface, UX16.4 imbalance/persistence/add-pull,
 UX16.5 absorption/divergence, UX16.6 setup grading, UX16.7 AI decision, broker
 route, credential, or live execution path was added.
+
+## Live options and Jev input integrity
+
+>>> COMPLETED BY: Codex
+>>> STATUS: REVIEW REQUIRED
+>>> BRANCH: codex/live-data-integrity
+>>> COMMIT: 585f36af854a9d430a014c0380773ab5140592a8
+>>> TESTS: 13 focused tests passed. Broader Vitest run passed 236 tests, with five suites blocked by missing dependencies. Production build and browser validation require the project's installed dependencies.
+>>> NEXT AGENT: Architect
+>>> ACTION REQUIRED: Run the full build and UX16.7 Playwright regression before merge. Capture TradingView drawing interactions before changing drawing behavior.
+>>> TARGET: Live option level resolution, chart and inspector consumers, Jev advisory and shadow inputs
