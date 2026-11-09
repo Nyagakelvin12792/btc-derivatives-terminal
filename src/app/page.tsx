@@ -22,6 +22,7 @@ import { useTerminalStore } from '@/lib/dashboard/store';
 import { useTerrainQuery } from '@/lib/dashboard/queries';
 import { createCanonicalDashboardData, extractKeyLevelProfileFromContractV2 } from '@/lib/dashboard/adapters';
 import type { DealerEnvironmentSummaryData } from '@/lib/dashboard/types';
+import { resolveOptionLevels } from '@/lib/terrain/option-levels';
 import type { TerrainDataContractV2 } from '@/lib/terrain/types';
 import { Info, AlertTriangle } from 'lucide-react';
 import MarketTerminal from '@/components/terminal/MarketTerminal';
@@ -69,6 +70,7 @@ export default function TerminalPage() {
 
     // Adapt summary data for legacy header components if needed
     const summaryData = useMemo<DealerEnvironmentSummaryData>(() => {
+        const options = resolveOptionLevels(data, dataMode, isError);
         return {
             ...data.summary,
             spotPrice: data.spotPrice || 68000,
@@ -88,8 +90,8 @@ export default function TerminalPage() {
             netVanna: data.summary.totalVannaExposure,
             netCharm: data.summary.totalCharmExposure,
             gammaFlip: data.keyLevels?.gammaFlip?.strike || data.summary.gammaFlip || 65250,
-            callWall: data.keyLevels?.callWall?.strike || data.summary.callWallExposure || 72000,
-            putWall: data.keyLevels?.putWall?.strike || data.summary.putWallExposure || 62000,
+            callWall: options.available ? options.callWall : undefined,
+            putWall: options.available ? options.putWall : undefined,
             maxPain: data.keyLevels?.primaryMaxPain?.strike || data.summary.maxPainStrike || 68500,
             totalOiUsd: null,
             totalOiBtc: data.summary.totalOpenInterest,
@@ -104,10 +106,27 @@ export default function TerminalPage() {
             assumptionModel: data.assumptionModel,
             sourceStatus: data.dataMode === 'DEMO' ? 'DEMO CANONICAL MODEL' : 'LIVE DERIBIT FEED',
         };
-    }, [data]);
+    }, [data, dataMode, isError]);
 
     if (activeWorkspace === 'MARKET STRUCTURE') {
         return <MarketTerminal data={data} isError={isError} />;
+    }
+
+    if (dataMode === 'LIVE' && (isError || data.dataMode !== 'LIVE')) {
+        return (
+            <div className="flex min-h-dvh bg-[#05080f] text-zinc-100">
+                <Sidebar activeTab={activeWorkspace} onSelectTab={setActiveWorkspace} />
+                <main className="flex-1 p-3">
+                    <div role="status" className="flex flex-wrap items-center gap-2 rounded border border-rose-500/50 bg-rose-950/60 p-3 text-xs text-rose-300">
+                        <AlertTriangle className="size-4" />
+                        <span>{isError ? 'Live options feed unavailable.' : 'Waiting for live options data.'}</span>
+                        <button type="button" onClick={() => setDataMode('DEMO')} className="font-bold underline">
+                            Switch to demo
+                        </button>
+                    </div>
+                </main>
+            </div>
+        );
     }
 
     return (
@@ -128,22 +147,6 @@ export default function TerminalPage() {
 
                 {/* Dynamic Content Viewport */}
                 <main className="flex-1 p-3 space-y-3 max-w-[1920px] w-full mx-auto">
-                    {/* Status Alert for DEGRADED or Error */}
-                    {isError && dataMode === 'LIVE' && (
-                        <div className="p-2.5 rounded-lg bg-rose-950/60 border border-rose-500/50 flex items-center justify-between text-xs font-mono text-rose-300">
-                            <div className="flex items-center gap-2">
-                                <AlertTriangle className="w-4 h-4 text-rose-400" />
-                                <span>LIVE FEED OFFLINE: Unable to reach Deribit API. Showing canonical demo model.</span>
-                            </div>
-                            <button
-                                onClick={() => setDataMode('DEMO')}
-                                className="px-2 py-0.5 rounded bg-rose-900 text-white font-bold"
-                            >
-                                SWITCH TO DEMO
-                            </button>
-                        </div>
-                    )}
-
                     {/* View 1: Primary Canonical SURFACE MAP */}
                     {activeWorkspace === 'SURFACE MAP' && (
                         <div className="space-y-3">

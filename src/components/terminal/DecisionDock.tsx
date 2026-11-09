@@ -32,14 +32,14 @@ import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts
 export interface DecisionDockProps {
     metrics: {
         spot: number;
-        callWall: number;
-        putWall: number;
-        gammaFlip: number;
-        maxPain: number;
-        netGex: number;
+        callWall?: number;
+        putWall?: number;
+        gammaFlip?: number;
+        maxPain?: number;
+        netGex?: number;
         callOi: number;
         putOi: number;
-        longGamma: boolean;
+        longGamma?: boolean;
         contractsCount?: number;
         putCallRatio?: number;
         atmIv?: number;
@@ -85,6 +85,9 @@ export default function DecisionDock({
     const parsedTimestamp = Date.parse(data.timestamp);
     const asOf = Number.isSafeInteger(parsedTimestamp) && parsedTimestamp >= 0 ? parsedTimestamp : 0;
     const orderflowMode = dataMode === 'DEMO' ? 'REPLAY' : 'LIVE';
+    const referenceSpot = dataMode === 'DEMO' ? metrics.spot
+        : marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close
+            ?? (!isError && data.dataMode === 'LIVE' ? data.spotPrice : undefined);
     const unavailableCoverage = createCaptureCoverageV1({
         dataMode: orderflowMode,
         source: dataMode === 'DEMO' ? 'UX16_FIXTURE' : 'ORDERFLOW_DERIVED',
@@ -329,7 +332,7 @@ export default function DecisionDock({
                                     callWall={metrics.callWall}
                                     putWall={metrics.putWall}
                                     gammaFlip={metrics.gammaFlip}
-                                    gammaRegime={metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}
+                                    gammaRegime={metrics.longGamma === undefined ? undefined : metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}
                                     decisionState={contextDecisionState}
                                     decisionReason={contextDecisionReason}
                                     dataFreshnessMs={dataMode === 'DEMO' ? null : marketFeed.latencyMs}
@@ -352,8 +355,9 @@ export default function DecisionDock({
                                 <SetupMode
                                     assessment={setupAssessment}
                                     evidence={flowEvidence}
+                                    referenceSpot={referenceSpot}
                                     optionsContext={{
-                                        gammaRegime: metrics.longGamma ? 'POSITIVE' : 'NEGATIVE',
+                                        gammaRegime: metrics.longGamma === undefined ? undefined : metrics.longGamma ? 'POSITIVE' : 'NEGATIVE',
                                         callWall: metrics.callWall,
                                         putWall: metrics.putWall,
                                         netGex: metrics.netGex,
@@ -380,13 +384,13 @@ export default function DecisionDock({
                                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                                         <div className="text-[#8390A0]">Dist to Call Wall</div>
                                         <div className="mt-0.5 font-bold text-[#D8DEE8]">
-                                             {(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%
+                                             {metrics.callWall === undefined ? 'N/A' : `${(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%`}
                                         </div>
                                     </div>
                                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                                         <div className="text-[#8390A0]">Dist to Put Wall</div>
                                         <div className="mt-0.5 font-bold text-[#D8DEE8]">
-                                            {(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%
+                                            {metrics.putWall === undefined ? 'N/A' : `${(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%`}
                                         </div>
                                     </div>
                                 </div>

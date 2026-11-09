@@ -40,22 +40,25 @@ export type JevSetupGrade = z.infer<typeof JevSetupGradeSchema>;
 export const JevStanceSchema = z.enum(['AGREE', 'CAUTION', 'DISAGREE', 'ABSTAIN']);
 export type JevStance = z.infer<typeof JevStanceSchema>;
 
-export interface DeterministicMarketState {
-    currentPrice: number;
-    vwapPrice: number;
-    avwapPrice?: number;
-    vpPoc: number;
-    vpVah: number;
-    vpVal: number;
-    netDelta: number;
-    cvdSlope: 'RISING' | 'FALLING' | 'FLAT';
-    gammaRegime: 'LONG_GAMMA_MEAN_REVERTING' | 'SHORT_GAMMA_EXPANSION';
-    gammaFlip?: number;
-    callWall: number;
-    putWall: number;
-    dataQualityOk: boolean;
-    spreadBps: number;
-}
+const positivePrice = z.number().finite().positive();
+const DeterministicMarketStateSchema = z.object({
+    currentPrice: positivePrice,
+    vwapPrice: positivePrice,
+    avwapPrice: positivePrice.optional(),
+    vpPoc: positivePrice,
+    vpVah: positivePrice,
+    vpVal: positivePrice,
+    netDelta: z.number().finite(),
+    cvdSlope: z.enum(['RISING', 'FALLING', 'FLAT']),
+    gammaRegime: z.enum(['LONG_GAMMA_MEAN_REVERTING', 'SHORT_GAMMA_EXPANSION']),
+    gammaFlip: positivePrice.optional(),
+    callWall: positivePrice,
+    putWall: positivePrice,
+    dataQualityOk: z.boolean(),
+    spreadBps: z.number().finite().nonnegative(),
+});
+
+export type DeterministicMarketState = z.infer<typeof DeterministicMarketStateSchema>;
 
 export interface JevAdvisoryOutput {
     mode: JevOperationalMode;
@@ -108,7 +111,7 @@ export function savePersistedJevMode(mode: JevOperationalMode): void {
  * Grounded 100% in factual BTC market data, mathematically verifying confluences.
  */
 export function evaluateJevDecision(
-    market: DeterministicMarketState,
+    input: Partial<DeterministicMarketState> | undefined,
     mode: JevOperationalMode = 'ADVISORY'
 ): JevAdvisoryOutput {
     const now = Date.now();
@@ -140,7 +143,9 @@ export function evaluateJevDecision(
     }
 
     // 1. Data-Quality Gates
-    if (!market.dataQualityOk || market.spreadBps > 15) {
+    const { data: market } = DeterministicMarketStateSchema.safeParse(input);
+    if (!market || !market.dataQualityOk || market.spreadBps > 15) {
+        const reason = market ? 'Stale market feed or high spread detected.' : 'Required market inputs are missing or invalid.';
         return {
             mode,
             timestamp: now,
@@ -154,13 +159,13 @@ export function evaluateJevDecision(
             invalidationPrice: 0,
             triggerPrice: 0,
             targetPrice: 0,
-            advisorySummary: 'Data quality gate tripped (spread > 15 bps or stale feed). Abstaining.',
+            advisorySummary: `Data quality gate tripped. ${reason} Abstaining.`,
             tradeScenario: {
                 setupName: 'NO TRADE - DATA GATE',
                 recommendedRiskR: 0,
                 conditionsMet: [],
-                cautions: ['Stale market feed or high spread detected.'],
-                noTradeReason: 'Data feed quality below institutional threshold.',
+                cautions: [reason],
+                noTradeReason: reason,
             },
             gatePassed: false,
         };

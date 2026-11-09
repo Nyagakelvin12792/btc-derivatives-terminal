@@ -17,6 +17,7 @@ import {
 } from 'lightweight-charts';
 import { Eye, EyeOff, Lock, Move, Settings, Trash2, Undo2, Unlock } from 'lucide-react';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
+import { resolveOptionLevels } from '../../lib/terrain/option-levels';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
@@ -130,6 +131,7 @@ interface ProfileRange {
 
 interface MarketStructureChartProps {
     data: TerrainDataContractV2;
+    optionsError?: boolean;
     marketFeed: BinanceMarketFeed;
     liquidityFeed: BinanceLiquidityHeatmapFeed;
     activeTool: ChartTool;
@@ -248,14 +250,9 @@ function numeric(value: unknown, fallback?: number): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function levelStrike(value: unknown): number | undefined {
-    if (typeof value === 'number') return numeric(value);
-    if (value && typeof value === 'object') return numeric((value as { strike?: unknown }).strike);
-    return undefined;
-}
-
 export default function MarketStructureChart({
     data,
+    optionsError = false,
     marketFeed,
     liquidityFeed,
     activeTool,
@@ -474,7 +471,6 @@ export default function MarketStructureChart({
     }, []);
 
     const summary = data.summary as unknown as Record<string, unknown>;
-    const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
     const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
     const demoBars = useMemo(() => createDemoMarketBars(spot, 1_200, TIMEFRAME_SECONDS[timeframe]), [spot, timeframe]);
     const liveBars = useMemo<DemoMarketBar[]>(() => marketFeed.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [marketFeed.candles]);
@@ -608,21 +604,23 @@ export default function MarketStructureChart({
     const profile = useMemo(() => createDemoVolumeProfile(profileSourceBars, profileSourceStart, profileSourceEnd, profileRowCount), [profileRowCount, profileSourceBars, profileSourceEnd, profileSourceStart]);
     const profileLevels = useMemo(() => calculateVolumeProfileLevels(profile, profileValueAreaPercent / 100), [profile, profileValueAreaPercent]);
 
-    const callWall = levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? numeric(summary.callWall) ?? spot * 1.05;
-    const putWall = levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? numeric(summary.putWall) ?? spot * 0.95;
-    const gammaFlip = levelStrike(keyLevels.gammaFlip) ?? numeric(summary.gammaFlip) ?? spot;
-    const maxPain = levelStrike(keyLevels.primaryMaxPain) ?? numeric(summary.maxPainStrike) ?? spot;
-    const positiveGamma = (numeric(summary.netGex, 0) ?? 0) >= 0;
+    const options = resolveOptionLevels(data, dataMode, optionsError);
+    const { callWall, putWall, gammaFlip, maxPain, netGex } = options.available ? options : {
+        callWall: undefined, putWall: undefined, gammaFlip: undefined, maxPain: undefined, netGex: undefined,
+    };
+    const positiveGamma = netGex !== undefined && netGex >= 0;
     const secondaryLevels = useMemo(() => {
-        const lowerBound = Math.min(putWall, gammaFlip, spot) * 0.99;
-        const upperBound = Math.max(callWall, spot) * 1.02;
+        if (!options.available) return [];
+        const lowerBound = Math.min(putWall ?? spot, gammaFlip ?? spot, spot) * 0.99;
+        const upperBound = Math.max(callWall ?? spot, spot) * 1.02;
         const candidates = (data.confluenceLevels || [])
-            .filter((level) => Math.abs(level.strike - callWall) > 1 && Math.abs(level.strike - putWall) > 1)
+            .filter((level) => (callWall === undefined || Math.abs(level.strike - callWall) > 1)
+                && (putWall === undefined || Math.abs(level.strike - putWall) > 1))
             .filter((level) => level.strike >= lowerBound && level.strike <= upperBound)
             .sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))
             .slice(0, 2)
             .map((level) => ({ price: level.strike, dte: level.dte }));
-        if (dataMode !== 'DEMO' || candidates.length >= 2) return candidates;
+        if (dataMode !== 'DEMO' || candidates.length >= 2 || callWall === undefined || putWall === undefined) return candidates;
         const levelSpan = Math.max(callWall - putWall, spot * 0.02);
         const demoFallbacks = [
             { price: callWall + levelSpan * 0.12, dte: 7 },
@@ -631,7 +629,7 @@ export default function MarketStructureChart({
         return [...candidates, ...demoFallbacks]
             .filter((level, index, rows) => rows.findIndex((row) => Math.abs(row.price - level.price) < 1) === index)
             .slice(0, 2);
-    }, [callWall, data.confluenceLevels, dataMode, gammaFlip, putWall, spot]);
+    }, [callWall, data.confluenceLevels, dataMode, gammaFlip, options.available, putWall, spot]);
     const lastBar = hoverBar ?? bars.at(-1) ?? null;
     const lastCvd = useCapturedCvdInPane
         ? trueFlowSnapshot?.cvdSegments.at(-1)?.finalCumulativeDeltaNotionalUsd ?? 0
@@ -848,7 +846,8 @@ export default function MarketStructureChart({
         const candleLow = Math.min(...recentBars.map((bar) => bar.low));
         const candleHigh = Math.max(...recentBars.map((bar) => bar.high));
         if (priceScaleFit === 'INCLUDE_WALLS') {
-            const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)];
+            const visibleLevels = [callWall, putWall, gammaFlip, maxPain, ...secondaryLevels.map((level) => level.price)]
+                .filter((level): level is number => level !== undefined);
             const lowBound = Math.min(candleLow, ...visibleLevels) * 0.998;
             const highBound = Math.max(candleHigh, ...visibleLevels) * 1.002;
             bounds.setData([{ time: recentBars[0].time, value: lowBound }, { time: recentBars[recentBars.length - 1].time, value: highBound }]);
@@ -864,16 +863,18 @@ export default function MarketStructureChart({
         if (!candles) return;
         priceLinesRef.current.forEach((line) => candles.removePriceLine(line));
         const lines: IPriceLine[] = [];
-        if (chartLayers.walls) {
+        if (chartLayers.walls && callWall !== undefined) {
             lines.push(candles.createPriceLine({ price: callWall, color: '#2fd8af', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: 'CALL WALL' }));
+        }
+        if (chartLayers.walls && putWall !== undefined) {
             lines.push(candles.createPriceLine({ price: putWall, color: '#f05c73', lineWidth: 2, lineStyle: LineStyle.Solid, axisLabelVisible: true, title: 'PUT WALL' }));
         }
         if (chartLayers.secondaryWalls) secondaryLevels.forEach((level) => lines.push(candles.createPriceLine({
             price: level.price, color: 'rgba(180, 192, 209, 0.7)', lineWidth: 1,
             lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: `${level.dte}D`,
         })));
-        if (chartLayers.gammaFlip) lines.push(candles.createPriceLine({ price: gammaFlip, color: '#3da7ff', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'GAMMA FLIP' }));
-        if (chartLayers.maxPain) lines.push(candles.createPriceLine({ price: maxPain, color: '#d6dae1', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'MAX PAIN' }));
+        if (chartLayers.gammaFlip && gammaFlip !== undefined) lines.push(candles.createPriceLine({ price: gammaFlip, color: '#3da7ff', lineWidth: 2, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'GAMMA FLIP' }));
+        if (chartLayers.maxPain && maxPain !== undefined) lines.push(candles.createPriceLine({ price: maxPain, color: '#d6dae1', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: false, title: 'MAX PAIN' }));
         priceLinesRef.current = lines;
         requestAnimationFrame(() => updateOverlayRef.current());
     }, [callWall, chartLayers.gammaFlip, chartLayers.maxPain, chartLayers.secondaryWalls, chartLayers.walls, gammaFlip, maxPain, putWall, secondaryLevels]);
@@ -891,7 +892,8 @@ export default function MarketStructureChart({
             const hostHeight = chartHostRef.current?.clientHeight || 460;
             const hostWidth = chartHostRef.current?.clientWidth || 800;
             if (!chart || !candles || !bars.length) return;
-            const coordinate = (price: number) => {
+            const coordinate = (price: number | undefined) => {
+                if (price === undefined) return null;
                 const y = candles.priceToCoordinate(price);
                 return y === null ? null : Number(y);
             };
@@ -1814,15 +1816,15 @@ export default function MarketStructureChart({
                     />
                 )}
 
-                {chartLayers.gammaRegime && <div className="pointer-events-none absolute inset-0 z-10">
+                {chartLayers.gammaRegime && gammaFlip !== undefined && netGex !== undefined && <div className="pointer-events-none absolute inset-0 z-10">
                     <div className={cn('absolute inset-x-0 top-0 border-b border-emerald-400/25 bg-emerald-400/[0.045]', positiveGamma && 'bg-emerald-400/[0.075]')} style={{ height: Math.max(0, overlayLayout.flipY) }}><span className="absolute left-3 top-10 rounded border border-emerald-400/20 bg-[#07120f]/90 px-2 py-1 text-[10px] font-bold text-emerald-300">POSITIVE GAMMA · MEAN-REVERSION</span></div>
                     <div className={cn('absolute inset-x-0 bottom-0 border-t border-rose-400/20 bg-rose-400/[0.035]', !positiveGamma && 'bg-rose-400/[0.07]')} style={{ top: Math.max(0, overlayLayout.flipY) }}><span className="absolute bottom-8 left-3 rounded border border-rose-400/20 bg-[#140a0e]/90 px-2 py-1 text-[10px] font-bold text-rose-300">NEGATIVE GAMMA · EXPANSION</span></div>
                 </div>}
 
-                {chartLayers.walls && overlayLayout.callY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 h-2 -translate-y-1/2 border-y border-emerald-300/35 bg-emerald-400/15" style={{ top: overlayLayout.callY }}><span className="absolute right-16 -top-5 rounded bg-[#07130f]/95 px-2 py-0.5 text-[9px] font-bold text-emerald-300">CALL WALL {money(callWall)} · {dteFilter}</span></div>}
-                {chartLayers.walls && overlayLayout.putY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 h-2 -translate-y-1/2 border-y border-rose-300/35 bg-rose-400/15" style={{ top: overlayLayout.putY }}><span className="absolute right-16 top-2 rounded bg-[#160a0f]/95 px-2 py-0.5 text-[9px] font-bold text-rose-300">PUT WALL {money(putWall)} · {dteFilter}</span></div>}
-                {chartLayers.secondaryWalls && overlayLayout.secondaryRows.map((level) => <div key={`${level.price}-${level.dte}`} className="pointer-events-none absolute inset-x-0 z-20 border-t border-dashed border-zinc-400/45" style={{ top: level.y }}><span className="absolute right-16 -top-4 text-[8px] font-semibold text-zinc-400">{money(level.price)} · {level.dte}D</span></div>)}
-                {chartLayers.maxPain && overlayLayout.maxPainY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 border-t border-dotted border-zinc-300/45" style={{ top: overlayLayout.maxPainY }}><span className="absolute left-[52%] -top-4 text-[8px] font-semibold text-zinc-300">MAX PAIN {money(maxPain)}</span></div>}
+                {chartLayers.walls && callWall !== undefined && overlayLayout.callY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 h-2 -translate-y-1/2 border-y border-emerald-300/35 bg-emerald-400/15" style={{ top: overlayLayout.callY }}><span className="absolute right-16 -top-5 rounded bg-[#07130f]/95 px-2 py-0.5 text-[9px] font-bold text-emerald-300">CALL WALL {money(callWall)} · {dteFilter}</span></div>}
+                {chartLayers.walls && putWall !== undefined && overlayLayout.putY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 h-2 -translate-y-1/2 border-y border-rose-300/35 bg-rose-400/15" style={{ top: overlayLayout.putY }}><span className="absolute right-16 top-2 rounded bg-[#160a0f]/95 px-2 py-0.5 text-[9px] font-bold text-rose-300">PUT WALL {money(putWall)} · {dteFilter}</span></div>}
+                {chartLayers.secondaryWalls && options.available && overlayLayout.secondaryRows.map((level) => <div key={`${level.price}-${level.dte}`} className="pointer-events-none absolute inset-x-0 z-20 border-t border-dashed border-zinc-400/45" style={{ top: level.y }}><span className="absolute right-16 -top-4 text-[8px] font-semibold text-zinc-400">{money(level.price)} · {level.dte}D</span></div>)}
+                {chartLayers.maxPain && maxPain !== undefined && overlayLayout.maxPainY !== null && <div className="pointer-events-none absolute inset-x-0 z-20 border-t border-dotted border-zinc-300/45" style={{ top: overlayLayout.maxPainY }}><span className="absolute left-[52%] -top-4 text-[8px] font-semibold text-zinc-300">MAX PAIN {money(maxPain)}</span></div>}
 
                 {chartLayers.volumeProfile && profileLeft !== null && <div
                     className={cn('pointer-events-none absolute bottom-7 top-0 z-20 border-x border-cyan-400/35 bg-cyan-400/[0.02] transition-colors', selectedObject === 'VP' && 'ring-1 ring-inset ring-cyan-300/35')}

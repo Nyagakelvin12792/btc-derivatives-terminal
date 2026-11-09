@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     ChevronDown,
     ChevronUp,
@@ -29,22 +29,7 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
     const [mode, setMode] = useState<JevOperationalMode>(() => loadPersistedJevMode());
     const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
-    const defaultMarket: DeterministicMarketState = {
-        currentPrice: marketState?.currentPrice ?? 78602,
-        vwapPrice: marketState?.vwapPrice ?? 78150,
-        vpPoc: marketState?.vpPoc ?? 78032,
-        vpVah: marketState?.vpVah ?? 78513,
-        vpVal: marketState?.vpVal ?? 76710,
-        netDelta: marketState?.netDelta ?? 478,
-        cvdSlope: marketState?.cvdSlope ?? 'RISING',
-        gammaRegime: marketState?.gammaRegime ?? 'LONG_GAMMA_MEAN_REVERTING',
-        callWall: marketState?.callWall ?? 78000,
-        putWall: marketState?.putWall ?? 76812,
-        dataQualityOk: marketState?.dataQualityOk ?? true,
-        spreadBps: marketState?.spreadBps ?? 1.5,
-    };
-
-    const decision: JevAdvisoryOutput = evaluateJevDecision(defaultMarket, mode);
+    const decision: JevAdvisoryOutput = evaluateJevDecision(marketState, mode);
 
     const handleModeChange = (nextMode: JevOperationalMode) => {
         setMode(nextMode);

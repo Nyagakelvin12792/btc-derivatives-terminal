@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
 import * as path from 'path';
+import { buildDemoTerrainDataContract } from '../../src/lib/terrain/engine';
 import { buildOracleCapture, oracleScenario } from '../../src/lib/orderflow/true-flow-oracle.test-data';
 import { deriveTrueFlowSnapshotV1 } from '../../src/lib/orderflow/true-flow';
 
@@ -67,8 +68,16 @@ test.describe('UX16.7 Jev Shadow Explanation Acceptance', () => {
             body: JSON.stringify({ schemaVersion: 1, enabled: true, dataMode: 'SHADOW', source: 'BINANCE_SPOT', symbol: 'BTCUSDT' }),
         }));
 
+        const optionsFixture = buildDemoTerrainDataContract(95_000, new Date());
+        let liveOptionsReady = false;
+        await page.route('**/api/deribit?*', (route) => route.fulfill({
+            json: { ...optionsFixture, dataMode: liveOptionsReady ? 'LIVE' : 'DEMO' },
+        }));
+
+        let jevRequests = 0;
         // Mock /api/orderflow/jev to provide a verified deterministic Jev shadow response
         await page.route('**/api/orderflow/jev', async (route) => {
+            jevRequests++;
             const body = JSON.parse(route.request().postData() || '{}');
             route.fulfill({
                 status: 200,
@@ -121,6 +130,10 @@ test.describe('UX16.7 Jev Shadow Explanation Acceptance', () => {
         // Verify Jev body is visible
         const jevBody = jevContainer.getByTestId('setup-jev-body');
         await expect(jevBody).toBeVisible();
+
+        await expect(jevBody.getByText('Jev abstained. Required options or price inputs are unavailable.')).toBeVisible();
+        expect(jevRequests).toBe(0);
+        liveOptionsReady = true;
 
         // Verify Stance Badge
         const stanceBadge = jevContainer.getByTestId('setup-jev-stance-badge');

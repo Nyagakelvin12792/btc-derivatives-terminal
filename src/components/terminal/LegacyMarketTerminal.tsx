@@ -45,6 +45,7 @@ import {
     X,
 } from 'lucide-react';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
+import { resolveOptionLevels } from '../../lib/terrain/option-levels';
 import type { WorkspaceTab } from '../../lib/dashboard/types';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import { cn } from '../../lib/ui/cn';
@@ -69,11 +70,11 @@ interface MarketTerminalProps {
 
 interface MarketMetrics {
     spot: number;
-    callWall: number;
-    putWall: number;
-    gammaFlip: number;
-    maxPain: number;
-    netGex: number;
+    callWall?: number;
+    putWall?: number;
+    gammaFlip?: number;
+    maxPain?: number;
+    netGex?: number;
     totalCallGex?: number;
     totalPutGex?: number;
     contractsCount?: number;
@@ -81,7 +82,7 @@ interface MarketMetrics {
     atmIv?: number;
     callOi: number;
     putOi: number;
-    longGamma: boolean;
+    longGamma?: boolean;
 }
 
 const WORKSPACES: Array<{ id: WorkspaceTab; label: string; icon: React.ElementType }> = [
@@ -135,12 +136,6 @@ function numeric(value: unknown, fallback?: number): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function levelStrike(value: unknown): number | undefined {
-    if (typeof value === 'number') return numeric(value);
-    if (value && typeof value === 'object') return numeric((value as { strike?: unknown }).strike);
-    return undefined;
-}
-
 function Metric({ label, value, tone = 'neutral' }: { label: string; value: string; tone?: 'neutral' | 'positive' | 'negative' | 'warning' }) {
     const color = tone === 'positive' ? 'text-emerald-300' : tone === 'negative' ? 'text-rose-300' : tone === 'warning' ? 'text-sky-300' : 'text-zinc-100';
     return <div className="rounded-md border border-[#253347] bg-[#0a1018] px-2.5 py-2"><div className="truncate text-[9px] font-semibold uppercase text-zinc-500">{label}</div><div className={cn('mt-1 font-mono text-[13px] font-semibold tabular-nums', color)}>{value}</div></div>;
@@ -167,10 +162,10 @@ function StudyChip({ label, visible, onToggle, description }: { label: string; v
 
 function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; data: TerrainDataContractV2; isError: boolean }) {
     const { dataMode, dteFilter, setDteFilter, chartLayers, toggleChartLayer, setInspectorTab } = useTerminalStore();
-    const decisionReason = Math.abs((metrics.spot - metrics.gammaFlip) / metrics.spot) < 0.012 ? 'Wait for Gamma Flip confirmation' : 'Wait for retest confirmation';
+    const decisionReason = metrics.gammaFlip === undefined ? 'Gamma Flip unavailable' : Math.abs((metrics.spot - metrics.gammaFlip) / metrics.spot) < 0.012 ? 'Wait for Gamma Flip confirmation' : 'Wait for retest confirmation';
     return <div className="space-y-2 p-2.5">
-        <div className="grid min-h-[92px] grid-cols-[1.25fr_1fr_0.8fr] divide-x divide-[#263346] rounded border border-[#263346] bg-[#0a111a] p-3"><div><div className="text-[10px] text-zinc-500">Gamma Regime</div><div className={cn('mt-1.5 text-xl font-bold leading-none', metrics.longGamma ? 'text-emerald-300' : 'text-rose-300')}>{metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}</div><div className="mt-2 text-[10px] text-zinc-500">{metrics.longGamma ? 'mean-reversion' : 'expansion'}</div></div><div className="pl-3"><div className="text-[10px] text-zinc-500">Net GEX</div><div className={cn('mt-3 font-mono text-base font-bold tabular-nums', metrics.longGamma ? 'text-emerald-300' : 'text-rose-300')}>{compact(metrics.netGex, '$')}</div></div><div className="pl-3"><div className="text-[10px] text-zinc-500">Flip</div><div className="mt-3 font-mono text-[13px] font-bold tabular-nums text-sky-300">{Math.round(metrics.gammaFlip).toLocaleString()}</div></div></div>
-        <div className="rounded border border-[#263346] bg-[#090f17] p-2.5"><div className="mb-2 text-[10px] font-semibold text-zinc-500">DTE (Days to Expiry)</div><div className="grid grid-cols-5 gap-1">{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} title={filter === 'ALL' ? 'All expiries' : `Expiries up to ${filter.replace('D', '')} days`} className={cn('h-8 rounded border text-[9px] font-bold', dteFilter === filter ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#2b3b50] text-zinc-500 hover:text-zinc-200')}>{filter}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><InspectorMetric label="Call Wall" value={Math.round(metrics.callWall).toLocaleString()} tone="positive" /><InspectorMetric label="Put Wall" value={Math.round(metrics.putWall).toLocaleString()} tone="negative" /><InspectorMetric label="Max Pain" value={Math.round(metrics.maxPain).toLocaleString()} /><InspectorMetric label="Key P/C" value={metrics.putCallRatio === undefined ? '—' : metrics.putCallRatio.toFixed(2)} /><InspectorMetric label="Near-ATM IV" value={metrics.atmIv === undefined ? '—' : `${(metrics.atmIv > 3 ? metrics.atmIv : metrics.atmIv * 100).toFixed(1)}%`} /><InspectorMetric label="IV Rank" value="N/A" /><InspectorMetric label="Key Call OI" value={compact(metrics.callOi)} /><InspectorMetric label="Key Put OI" value={compact(metrics.putOi)} /></div></div>
+        <div className="grid min-h-[92px] grid-cols-[1.25fr_1fr_0.8fr] divide-x divide-[#263346] rounded border border-[#263346] bg-[#0a111a] p-3"><div><div className="text-[10px] text-zinc-500">Gamma Regime</div><div className={cn('mt-1.5 text-xl font-bold leading-none', metrics.longGamma ? 'text-emerald-300' : 'text-rose-300')}>{metrics.longGamma === undefined ? 'UNAVAILABLE' : metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}</div><div className="mt-2 text-[10px] text-zinc-500">{metrics.longGamma === undefined ? '' : metrics.longGamma ? 'mean-reversion' : 'expansion'}</div></div><div className="pl-3"><div className="text-[10px] text-zinc-500">Net GEX</div><div className={cn('mt-3 font-mono text-base font-bold tabular-nums', metrics.longGamma ? 'text-emerald-300' : 'text-rose-300')}>{compact(metrics.netGex, '$')}</div></div><div className="pl-3"><div className="text-[10px] text-zinc-500">Flip</div><div className="mt-3 font-mono text-[13px] font-bold tabular-nums text-sky-300">{metrics.gammaFlip === undefined ? 'N/A' : Math.round(metrics.gammaFlip).toLocaleString()}</div></div></div>
+        <div className="rounded border border-[#263346] bg-[#090f17] p-2.5"><div className="mb-2 text-[10px] font-semibold text-zinc-500">DTE (Days to Expiry)</div><div className="grid grid-cols-5 gap-1">{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} title={filter === 'ALL' ? 'All expiries' : `Expiries up to ${filter.replace('D', '')} days`} className={cn('h-8 rounded border text-[9px] font-bold', dteFilter === filter ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#2b3b50] text-zinc-500 hover:text-zinc-200')}>{filter}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><InspectorMetric label="Call Wall" value={metrics.callWall === undefined ? 'N/A' : Math.round(metrics.callWall).toLocaleString()} tone="positive" /><InspectorMetric label="Put Wall" value={metrics.putWall === undefined ? 'N/A' : Math.round(metrics.putWall).toLocaleString()} tone="negative" /><InspectorMetric label="Max Pain" value={metrics.maxPain === undefined ? 'N/A' : Math.round(metrics.maxPain).toLocaleString()} /><InspectorMetric label="Key P/C" value={metrics.putCallRatio === undefined ? '—' : metrics.putCallRatio.toFixed(2)} /><InspectorMetric label="Near-ATM IV" value={metrics.atmIv === undefined ? '—' : `${(metrics.atmIv > 3 ? metrics.atmIv : metrics.atmIv * 100).toFixed(1)}%`} /><InspectorMetric label="IV Rank" value="N/A" /><InspectorMetric label="Key Call OI" value={compact(metrics.callOi)} /><InspectorMetric label="Key Put OI" value={compact(metrics.putOi)} /></div></div>
         <div className="grid grid-cols-[1fr_0.92fr] gap-1.5"><div className="rounded border border-[#263346] bg-[#0a111a] p-2.5"><div className="mb-0.5 text-[10px] font-semibold text-zinc-400">Show on chart</div><LayerToggle compact label="Walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle compact label="Gamma Regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle compact label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle compact label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle compact label="Secondary GEX" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} /></div><div className="rounded border border-[#263346] bg-[#0a111a] p-2.5"><div className="text-[10px] font-semibold text-zinc-400">Display</div><div className="mt-2 grid grid-cols-2 gap-1">{(['GEX', 'OI'] as const).map((display) => <button key={display} type="button" disabled={display === 'OI'} title={display === 'OI' ? 'Requires a full-chain call/put OI wall contract' : 'Gamma exposure walls'} className={cn('h-8 rounded border text-[9px] font-bold disabled:cursor-not-allowed disabled:opacity-40', display === 'GEX' ? 'border-cyan-400/55 bg-cyan-400/10 text-cyan-200' : 'border-[#2b3b50] text-zinc-500')}>{display}</button>)}</div><div className="mt-4 space-y-3 text-[9px] text-zinc-400"><div className="flex items-center gap-1.5"><span className="h-1 w-4 bg-emerald-400" />Primary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dashed border-zinc-400" />Secondary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dotted border-zinc-300" />Max Pain</div></div></div></div>
         <div className="min-h-[118px] rounded border border-[#2a3c50] bg-[#0b121b] p-3"><div className="flex items-center justify-between"><span className="text-[10px] font-semibold text-zinc-400">Decision</span><button type="button" onClick={() => setInspectorTab('DECISION')} className="rounded border border-cyan-400/40 px-2.5 py-1.5 text-[9px] font-semibold text-cyan-300">Open →</button></div><div className="mt-2 text-2xl font-black text-zinc-100">NO TRADE</div><p className="mt-1.5 text-pretty text-[10px] text-zinc-400">{decisionReason}</p></div>
         <p className="border-t border-[#263346] px-0.5 pt-2 text-pretty text-[8px] leading-relaxed text-zinc-500">Dealer positioning uses {data.assumptionModel}. It is not directly observed inventory. {isError && dataMode === 'LIVE' ? 'Live feed unavailable.' : ''}</p>
@@ -217,8 +212,8 @@ function Inspector({
             <div className="mt-4 space-y-2 border-t border-[#263346] pt-3">
                 <div className="text-[10px] font-semibold text-zinc-400">Structural Options Context</div>
                 <div className="grid grid-cols-2 gap-2">
-                    <Metric label="Distance to Call Wall" value={`${(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%`} />
-                    <Metric label="Distance to Put Wall" value={`${(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%`} />
+                    <Metric label="Distance to Call Wall" value={metrics.callWall === undefined ? 'N/A' : `${(((metrics.callWall - metrics.spot) / metrics.spot) * 100).toFixed(2)}%`} />
+                    <Metric label="Distance to Put Wall" value={metrics.putWall === undefined ? 'N/A' : `${(((metrics.spot - metrics.putWall) / metrics.spot) * 100).toFixed(2)}%`} />
                 </div>
                 <Metric label="Contracts Observed" value={metrics.contractsCount?.toLocaleString() ?? '—'} />
             </div>
@@ -288,20 +283,17 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
 
     const metrics = useMemo<MarketMetrics>(() => {
         const summary = data.summary as unknown as Record<string, unknown>;
-        const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
         const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
-        const callWall = levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? spot * 1.05;
-        const putWall = levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? spot * 0.95;
-        const gammaFlip = levelStrike(keyLevels.gammaFlip) ?? numeric(summary.gammaFlip) ?? spot;
-        const maxPain = levelStrike(keyLevels.primaryMaxPain) ?? numeric(summary.maxPainStrike) ?? spot;
-        const netGex = numeric(summary.netGex, 0) ?? 0;
+        const options = resolveOptionLevels(data, dataMode, isError);
+        if (!options.available) return { spot, callOi: 0, putOi: 0 };
+        const { callWall, putWall, gammaFlip, maxPain, netGex } = options;
         const calls = (data.keyContracts || []).filter((contract) => contract.type === 'call');
         const puts = (data.keyContracts || []).filter((contract) => contract.type === 'put');
         const callOi = calls.reduce((sum, contract) => sum + contract.openInterest, 0);
         const putOi = puts.reduce((sum, contract) => sum + contract.openInterest, 0);
         const nearest = [...(data.keyContracts || [])].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0];
-        return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex >= 0 };
-    }, [data]);
+        return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex === undefined ? undefined : netGex >= 0 };
+    }, [data, dataMode, isError]);
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
     const displayedSpot = liveSpot ?? metrics.spot;
     const changePct = dataMode === 'LIVE' ? marketFeed.ticker?.priceChangePercent : numeric((data.summary as unknown as Record<string, unknown>).spot24hChangePct);
@@ -476,6 +468,7 @@ export default function MarketTerminal({ data, isError }: MarketTerminalProps) {
                             <div className="min-w-0 flex-1">
                                 <MarketStructureChart
                                     data={data}
+                                    optionsError={isError}
                                     marketFeed={marketFeed}
                                     liquidityFeed={liquidityFeed}
                                     activeTool={activeTool}

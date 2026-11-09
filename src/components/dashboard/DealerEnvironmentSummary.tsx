@@ -65,10 +65,11 @@ export default function DealerEnvironmentSummary({ summary, onSelectStrike }: De
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Call Wall</span>
                         <button
-                            onClick={() => onSelectStrike?.(summary.callWall)}
+                            disabled={summary.callWall === undefined}
+                            onClick={() => summary.callWall !== undefined && onSelectStrike?.(summary.callWall)}
                             className="font-bold text-emerald-400 hover:underline cursor-pointer"
                         >
-                            {summary.callWall.toLocaleString()}
+                            {summary.callWall?.toLocaleString() ?? 'N/A'}
                         </button>
                     </div>
 
@@ -76,10 +77,11 @@ export default function DealerEnvironmentSummary({ summary, onSelectStrike }: De
                     <div className="flex items-center justify-between py-0.5">
                         <span className="text-zinc-400">Put Wall</span>
                         <button
-                            onClick={() => onSelectStrike?.(summary.putWall)}
+                            disabled={summary.putWall === undefined}
+                            onClick={() => summary.putWall !== undefined && onSelectStrike?.(summary.putWall)}
                             className="font-bold text-rose-400 hover:underline cursor-pointer"
                         >
-                            {summary.putWall.toLocaleString()}
+                            {summary.putWall?.toLocaleString() ?? 'N/A'}
                         </button>
                     </div>
 

@@ -71,8 +71,8 @@ export interface DealerEnvironmentSummaryData {
     netVanna: number;
     netCharm: number;
     gammaFlip: number;
-    callWall: number;
-    putWall: number;
+    callWall?: number;
+    putWall?: number;
     maxPain: number;
     totalOiUsd: number | null;
     totalOiBtc: number | null;

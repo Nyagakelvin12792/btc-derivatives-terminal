@@ -38,6 +38,18 @@ describe('Jev Decision Framework (UX19.6)', () => {
         expect(res.advisorySummary).toContain('Data quality gate tripped');
     });
 
+    it.each([undefined, {}, { ...baseMarket, spreadBps: undefined }, { ...baseMarket, netDelta: Number.NaN }])(
+        'abstains without a complete, valid market state (%j)',
+        (market) => {
+            expect(evaluateJevDecision(market)).toMatchObject({
+                stance: 'ABSTAIN',
+                setupGrade: 'NONE',
+                confluenceCount: 0,
+                gatePassed: false,
+            });
+        },
+    );
+
     it('classifies bullish trending expansion setup with strong confluences', () => {
         const res = evaluateJevDecision(baseMarket, 'ADVISORY');
         expect(res.bias).toBe('BULLISH');

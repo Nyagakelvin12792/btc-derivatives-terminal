@@ -7,10 +7,10 @@ import { JevAdvisoryPanel } from './JevAdvisoryPanel';
 
 export interface ContextModeProps {
     spotPrice: number;
-    callWall: number;
-    putWall: number;
-    gammaFlip: number;
-    gammaRegime: 'POSITIVE' | 'NEGATIVE';
+    callWall?: number;
+    putWall?: number;
+    gammaFlip?: number;
+    gammaRegime?: 'POSITIVE' | 'NEGATIVE';
     avwapLabel?: string;
     avwapPrice?: number;
     volumeProfilePoc?: number;
@@ -41,8 +41,8 @@ export default function ContextMode({
     className,
 }: ContextModeProps) {
     const isPositiveGamma = gammaRegime === 'POSITIVE';
-    const distanceToCallBps = Math.round(((callWall - spotPrice) / spotPrice) * 10_000);
-    const distanceToPutBps = Math.round(((spotPrice - putWall) / spotPrice) * 10_000);
+    const distanceToCallBps = callWall === undefined ? undefined : Math.round(((callWall - spotPrice) / spotPrice) * 10_000);
+    const distanceToPutBps = putWall === undefined ? undefined : Math.round(((spotPrice - putWall) / spotPrice) * 10_000);
 
     return (
         <div
@@ -83,19 +83,19 @@ export default function ContextMode({
                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                         <div className="flex items-center justify-between text-[9px] text-[#8390A0]">
                             <span>Call Wall (Upper)</span>
-                            <span className="font-mono text-[8px] text-[#2CC7A0]">+{distanceToCallBps} bps</span>
+                            <span className="font-mono text-[8px] text-[#2CC7A0]">{distanceToCallBps === undefined ? '' : `+${distanceToCallBps} bps`}</span>
                         </div>
                         <div className="mt-1 font-mono text-xs font-bold text-[#D8DEE8]">
-                            ${Math.round(callWall).toLocaleString()}
+                            {callWall === undefined ? 'N/A' : `$${Math.round(callWall).toLocaleString()}`}
                         </div>
                     </div>
                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                         <div className="flex items-center justify-between text-[9px] text-[#8390A0]">
                             <span>Put Wall (Lower)</span>
-                            <span className="font-mono text-[8px] text-[#E06379]">-{distanceToPutBps} bps</span>
+                            <span className="font-mono text-[8px] text-[#E06379]">{distanceToPutBps === undefined ? '' : `-${distanceToPutBps} bps`}</span>
                         </div>
                         <div className="mt-1 font-mono text-xs font-bold text-[#D8DEE8]">
-                            ${Math.round(putWall).toLocaleString()}
+                            {putWall === undefined ? 'N/A' : `$${Math.round(putWall).toLocaleString()}`}
                         </div>
                     </div>
                 </div>
@@ -104,13 +104,13 @@ export default function ContextMode({
                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                         <div className="text-[9px] text-[#8390A0]">Gamma Flip</div>
                         <div className="mt-1 font-mono text-xs font-bold text-[#39A9F5]">
-                            ${Math.round(gammaFlip).toLocaleString()}
+                            {gammaFlip === undefined ? 'N/A' : `$${Math.round(gammaFlip).toLocaleString()}`}
                         </div>
                     </div>
                     <div className="rounded border border-[#18212C] bg-[#070A0F] p-2">
                         <div className="text-[9px] text-[#8390A0]">Gamma Regime</div>
                         <div className={cn('mt-1 font-mono text-xs font-bold', isPositiveGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>
-                            {gammaRegime}
+                            {gammaRegime ?? 'UNAVAILABLE'}
                         </div>
                     </div>
                 </div>
@@ -155,7 +155,7 @@ export default function ContextMode({
                     callWall,
                     putWall,
                     gammaFlip,
-                    gammaRegime: gammaRegime === 'POSITIVE' ? 'LONG_GAMMA_MEAN_REVERTING' : 'SHORT_GAMMA_EXPANSION',
+                    gammaRegime: gammaRegime === undefined ? undefined : gammaRegime === 'POSITIVE' ? 'LONG_GAMMA_MEAN_REVERTING' : 'SHORT_GAMMA_EXPANSION',
                     avwapPrice,
                     vpPoc: volumeProfilePoc,
                     vpVah: volumeProfileVah,

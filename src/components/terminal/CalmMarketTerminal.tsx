@@ -43,6 +43,7 @@ import {
     X,
 } from 'lucide-react';
 import type { TerrainDataContractV2 } from '../../lib/terrain/types';
+import { resolveOptionLevels } from '../../lib/terrain/option-levels';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import type { WorkspaceTab } from '../../lib/dashboard/types';
 import { useTerminalStore } from '../../lib/dashboard/store';
@@ -78,11 +79,11 @@ interface MarketTerminalProps {
 
 interface MarketMetrics {
     spot: number;
-    callWall: number;
-    putWall: number;
-    gammaFlip: number;
-    maxPain: number;
-    netGex: number;
+    callWall?: number;
+    putWall?: number;
+    gammaFlip?: number;
+    maxPain?: number;
+    netGex?: number;
     totalCallGex?: number;
     totalPutGex?: number;
     contractsCount?: number;
@@ -90,7 +91,7 @@ interface MarketMetrics {
     atmIv?: number;
     callOi: number;
     putOi: number;
-    longGamma: boolean;
+    longGamma?: boolean;
 }
 
 const WORKSPACES: Array<{ id: WorkspaceTab; label: string; icon: React.ElementType }> = [
@@ -144,12 +145,6 @@ function numeric(value: unknown, fallback?: number): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function levelStrike(value: unknown): number | undefined {
-    if (typeof value === 'number') return numeric(value);
-    if (value && typeof value === 'object') return numeric((value as { strike?: unknown }).strike);
-    return undefined;
-}
-
 function LayerToggle({ label, checked, onCheckedChange, compact: isCompact = false }: { label: string; checked: boolean; onCheckedChange: () => void; compact?: boolean }) {
     return <div className={cn('flex items-center justify-between gap-3', isCompact ? 'py-1' : 'py-1.5')}><span className={cn('truncate text-[#D8DEE8]', isCompact ? 'text-[10px]' : 'text-[11px]')}>{label}</span><Switch.Root aria-label={`Toggle ${label}`} checked={checked} onCheckedChange={onCheckedChange} className="relative h-5 w-9 shrink-0 rounded-full border border-[#18212C] bg-[#141B24] data-[state=checked]:border-[#39A9F5]/60 data-[state=checked]:bg-[#39A9F5]/30"><Switch.Thumb className="block size-3.5 translate-x-0.5 rounded-full bg-[#8390A0] transition-transform duration-150 data-[state=checked]:translate-x-[18px] data-[state=checked]:bg-[#39A9F5] motion-reduce:transition-none" /></Switch.Root></div>;
 }
@@ -171,10 +166,10 @@ function StudyChip({ label, visible, onToggle, description }: { label: string; v
 
 function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; data: TerrainDataContractV2; isError: boolean }) {
     const { dataMode, dteFilter, setDteFilter, chartLayers, toggleChartLayer, setInspectorTab } = useTerminalStore();
-    const decisionReason = Math.abs((metrics.spot - metrics.gammaFlip) / metrics.spot) < 0.012 ? 'Wait for Gamma Flip confirmation' : 'Wait for retest confirmation';
+    const decisionReason = metrics.gammaFlip === undefined ? 'Gamma Flip unavailable' : Math.abs((metrics.spot - metrics.gammaFlip) / metrics.spot) < 0.012 ? 'Wait for Gamma Flip confirmation' : 'Wait for retest confirmation';
     return <div className="space-y-2 p-2.5 font-sans">
-        <div className="grid min-h-[92px] grid-cols-[1.25fr_1fr_0.8fr] divide-x divide-[#18212C] rounded border border-[#18212C] bg-[#070A0F] p-3"><div><div className="text-[10px] font-mono text-[#8390A0]">Gamma Regime</div><div className={cn('mt-1.5 text-xl font-bold leading-none font-mono', metrics.longGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>{metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}</div><div className="mt-2 text-[10px] text-[#8390A0]">{metrics.longGamma ? 'mean-reversion' : 'expansion'}</div></div><div className="pl-3"><div className="text-[10px] font-mono text-[#8390A0]">Net GEX</div><div className={cn('mt-3 font-mono text-base font-bold tabular-nums', metrics.longGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>{compact(metrics.netGex, '$')}</div></div><div className="pl-3"><div className="text-[10px] font-mono text-[#8390A0]">Flip</div><div className="mt-3 font-mono text-[13px] font-bold tabular-nums text-[#39A9F5]">{Math.round(metrics.gammaFlip).toLocaleString()}</div></div></div>
-        <div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="mb-2 text-[10px] font-mono font-semibold text-[#8390A0]">DTE (Days to Expiry)</div><div className="grid grid-cols-5 gap-1">{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} title={filter === 'ALL' ? 'All expiries' : `Expiries up to ${filter.replace('D', '')} days`} className={cn('h-7 rounded border font-mono text-[9px] font-bold transition-colors', dteFilter === filter ? 'border-[#39A9F5]/60 bg-[#39A9F5]/15 text-[#39A9F5]' : 'border-[#18212C] text-[#8390A0] hover:text-[#D8DEE8]')}>{filter}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><InspectorMetric label="Call Wall" value={Math.round(metrics.callWall).toLocaleString()} tone="positive" /><InspectorMetric label="Put Wall" value={Math.round(metrics.putWall).toLocaleString()} tone="negative" /><InspectorMetric label="Max Pain" value={Math.round(metrics.maxPain).toLocaleString()} /><InspectorMetric label="Key P/C" value={metrics.putCallRatio === undefined ? '—' : metrics.putCallRatio.toFixed(2)} /><InspectorMetric label="Near-ATM IV" value={metrics.atmIv === undefined ? '—' : `${(metrics.atmIv > 3 ? metrics.atmIv : metrics.atmIv * 100).toFixed(1)}%`} /><InspectorMetric label="IV Rank" value="N/A" /><InspectorMetric label="Key Call OI" value={compact(metrics.callOi)} /><InspectorMetric label="Key Put OI" value={compact(metrics.putOi)} /></div></div>
+        <div className="grid min-h-[92px] grid-cols-[1.25fr_1fr_0.8fr] divide-x divide-[#18212C] rounded border border-[#18212C] bg-[#070A0F] p-3"><div><div className="text-[10px] font-mono text-[#8390A0]">Gamma Regime</div><div className={cn('mt-1.5 text-xl font-bold leading-none font-mono', metrics.longGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>{metrics.longGamma === undefined ? 'UNAVAILABLE' : metrics.longGamma ? 'POSITIVE' : 'NEGATIVE'}</div><div className="mt-2 text-[10px] text-[#8390A0]">{metrics.longGamma === undefined ? '' : metrics.longGamma ? 'mean-reversion' : 'expansion'}</div></div><div className="pl-3"><div className="text-[10px] font-mono text-[#8390A0]">Net GEX</div><div className={cn('mt-3 font-mono text-base font-bold tabular-nums', metrics.longGamma ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>{compact(metrics.netGex, '$')}</div></div><div className="pl-3"><div className="text-[10px] font-mono text-[#8390A0]">Flip</div><div className="mt-3 font-mono text-[13px] font-bold tabular-nums text-[#39A9F5]">{metrics.gammaFlip === undefined ? 'N/A' : Math.round(metrics.gammaFlip).toLocaleString()}</div></div></div>
+        <div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="mb-2 text-[10px] font-mono font-semibold text-[#8390A0]">DTE (Days to Expiry)</div><div className="grid grid-cols-5 gap-1">{DTE_FILTERS.map((filter) => <button key={filter} type="button" onClick={() => setDteFilter(filter)} title={filter === 'ALL' ? 'All expiries' : `Expiries up to ${filter.replace('D', '')} days`} className={cn('h-7 rounded border font-mono text-[9px] font-bold transition-colors', dteFilter === filter ? 'border-[#39A9F5]/60 bg-[#39A9F5]/15 text-[#39A9F5]' : 'border-[#18212C] text-[#8390A0] hover:text-[#D8DEE8]')}>{filter}</button>)}</div><div className="mt-2 grid grid-cols-2 gap-1.5"><InspectorMetric label="Call Wall" value={metrics.callWall === undefined ? 'N/A' : Math.round(metrics.callWall).toLocaleString()} tone="positive" /><InspectorMetric label="Put Wall" value={metrics.putWall === undefined ? 'N/A' : Math.round(metrics.putWall).toLocaleString()} tone="negative" /><InspectorMetric label="Max Pain" value={metrics.maxPain === undefined ? 'N/A' : Math.round(metrics.maxPain).toLocaleString()} /><InspectorMetric label="Key P/C" value={metrics.putCallRatio === undefined ? '—' : metrics.putCallRatio.toFixed(2)} /><InspectorMetric label="Near-ATM IV" value={metrics.atmIv === undefined ? '—' : `${(metrics.atmIv > 3 ? metrics.atmIv : metrics.atmIv * 100).toFixed(1)}%`} /><InspectorMetric label="IV Rank" value="N/A" /><InspectorMetric label="Key Call OI" value={compact(metrics.callOi)} /><InspectorMetric label="Key Put OI" value={compact(metrics.putOi)} /></div></div>
         <div className="grid grid-cols-[1fr_0.92fr] gap-1.5"><div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="mb-0.5 text-[10px] font-mono font-semibold text-[#8390A0]">Show on chart</div><LayerToggle compact label="Walls" checked={chartLayers.walls} onCheckedChange={() => toggleChartLayer('walls')} /><LayerToggle compact label="Gamma Regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} /><LayerToggle compact label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} /><LayerToggle compact label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} /><LayerToggle compact label="Secondary GEX" checked={chartLayers.secondaryWalls} onCheckedChange={() => toggleChartLayer('secondaryWalls')} />
 <LayerToggle compact label="Trading Sessions" checked={Boolean(chartLayers.sessions)} onCheckedChange={() => toggleChartLayer('sessions')} /></div><div className="rounded border border-[#18212C] bg-[#070A0F] p-2.5"><div className="text-[10px] font-mono font-semibold text-[#8390A0]">Display</div><div className="mt-2 grid grid-cols-2 gap-1">{(['GEX', 'OI'] as const).map((display) => <button key={display} type="button" disabled={display === 'OI'} title={display === 'OI' ? 'Requires a full-chain call/put OI wall contract' : 'Gamma exposure walls'} className={cn('h-7 rounded border font-mono text-[9px] font-bold disabled:cursor-not-allowed disabled:opacity-40 transition-colors', display === 'GEX' ? 'border-[#39A9F5]/60 bg-[#39A9F5]/15 text-[#39A9F5]' : 'border-[#18212C] text-[#8390A0]')}>{display}</button>)}</div><div className="mt-4 space-y-2.5 text-[9px] font-mono text-[#8390A0]"><div className="flex items-center gap-1.5"><span className="h-1 w-4 bg-[#2CC7A0]" />Primary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dashed border-[#8390A0]" />Secondary Wall</div><div className="flex items-center gap-1.5"><span className="w-4 border-t border-dotted border-[#5C697A]" />Max Pain</div></div></div></div>
         <div className="min-h-[110px] rounded border border-[#18212C] bg-[#070A0F] p-3"><div className="flex items-center justify-between"><span className="font-mono text-[10px] font-semibold text-[#8390A0]">Decision State</span><button type="button" onClick={() => setInspectorTab('DECISION')} className="rounded border border-[#39A9F5]/40 px-2.5 py-1 font-mono text-[9px] font-semibold text-[#39A9F5] hover:bg-[#39A9F5]/10">Open →</button></div><div className="mt-2 font-mono text-xl font-black text-[#D8DEE8]">NO TRADE</div><p className="mt-1 text-pretty text-[10px] text-[#8390A0]">{decisionReason}</p></div>
@@ -279,20 +274,17 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
 
     const metrics = useMemo<MarketMetrics>(() => {
         const summary = data.summary as unknown as Record<string, unknown>;
-        const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
         const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
-        const callWall = levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? spot * 1.05;
-        const putWall = levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? spot * 0.95;
-        const gammaFlip = levelStrike(keyLevels.gammaFlip) ?? numeric(summary.gammaFlip) ?? spot;
-        const maxPain = levelStrike(keyLevels.primaryMaxPain) ?? numeric(summary.maxPainStrike) ?? spot;
-        const netGex = numeric(summary.netGex, 0) ?? 0;
+        const options = resolveOptionLevels(data, dataMode, isError);
+        if (!options.available) return { spot, callOi: 0, putOi: 0 };
+        const { callWall, putWall, gammaFlip, maxPain, netGex } = options;
         const calls = (data.keyContracts || []).filter((contract) => contract.type === 'call');
         const puts = (data.keyContracts || []).filter((contract) => contract.type === 'put');
         const callOi = calls.reduce((sum, contract) => sum + contract.openInterest, 0);
         const putOi = puts.reduce((sum, contract) => sum + contract.openInterest, 0);
         const nearest = [...(data.keyContracts || [])].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0];
-        return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex >= 0 };
-    }, [data]);
+        return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex === undefined ? undefined : netGex >= 0 };
+    }, [data, dataMode, isError]);
 
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
     const displayedSpot = liveSpot ?? metrics.spot;
@@ -1004,6 +996,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                         />
                                         <MarketStructureChart
                                             data={data}
+                                            optionsError={isError}
                                             marketFeed={marketFeed}
                                             liquidityFeed={liquidityFeed}
                                             activeTool={activeTool}

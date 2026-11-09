@@ -20,6 +20,8 @@ import {
 import type { MarketEvidenceV1, SetupAssessmentV1 } from '../../lib/orderflow/contracts';
 import {
     computeFeaturePacketHash,
+    JevOptionsContextSchema,
+    JevRiskSummarySchema,
     type JevShadowResponseV1,
 } from '../../lib/orderflow/jev-contracts';
 import { cn } from '../../lib/ui/cn';
@@ -27,6 +29,7 @@ import { cn } from '../../lib/ui/cn';
 export interface SetupModeProps {
     assessment: SetupAssessmentV1;
     evidence: MarketEvidenceV1[];
+    referenceSpot?: number;
     optionsContext?: {
         gammaRegime?: string;
         callWall?: number;
@@ -43,6 +46,7 @@ function price(value: number | null | undefined): string {
 export default function SetupMode({
     assessment,
     evidence,
+    referenceSpot,
     optionsContext,
     className,
 }: SetupModeProps) {
@@ -66,6 +70,14 @@ export default function SetupMode({
             ? ((riskDistance / assessment.zone.low) * 100).toFixed(2)
             : null;
 
+    const shadowOptions = useMemo(() => JevOptionsContextSchema.safeParse(optionsContext).data, [optionsContext]);
+    const shadowRisk = useMemo(() => JevRiskSummarySchema.safeParse({
+        entryReferencePrice: assessment.zone?.low ?? referenceSpot,
+        invalidationPrice: assessment.invalidation?.price ?? null,
+        riskDistanceUsd: riskDistance,
+        riskPct: riskPct ? parseFloat(riskPct) : null,
+    }).data, [assessment.invalidation?.price, assessment.zone?.low, referenceSpot, riskDistance, riskPct]);
+
     // Compute deterministic feature packet hash
     const currentHash = useMemo(() => {
         return computeFeaturePacketHash({
@@ -82,9 +94,11 @@ export default function SetupMode({
         });
     }, [assessment]);
 
+    const canEvaluate = shadowOptions !== undefined && shadowRisk !== undefined;
     const isStale = jevResponse !== null && jevResponse.featurePacketHash !== currentHash;
 
     const fetchJevOpinion = useCallback(async () => {
+        if (!shadowOptions || !shadowRisk) return;
         setJevLoading(true);
         setJevError(null);
         try {
@@ -102,18 +116,8 @@ export default function SetupMode({
                         ? `Testing ${assessment.zone.label}`
                         : 'Consolidating outside decision zone',
                 },
-                optionsContext: {
-                    gammaRegime: optionsContext?.gammaRegime ?? 'POSITIVE',
-                    callWall: optionsContext?.callWall ?? 98_000,
-                    putWall: optionsContext?.putWall ?? 95_000,
-                    netGex: optionsContext?.netGex ?? 0,
-                },
-                riskSummary: {
-                    entryReferencePrice: assessment.zone ? assessment.zone.low : 95_000,
-                    invalidationPrice: assessment.invalidation?.price ?? null,
-                    riskDistanceUsd: riskDistance,
-                    riskPct: riskPct ? parseFloat(riskPct) : null,
-                },
+                optionsContext: shadowOptions,
+                riskSummary: shadowRisk,
                 missingInputs: assessment.grade === 'NONE' ? ['Execution confirmation'] : [],
                 featurePacketHash: currentHash,
             };
@@ -136,14 +140,14 @@ export default function SetupMode({
         } finally {
             setJevLoading(false);
         }
-    }, [assessment, evidence, currentHash, optionsContext, riskDistance, riskPct]);
+    }, [assessment, evidence, currentHash, shadowOptions, shadowRisk]);
 
     // Automatically evaluate when Jev section is expanded or when hash updates
     useEffect(() => {
-        if (jevExpanded && (!jevResponse || isStale) && !jevLoading) {
+        if (jevExpanded && canEvaluate && (!jevResponse || isStale) && !jevLoading) {
             fetchJevOpinion();
         }
-    }, [jevExpanded, currentHash, isStale, jevResponse, jevLoading, fetchJevOpinion]);
+    }, [jevExpanded, canEvaluate, isStale, jevResponse, jevLoading, fetchJevOpinion]);
 
     return (
         <div className={cn('space-y-2.5 p-3 font-sans text-[#D8DEE8]', className)} data-testid="setup-mode-container">
@@ -420,7 +424,7 @@ export default function SetupMode({
                             JEV SHADOW EXPLANATION
                         </span>
                         <span className="flex items-center gap-1.5">
-                            {jevResponse ? (
+                            {canEvaluate && jevResponse ? (
                                 <span
                                     className={cn(
                                         'rounded border px-1.5 py-0.5 text-[8px] font-bold font-mono',
@@ -439,7 +443,7 @@ export default function SetupMode({
                                     {isStale ? 'STALE' : jevResponse.stance}
                                 </span>
                             ) : (
-                                <span>SHADOW ADAPTER</span>
+                                <span>{canEvaluate ? 'SHADOW ADAPTER' : 'ABSTAIN'}</span>
                             )}
                             {jevExpanded ? <ChevronDown className="size-3" /> : <ChevronRight className="size-3" />}
                         </span>
@@ -448,7 +452,7 @@ export default function SetupMode({
                         <button
                             type="button"
                             onClick={fetchJevOpinion}
-                            disabled={jevLoading}
+                            disabled={!canEvaluate || jevLoading}
                             title="Re-evaluate Jev opinion"
                             aria-label="Re-evaluate Jev opinion"
                             className="ml-2 rounded p-1 text-[#8390A0] hover:bg-[#141B24] hover:text-[#D8DEE8] disabled:opacity-50"
@@ -460,20 +464,21 @@ export default function SetupMode({
 
                 {jevExpanded && (
                     <div className="mt-3 space-y-2 border-t border-[#18212C] pt-2 text-[9px]" data-testid="setup-jev-body">
-                        {jevLoading && (
+                        {!canEvaluate && <p>Jev abstained. Required options or price inputs are unavailable.</p>}
+                        {canEvaluate && jevLoading && (
                             <div className="flex items-center gap-2 py-2 text-[#8390A0] font-mono">
                                 <RefreshCw className="size-3 animate-spin text-[#39A9F5]" />
                                 Evaluating deterministic packet...
                             </div>
                         )}
 
-                        {jevError && (
+                        {canEvaluate && jevError && (
                             <div className="rounded border border-[#E06379]/30 bg-[#E06379]/10 p-2 text-[#E06379]">
                                 Jev shadow evaluation degraded: {jevError}
                             </div>
                         )}
 
-                        {jevResponse && !jevLoading && (
+                        {canEvaluate && jevResponse && !jevLoading && (
                             <>
                                 {isStale && (
                                     <div className="rounded border border-[#E6B450]/40 bg-[#E6B450]/10 p-2 text-[#E6B450]">
