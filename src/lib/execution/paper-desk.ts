@@ -1,11 +1,12 @@
 import { z } from 'zod';
 import type { LiquidityHeatmapFrame } from '../binance/types';
-import { PaperAccountLedger, type PaperAccountSnapshotV1 } from './paper-ledger';
+import { DEFAULT_PAPER_FEE_SCHEDULE, floorToLot, PaperAccountLedger, type PaperAccountSnapshotV1 } from './paper-ledger';
 
 const QUOTE_AGE_MS = 2_000;
 const EXECUTION_DELAY_MS = 250;
 const STORE_KEY = 'btc-paper-desk-events-v1';
 const MAX_EVENTS = 4_096;
+const EXIT_LOT = DEFAULT_PAPER_FEE_SCHEDULE.lotStepBtc;
 const price = z.number().positive();
 const epoch = z.number().int().nonnegative();
 const provenance = { timeMs: epoch, sequence: epoch, quoteEventMs: epoch };
@@ -33,22 +34,21 @@ export function projectPaperDesk(events: readonly PaperEvent[]): ReconciledDesk 
             if (pending || position) throw new Error('Paper entry conflicts with an existing position.');
             const opened = ledger.openPositionWithSizing({
                 tradeId: event.id, timestampMs: event.timeMs, side: 'LONG', entryPrice: event.ask,
-                stopPrice: event.stop, targetPrice: event.target, entryIsMaker: false, strategyId: 'MANUAL_SPOT_V1',
+                stopPrice: event.stop, targetPrice: event.target, entryIsMaker: false, strategyId: 'MANUAL_SPOT_V1', availableAskBtc: event.askBtc,
             });
-            if (!opened.accepted || (opened.sizing?.finalQuantityBtc ?? Infinity) > event.askBtc) {
+            if (!opened.accepted) {
                 throw new Error(opened.reason ?? 'Top-of-book ask size is insufficient.');
             }
         } else if (event.kind === 'TRIGGER') {
             if (!position || pending) throw new Error('Paper protective trigger could not be reconciled.');
             pending = event;
         } else {
-            if (!position || !pending || pending.reason !== event.reason || event.timeMs < pending.timeMs + EXECUTION_DELAY_MS
-                || event.bidBtc < position.quantityBtc) throw new Error('Paper exit could not be reconciled.');
-            ledger.closeOpenPosition({
-                timestampMs: event.timeMs, exitPrice: event.bid, isMakerExit: false, exitReason: event.reason,
+            if (!position || !pending || pending.reason !== event.reason || event.timeMs < pending.timeMs + EXECUTION_DELAY_MS) throw new Error('Paper exit could not be reconciled.');
+            ledger.fillExit({
+                timestampMs: event.timeMs, exitPrice: event.bid, quantity: Math.min(floorToLot(event.bidBtc, EXIT_LOT), position.quantityBtc), isMakerExit: false, exitReason: event.reason,
                 notes: `BINANCE_SPOT:BTCUSDT depth sequence ${event.sequence}, event ${event.quoteEventMs} UTC ms`,
             });
-            pending = null;
+            if (!ledger.getSnapshot().openPosition) pending = null;
         }
         last = event;
     }
@@ -97,7 +97,7 @@ export async function updatePaperDesk(quote: PaperQuote, plan?: ManualPaperPlan)
             }
             event = { ...source, kind: 'ENTRY', id: plan.id, stop: plan.stop, target: plan.target, ask: quote.ask, askBtc: quote.askBtc };
         } else if (position && pending) {
-            if (quote.timeMs >= pending.timeMs + EXECUTION_DELAY_MS && quote.bidBtc >= position.quantityBtc) {
+            if (quote.timeMs >= pending.timeMs + EXECUTION_DELAY_MS && quote.bidBtc >= EXIT_LOT && events.length < MAX_EVENTS) {
                 event = { ...source, kind: 'EXIT', reason: pending.reason, bid: quote.bid, bidBtc: quote.bidBtc };
             }
         } else if (position) {
@@ -108,6 +108,10 @@ export async function updatePaperDesk(quote: PaperQuote, plan?: ManualPaperPlan)
         if (!event) return snapshot;
         const next = [...events, eventSchema.parse(event)];
         const reconciled = projectPaperDesk(next).ledger.getSnapshot();
+        if (event.kind === 'ENTRY' && next.length + 1
+            + Math.round((reconciled.openPosition?.quantityBtc ?? 0) / EXIT_LOT) > MAX_EVENTS) {
+            throw new Error('Paper journal lacks space for all protective fills.');
+        }
         localStorage.setItem(STORE_KEY, JSON.stringify({ version: 1, events: next }));
         return reconciled;
     });

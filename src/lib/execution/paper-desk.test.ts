@@ -12,5 +12,12 @@ it('replays an immutable entry, protective trigger, and later adverse exit', () 
     expect(snapshot.equityUsdt).toBeCloseTo(10_000 + snapshot.journal[0].netPnlUsdt, 3);
     expect(projectPaperDesk(structuredClone(events)).ledger.getSnapshot()).toEqual(snapshot);
     expect(() => projectPaperDesk([entry, entry])).toThrow('sequence');
-    expect(() => projectPaperDesk([entry, trigger, { ...exit, bidBtc: 0.001 }])).toThrow('exit');
+    const partial = { ...exit, bidBtc: 0.001 };
+    const remainder = projectPaperDesk([entry, trigger, partial]);
+    expect(remainder.pending?.reason).toBe('STOP_LOSS');
+    expect(remainder.ledger.getSnapshot().openPosition?.quantityBtc).toBeGreaterThan(0);
+    const closed = projectPaperDesk([entry, trigger, partial, { ...exit, sequence: 4, timeMs: 11_600, bid: 69_300 }]);
+    expect(closed.pending).toBeNull();
+    expect(closed.ledger.getSnapshot().journal[0].quantityBtc).toBeCloseTo(snapshot.journal[0].quantityBtc, 10);
+    expect(closed.ledger.getSnapshot().journal[0].exitPrice).toBeLessThan(69_350);
 });

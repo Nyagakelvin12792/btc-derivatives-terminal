@@ -13,7 +13,7 @@ The earlier completion labels were withdrawn. The 27 planned task IDs remain reg
 | UX20.2-SEC-02 | CSV control-prefix and UTF-8 byte-cap regressions. Spreadsheet round-trip and endpoint review remain open. |
 | UX20.3-CLOCK-01 | Immutable replay snapshots, availability cutoffs, release stream and content-sensitive hash. The terminal exposes a candle-only Historical Preview while the full multi-stream replay UI is pending. |
 | UX20.3-MATH-02 | The chart uses the tested profile module. Independent provider/Greek golden matrix remains open. |
-| UX20.4-LEDGER-01 | Weekly headroom, finite and long-only geometry, gap-aware diagnostics, quote-backed manual entry and delayed protective exit projection. Manual desk uses full-size top-of-book quotes and requires sufficient liquidity. Partial execution, gap reconciliation and comprehensive marks remain open. |
+| UX20.4-LEDGER-01 | Weekly headroom, finite and long-only geometry, gap-aware diagnostics, quote-backed manual entry and delayed protective exit projection. Manual entry fills available ask lots and cancels the remainder. Delayed protective exits consume available bid lots and retain the remainder across reload. Gap reconciliation and comprehensive marks remain open. |
 | UX20.4-PANEL-02 | Risk desk shows the reconciled paper position and journal. Browser storage writes serialize across tabs. The previous journal remains a separate legacy planning surface. Pending order UI, full recovery drill and chart links remain open. |
 | UX20.4-PORTFOLIO-03 | Account analytics use the reconciled paper snapshot. Account resets, complete marks, filters and journal drill-down remain open. |
 | UX20.5-PROFILE-01 | Measured before/after matrix and one-hour endurance remain open. |
