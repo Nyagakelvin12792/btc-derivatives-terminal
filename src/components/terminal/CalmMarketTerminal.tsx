@@ -65,6 +65,7 @@ import {
 import type { DrawingObject, PositionPrices } from './drawing-model';
 import DecisionDock from './DecisionDock';
 import ToolsDrawer from './ToolsDrawer';
+import TerminalTips, { type TerminalTip } from './TerminalTips';
 import type { ChartSplitLayoutMode, FootprintPresetId, OverlayDensityMode, PriceScaleFitMode, WorkspacePresetId } from '../../lib/ui/design-tokens';
 import { BUILTIN_WORKSPACE_PRESETS } from '../../lib/workspace/presets';
 import DataIntegrityStrip from './DataIntegrityStrip';
@@ -186,6 +187,8 @@ function OptionsContent({ metrics, data, isError }: { metrics: MarketMetrics; da
 
 export default function MarketTerminal({ data, isError, trueFlowSnapshot }: MarketTerminalProps) {
     const [paletteOpen, setPaletteOpen] = useState(false);
+    const [tipsOpen, setTipsOpen] = useState(false);
+    const [dockJump, setDockJump] = useState<{ tip: TerminalTip } | null>(null);
     const [mobileInspectorOpen, setMobileInspectorOpen] = useState(false);
     const [savedAt, setSavedAt] = useState<string | null>(null);
     const [activeTool, setActiveTool] = useState<ChartTool>('cursor');
@@ -247,6 +250,36 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         vpApproachMode,
         setVpApproachMode,
     } = useTerminalStore();
+    function openDock(tab: 'DECISION' | 'OPTIONS' | 'RISK' | 'DATA') {
+        setReplayActive(false);
+        setInspectorTab(tab);
+        if (isDesktop) setInspectorOpen(true);
+        else setMobileInspectorOpen(true);
+    }
+
+    function openWorkspace(mode: typeof workspaceMode) {
+        setWorkspaceMode(mode);
+        openDock('DECISION');
+        if (mode === 'FLOW') {
+            if (chartLayers.leftExecutionPane === false) toggleChartLayer('leftExecutionPane');
+            if (chartLayers.liquidityHeatmap === false) toggleChartLayer('liquidityHeatmap');
+        }
+    }
+
+    function navigateTip(tip: TerminalTip) {
+        setTipsOpen(false);
+        setToolsDrawerOpen(tip === 'tools');
+        if (tip === 'tools' || tip === 'preview') {
+            setReplayActive(tip === 'preview');
+            if (tip === 'preview') setMobileInspectorOpen(false);
+            return;
+        }
+        setDockJump({ tip });
+        if (tip === 'paper' || tip === 'portfolio') openDock('RISK');
+        else if (tip === 'data') openDock('DATA');
+        else openWorkspace(tip === 'strategy' ? 'SETUP' : tip === 'flow' ? 'FLOW' : 'CONTEXT');
+    }
+
     const marketFeed = useBinanceMarketFeed(BINANCE_INTERVALS[timeframe], dataMode === 'LIVE');
     const liquidityFeed = useBinanceLiquidityHeatmap(dataMode === 'LIVE', {
         heatmap: {
@@ -331,7 +364,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
     const displayedSpot = liveSpot ?? (dataMode === 'DEMO' || data.dataMode === 'LIVE' && !isError && !optionsStale ? metrics.spot : null);
     const changePct = dataMode === 'LIVE' ? marketFeed.ticker?.priceChangePercent : numeric((data.summary as unknown as Record<string, unknown>).spot24hChangePct);
-    const rawExpiry = selectedExpiryOverride ?? data.expirations?.[0];
+    const availableExpirations = isLiveOptionsUnavailable ? [] : data.expirations;
+    const rawExpiry = selectedExpiryOverride ?? availableExpirations[0];
     const parsedExpiry = rawExpiry ? Date.parse(rawExpiry) : Number.NaN;
     const expiryLabel = !selectedExpiryOverride && dteFilter !== 'ALL'
         ? `DTE · ${dteFilter}`
@@ -541,7 +575,9 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         <Tooltip.Provider delayDuration={300}>
             <div className="flex h-dvh min-h-[620px] flex-col overflow-hidden bg-[#070A0F] text-[#D8DEE8]">
                 {/* Header Chrome */}
-                <header className="flex h-12 shrink-0 items-center gap-3 border-b border-[#18212C] bg-[#0C1118] px-2 md:px-3">
+                <header className="flex h-12 shrink-0 items-center gap-2 border-b border-[#18212C] bg-[#0C1118] px-2 md:px-3">
+                    <TerminalTips open={tipsOpen} onOpenChange={setTipsOpen} onNavigate={navigateTip} />
+                    <div className="flex min-w-0 flex-1 items-center gap-3 overflow-x-auto [&>*]:shrink-0">
                     <div className="flex min-w-0 items-center gap-2">
                         <div className="flex size-6 shrink-0 items-center justify-center rounded-full bg-[#E6B450] font-mono font-black text-black text-xs">₿</div>
                         <div className="hidden text-xs font-bold tracking-tight text-[#D8DEE8] sm:block">BTCUSDT</div>
@@ -571,14 +607,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                     role="tab"
                                     aria-selected={active}
                                     data-testid={`workspace-mode-${mode.toLowerCase()}`}
-                                    onClick={() => {
-                                        setWorkspaceMode(mode);
-                                        setInspectorTab('DECISION');
-                                        if (mode === 'FLOW') {
-                                            if (chartLayers.leftExecutionPane === false) toggleChartLayer('leftExecutionPane');
-                                            if (chartLayers.liquidityHeatmap === false) toggleChartLayer('liquidityHeatmap');
-                                        }
-                                    }}
+                                    onClick={() => { setDockJump(null); openWorkspace(mode); }}
                                     className={cn(
                                         'h-6 px-2.5 font-mono text-[9px] font-bold tracking-wider rounded transition-colors',
                                         active
@@ -645,13 +674,13 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                         <span className="text-[8px] text-[#8390A0]">{filter}</span>
                                     </button>
                                 ))}
-                                {(data.expirations || []).length > 0 && (
+                                {availableExpirations.length > 0 && (
                                     <>
                                         <div className="my-1 h-px bg-[#18212C]" />
                                         <div className="px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-[#5C697A]">
                                             Specific Expiries
                                         </div>
-                                        {(data.expirations || []).slice(0, 6).map((exp) => {
+                                        {availableExpirations.slice(0, 6).map((exp) => {
                                             const parsed = Date.parse(exp);
                                             const fmt = Number.isFinite(parsed)
                                                 ? new Date(parsed).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
@@ -697,6 +726,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                     >
                         <Settings className="size-3.5" />
                     </button>
+                    </div>
                 </header>
 
                 {/* Toolbar */}
@@ -809,16 +839,11 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         <button
                             type="button"
                             onClick={() => {
-                                if (isDesktop) {
-                                    if (inspectorOpen && useTerminalStore.getState().inspectorTab === 'OPTIONS') {
-                                        setInspectorOpen(false);
-                                    } else {
-                                        setInspectorTab('OPTIONS');
-                                        setInspectorOpen(true);
-                                    }
+                                setDockJump(null);
+                                if (isDesktop && !replayActive && inspectorOpen && useTerminalStore.getState().inspectorTab === 'OPTIONS') {
+                                    setInspectorOpen(false);
                                 } else {
-                                    setInspectorTab('OPTIONS');
-                                    setMobileInspectorOpen(true);
+                                    openDock('OPTIONS');
                                 }
                             }}
                             aria-label="OPTIONS METRICS"
@@ -1086,6 +1111,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 <Panel id="inspector" minSize="320px" maxSize="36%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size">
                                     <DecisionDock
                                         paperDesk={paperDesk}
+                                        dockJump={dockJump}
                                         metrics={metrics}
                                         data={effectiveOptionsData}
                                         marketFeed={marketFeed}
@@ -1176,13 +1202,16 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                     </Command.Group>
                                     <Command.Group heading="Modes" className="mt-2 text-[9px] font-mono text-[#8390A0]">
                                         {(['CONTEXT', 'FLOW', 'SETUP'] as const).map((mode) => (
-                                            <Command.Item key={mode} value={`Mode: ${mode}`} onSelect={() => { setWorkspaceMode(mode); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
+                                            <Command.Item key={mode} value={`Mode: ${mode}`} onSelect={() => { setDockJump(null); openWorkspace(mode); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
                                                 <Activity className="size-4" />Switch to {mode} Mode
                                             </Command.Item>
                                         ))}
                                     </Command.Group>
                                     <Command.Group heading="Actions" className="mt-2 text-[9px] font-mono text-[#8390A0]">
-                                        <Command.Item onSelect={() => { setInspectorOpen(true); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
+                                        <Command.Item onSelect={() => { setPaletteOpen(false); setTipsOpen(true); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10">
+                                            <CircleHelp className="size-4" />Terminal Tips
+                                        </Command.Item>
+                                        <Command.Item onSelect={() => { setDockJump(null); openDock('DECISION'); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
                                             <PanelRightOpen className="size-4" />Open Decision Dock &amp; Metrics
                                         </Command.Item>
                                         <Command.Item onSelect={() => { resetWorkspaceUi(); setPaletteOpen(false); }} className="mt-1 flex cursor-default items-center gap-2 rounded px-3 py-2 text-xs text-[#D8DEE8] data-[selected=true]:bg-[#39A9F5]/10 data-[selected=true]:text-[#39A9F5]">
@@ -1196,13 +1225,14 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                 </Dialog.Root>
 
                 {/* Mobile Inspector Drawer */}
-                <Dialog.Root open={mobileInspectorOpen} onOpenChange={setMobileInspectorOpen}>
+                <Dialog.Root open={mobileInspectorOpen && !isDesktop && !replayActive} onOpenChange={setMobileInspectorOpen}>
                     <Dialog.Portal>
                         <Dialog.Overlay className="fixed inset-0 z-40 bg-black/60 md:hidden" />
-                        <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#18212C] bg-[#0C1118] pb-[env(safe-area-inset-bottom)] md:hidden">
+                        <Dialog.Content aria-describedby={undefined} className="fixed inset-x-0 bottom-0 z-50 h-[82dvh] overflow-hidden rounded-t-xl border border-[#18212C] bg-[#0C1118] pb-[env(safe-area-inset-bottom)] md:hidden">
                             <Dialog.Title className="sr-only">Decision Dock &amp; Options</Dialog.Title>
                             <DecisionDock
-                                        paperDesk={paperDesk}
+                                paperDesk={paperDesk}
+                                dockJump={dockJump}
                                 metrics={metrics}
                                 data={effectiveOptionsData}
                                 marketFeed={marketFeed}

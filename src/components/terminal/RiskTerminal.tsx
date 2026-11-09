@@ -309,6 +309,7 @@ type RiskTerminalTab = 'POSITION' | 'RISK' | 'HISTORY' | 'ANALYTICS';
 
 interface RiskTerminalProps {
     paperDesk?: PaperDeskController;
+    navigation?: { tip: string } | null;
     selectedDrawing: DrawingObject | null;
     onUpdatePositionPrices?: (prices: { entry: number; stop: number; target: number }) => void;
     onSelectDrawingType?: (type: PositionDrawingType) => void;
@@ -318,6 +319,7 @@ interface RiskTerminalProps {
 
 export default function RiskTerminal({
     paperDesk,
+    navigation,
     selectedDrawing,
     onUpdatePositionPrices,
     onSelectDrawingType,
@@ -329,7 +331,8 @@ export default function RiskTerminal({
         readPersistedRiskSettings,
         () => DEFAULT_RISK_SETTINGS,
     );
-    const [activeTab, setActiveTab] = useState<RiskTerminalTab>('POSITION');
+    const [selectedTab, setSelectedTab] = useState<{ navigation: typeof navigation; tab: RiskTerminalTab }>({ navigation, tab: navigation?.tip === 'portfolio' ? 'ANALYTICS' : 'POSITION' });
+    const activeTab = selectedTab.navigation === navigation ? selectedTab.tab : navigation?.tip === 'portfolio' ? 'ANALYTICS' : 'POSITION';
     const [showAdvanced, setShowAdvanced] = useState(false);
 
     // Persistent pinned drawing so clicking blank chart canvas never wipes out the user's active trade setup
@@ -506,7 +509,7 @@ export default function RiskTerminal({
             </div>
 
             {paperDesk && (
-                <section className="space-y-2 rounded border border-cyan-800 p-2 text-xs" aria-label="Paper desk">
+                <section className="space-y-2 rounded border border-cyan-800 p-2 text-xs" aria-label="Paper desk" data-testid="paper-desk">
                     <div className="font-bold">PAPER · BTC/USDT SPOT</div>
                     <div>{paperDesk.snapshot ? `Equity ${paperDesk.snapshot.equityUsdt.toFixed(2)} USDT` : 'Recovering account'}</div>
                     {paperDesk.snapshot?.openPosition && (
@@ -553,7 +556,7 @@ export default function RiskTerminal({
                             role="tab"
                             aria-selected={active}
                             data-testid={`risk-tab-${tab.id.toLowerCase()}`}
-                            onClick={() => setActiveTab(tab.id)}
+                            onClick={() => setSelectedTab({ navigation, tab: tab.id })}
                             className={cn(
                                 'flex items-center justify-center gap-1 rounded py-1.5 text-[8.5px] font-bold tracking-wider transition-colors',
                                 active

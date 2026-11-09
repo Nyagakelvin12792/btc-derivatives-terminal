@@ -33,3 +33,7 @@ The earlier completion labels were withdrawn. The 27 planned task IDs remain reg
 | UX20.7-GATE-01 | The independent readiness gates stay separate. Release and production alias change require independent evidence. |
 
 Local inspection reads the file in the browser without transmitting it. Use the schema in `src/lib/strategy/local-retest-input.ts` for a single BTC/USDT point-in-time input. Store raw licensed datasets outside the repository. The single-decision screen is distinct from walk-forward and holdout analysis.
+
+### Terminal Tips and feature access
+
+The Market Structure header exposes Tips on desktop and narrow screens. Its shortcuts open the correct Decision Dock tab and navigate to the options matrix, US context, order flow, Strategy Lab, paper desk, portfolio analytics, or data status. The guide also opens Tools & Presets and Historical Preview and links to this progress tracker. Workspace tabs and the command palette now reopen the correct inspector for the current viewport.

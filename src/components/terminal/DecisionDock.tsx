@@ -2,7 +2,8 @@
 
 import type { PaperDeskController } from '../../lib/execution/use-paper-desk';
 
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
+import type { TerminalTip } from './TerminalTips';
 import { X, Activity } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
 import { useTerminalStore } from '../../lib/dashboard/store';
@@ -33,6 +34,7 @@ import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts
 
 export interface DecisionDockProps {
     paperDesk?: PaperDeskController;
+    dockJump?: { tip: TerminalTip } | null;
     metrics: {
         spot: number;
         callWall: number;
@@ -63,6 +65,7 @@ export interface DecisionDockProps {
 
 export default function DecisionDock({
     paperDesk,
+    dockJump,
     metrics,
     data,
     marketFeed,
@@ -84,6 +87,23 @@ export default function DecisionDock({
         dataMode,
         chartLayers,
     } = useTerminalStore();
+
+    const bodyRef = useRef<HTMLDivElement>(null);
+    useEffect(() => {
+        const targets: Partial<Record<TerminalTip, string>> = {
+            options: 'options-strike-expiry-matrix',
+            us: 'us-market-context-drawer',
+            strategy: 'strategy-lab-panel',
+            paper: 'paper-desk',
+            portfolio: 'risk-analytics-panel',
+        };
+        const target = dockJump && targets[dockJump.tip];
+        if (!target) return;
+        const frame = requestAnimationFrame(() => {
+            bodyRef.current?.querySelector(`[data-testid="${target}"]`)?.scrollIntoView({ block: 'start', inline: 'nearest' });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [dockJump, inspectorTab, workspaceMode]);
 
     const timestamp = new Date(data.timestamp).toLocaleString(undefined, { hour12: false });
     const parsedTimestamp = Date.parse(data.timestamp);
@@ -291,7 +311,7 @@ export default function DecisionDock({
                     <span className="font-mono text-[9px] font-bold text-[#8390A0]">DECISION DOCK · {workspaceMode}</span>
                     <span className="rounded border border-[#2CC7A0]/40 bg-[#2CC7A0]/10 px-1 py-0.5 font-mono text-[8px] font-bold text-[#2CC7A0]" data-testid="decision-dock-calibration-badge" title="Replay Calibration: 12/12 PASS · 100% Deterministic Reproducibility">CALIBRATED 12/12</span>
                 </div>
-                <button type="button" onClick={onClose} aria-label="Close options metrics" className="rounded p-1 text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] md:hidden"><X className="size-3.5" /></button>
+                <button type="button" onClick={onClose} aria-label="Close Decision Dock" className="rounded p-1 text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8] md:hidden"><X className="size-3.5" /></button>
             </div>
 
             {/* Mode-Specific Body or Tab Inspector */}
@@ -324,7 +344,7 @@ export default function DecisionDock({
                     })}
                 </div>
 
-                <div className="min-h-0 flex-1 overflow-y-auto">
+                <div ref={bodyRef} className="min-h-0 flex-1 overflow-y-auto">
                     {inspectorTab === 'DECISION' && (
                         <>
                             {workspaceMode === 'CONTEXT' && (
@@ -374,6 +394,7 @@ export default function DecisionDock({
                         <div className="h-full overflow-y-auto p-3" data-testid="risk-inspector-tab">
                             <RiskTerminal
                                 paperDesk={paperDesk}
+                                navigation={dockJump}
                                 selectedDrawing={selectedDrawing}
                                 onUpdatePositionPrices={onUpdatePositionPrices}
                                 onSelectDrawingType={onSelectDrawingType}

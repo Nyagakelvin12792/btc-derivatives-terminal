@@ -159,7 +159,7 @@ export default function ToolsDrawer({
 
     return (
         <div
-            className="absolute left-9 top-9 z-40 flex w-[480px] max-w-[92vw] flex-col rounded border border-[#18212C] bg-[#0C1118]/98 text-[#D8DEE8] shadow-2xl backdrop-blur-md"
+            className="absolute left-9 top-9 z-40 flex w-[480px] max-w-[calc(100vw-3rem)] flex-col rounded border border-[#18212C] bg-[#0C1118]/98 text-[#D8DEE8] shadow-2xl backdrop-blur-md"
             data-testid="collapsible-tools-drawer"
         >
             {/* Header */}

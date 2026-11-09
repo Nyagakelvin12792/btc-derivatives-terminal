@@ -100,3 +100,11 @@ belongs to the user and was preserved. No deployment or remote push was made.
 >>> NEXT AGENT: ARCHITECT
 >>> ACTION REQUIRED: Review remediation against the 27-task acceptance matrix. Retain blocked research and auto-paper status until the required evidence exists.
 >>> TARGET: main
+
+>>> COMPLETED BY: Codex
+>>> STATUS: REVIEW REQUIRED
+>>> BRANCH: codex/ux20-remediation
+>>> TESTS: TypeScript and Vitest, with desktop and mobile navigation scenarios under tests/ui/terminal-tips.pw.ts.
+>>> NEXT AGENT: ARCHITECT
+>>> ACTION REQUIRED: Review the Terminal Tips guide and Decision Dock navigation in draft PR 1.
+>>> TARGET: Terminal navigation and UX20 feature discovery
