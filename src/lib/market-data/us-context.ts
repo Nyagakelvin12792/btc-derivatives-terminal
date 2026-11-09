@@ -34,7 +34,7 @@ export interface UsMarketContextSnapshotV1 {
     isDstActive: boolean;
     sessionPhase: UsSessionPhase;
     inNyOpeningRangeWindow: boolean; // 09:30 - 10:00 ET
-    inNyDecisionWindow: boolean; // 10:00 - 11:30 ET
+    inNyDecisionWindow: boolean; // 09:45–11:30 ET, end exclusive
     activeMacroBlock: {
         blocked: boolean;
         eventName: string | null;
@@ -128,7 +128,7 @@ export function evaluateUsMarketContext(
 
     // 09:30 ET = 570 mins; 10:00 ET = 600 mins; 11:30 ET = 690 mins; 16:00 ET = 960 mins
     const inNyOpeningRangeWindow = totalMinutes >= 570 && totalMinutes < 600;
-    const inNyDecisionWindow = totalMinutes >= 600 && totalMinutes <= 690;
+    const inNyDecisionWindow = totalMinutes >= 585 && totalMinutes < 690;
 
     let sessionPhase: UsSessionPhase = 'OFF_HOURS';
     if (totalMinutes >= 570 && totalMinutes < 600) {

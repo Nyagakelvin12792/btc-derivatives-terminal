@@ -1,5 +1,7 @@
 'use client';
 
+import type { PaperDeskController } from '../../lib/execution/use-paper-desk';
+
 import React, { useMemo } from 'react';
 import { X, Activity } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
@@ -30,6 +32,7 @@ import {
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 
 export interface DecisionDockProps {
+    paperDesk?: PaperDeskController;
     metrics: {
         spot: number;
         callWall: number;
@@ -59,6 +62,7 @@ export interface DecisionDockProps {
 }
 
 export default function DecisionDock({
+    paperDesk,
     metrics,
     data,
     marketFeed,
@@ -325,6 +329,7 @@ export default function DecisionDock({
                         <>
                             {workspaceMode === 'CONTEXT' && (
                                 <ContextMode
+                                    optionsContract={data}
                                     spotPrice={metrics.spot}
                                     callWall={metrics.callWall}
                                     putWall={metrics.putWall}
@@ -368,6 +373,7 @@ export default function DecisionDock({
                     {inspectorTab === 'RISK' && (
                         <div className="h-full overflow-y-auto p-3" data-testid="risk-inspector-tab">
                             <RiskTerminal
+                                paperDesk={paperDesk}
                                 selectedDrawing={selectedDrawing}
                                 onUpdatePositionPrices={onUpdatePositionPrices}
                                 onSelectDrawingType={onSelectDrawingType}

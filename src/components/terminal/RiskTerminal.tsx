@@ -1,5 +1,7 @@
 'use client';
 
+import type { PaperDeskController } from '../../lib/execution/use-paper-desk';
+
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import {
     AlertTriangle,
@@ -306,6 +308,7 @@ export function humanReadableWarning(code: PositionRiskWarningCode): string {
 type RiskTerminalTab = 'POSITION' | 'RISK' | 'HISTORY' | 'ANALYTICS';
 
 interface RiskTerminalProps {
+    paperDesk?: PaperDeskController;
     selectedDrawing: DrawingObject | null;
     onUpdatePositionPrices?: (prices: { entry: number; stop: number; target: number }) => void;
     onSelectDrawingType?: (type: PositionDrawingType) => void;
@@ -314,6 +317,7 @@ interface RiskTerminalProps {
 }
 
 export default function RiskTerminal({
+    paperDesk,
     selectedDrawing,
     onUpdatePositionPrices,
     onSelectDrawingType,
@@ -488,7 +492,7 @@ export default function RiskTerminal({
                     <ShieldAlert className="size-4 shrink-0 text-rose-400" />
                     <div>
                         <div className="text-[10px] font-black uppercase tracking-wider">NO LIVE EXECUTION</div>
-                        <div className="text-[9px] text-rose-300/80">Deterministic position-planning &amp; paper journal only. No order routing.</div>
+                        <div className="text-[9px] text-rose-300/80">Paper simulation and position planning.</div>
                     </div>
                 </div>
                 <button
@@ -500,6 +504,32 @@ export default function RiskTerminal({
                     <RotateCcw className="size-3" />
                 </button>
             </div>
+
+            {paperDesk && (
+                <section className="space-y-2 rounded border border-cyan-800 p-2 text-xs" aria-label="Paper desk">
+                    <div className="font-bold">PAPER · BTC/USDT SPOT</div>
+                    <div>{paperDesk.snapshot ? `Equity ${paperDesk.snapshot.equityUsdt.toFixed(2)} USDT` : 'Recovering account'}</div>
+                    {paperDesk.snapshot?.openPosition && (
+                        <div>Long {paperDesk.snapshot.openPosition.quantityBtc} BTC · stop {paperDesk.snapshot.openPosition.stopPrice} · target {paperDesk.snapshot.openPosition.targetPrice}</div>
+                    )}
+                    {paperDesk.snapshot?.weeklyLossLocked && <div>NY weekly loss lock active</div>}
+                    {effectiveDrawing?.position && isLong && (
+                        <button type="button" disabled={!paperDesk.canSubmit} className="rounded border px-2 py-1 disabled:opacity-40"
+                            onClick={() => {
+                                const position = effectiveDrawing.position;
+                                if (position) void paperDesk.submit({ ...position, id: `${effectiveDrawing.id}:${position.entry}:${position.stop}:${position.target}` });
+                            }}>Simulate Trade</button>
+                    )}
+                    {paperDesk.message && <p role="status">{paperDesk.message}</p>}
+                    {!!paperDesk.snapshot?.journal.length && (
+                        <details><summary>Reconciled paper journal ({paperDesk.snapshot.journal.length})</summary>
+                            {paperDesk.snapshot.journal.slice().reverse().map((trade) => (
+                                <div key={trade.tradeId}>{trade.exitReason} · {trade.quantityBtc} BTC · {trade.netPnlUsdt.toFixed(2)} USDT net · fees {trade.feesPaidUsdt.toFixed(2)}</div>
+                            ))}
+                        </details>
+                    )}
+                </section>
+            )}
 
             {/* 4-Tab Navigation Bar (UX17.8) */}
             <div
@@ -1226,7 +1256,7 @@ export default function RiskTerminal({
                             </div>
                         </div>
                     </div>
-                    <PortfolioAnalyticsPanel trades={managedTrades} />
+                    {paperDesk?.snapshot && <PortfolioAnalyticsPanel snapshot={paperDesk.snapshot} />}
                 </div>
             )}
         </div>

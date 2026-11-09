@@ -25,3 +25,8 @@ describe('UX20.2-SEC-02 CSV Spreadsheet Formula Sanitizer', () => {
         expect(sanitizeCsvCell('-2.35%')).toBe('-2.35%');
     });
 });
+
+it('neutralizes controls even when followed by numeric-looking text', () => {
+    expect(sanitizeCsvCell('\t-12')).toBe('"\'\t-12"');
+    expect(sanitizeCsvCell('\r-12')).toBe('"\'\r-12"');
+});

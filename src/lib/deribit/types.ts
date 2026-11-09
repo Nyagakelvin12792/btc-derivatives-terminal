@@ -26,6 +26,8 @@ export interface DeribitBookSummaryItem {
     readonly openInterest: BtcOpenInterest;
     readonly markIv: VolatilityPercent | null;
     readonly volume: BtcVolume;
+    readonly volumeUsd?: number;
+    readonly sourceTimeMs?: number;
 }
 
 export interface NormalizedDeribitOption extends ParsedDeribitInstrument {
@@ -35,9 +37,12 @@ export interface NormalizedDeribitOption extends ParsedDeribitInstrument {
     readonly ivDecimal: VolatilityDecimal;
     readonly ivPercent: VolatilityPercent;
     readonly volume: BtcVolume;
+    readonly volumeUsd?: number;
 }
 
 export interface NormalizedDeribitChain {
     readonly spotPrice: Usd;
     readonly options: readonly NormalizedDeribitOption[];
+    readonly sourceTimeMs?: number;
+    readonly coverage?: { received: number; valid: number };
 }

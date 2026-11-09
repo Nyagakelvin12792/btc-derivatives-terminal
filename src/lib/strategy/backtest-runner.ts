@@ -12,7 +12,7 @@ import {
 } from './ny-value-retest';
 
 export type BacktestAblationId =
-    | 'FULL_NY_VALUE_RETEST_V1'
+    | 'OHLC_DIAGNOSTIC'
     | 'ABLATION_NO_FOOTPRINT'
     | 'ABLATION_NO_CVD'
     | 'ABLATION_NO_OPTIONS'
@@ -175,7 +175,7 @@ function executeSingleSliceRun(params: {
         accountId: `bt-${params.ablationId.toLowerCase()}`,
         accountScope: 'BACKTEST_ACCOUNT',
         startingCapitalUsdt: params.startingCapitalUsdt,
-        initialTimestampMs: params.bars[0]?.timestampMs ?? Date.now(),
+        initialTimestampMs: params.bars[0]?.timestampMs ?? 0,
         schedule,
     });
 
@@ -274,15 +274,25 @@ function executeSingleSliceRun(params: {
 export function evaluateStrategyResearchGate(
     primary: BacktestMetricsSummaryV1,
     friction2x: BacktestMetricsSummaryV1,
-    minRequiredTrades = 40,
+    evidence?: {
+        untouchedHoldout: boolean;
+        eligibleSessions: number;
+        lower95WeekBlockExpectancyR: number;
+        largestPositiveMonthShare: number;
+    },
 ): StrategyResearchGateVerdictV1 {
+    const minRequiredTrades = 100;
     const reasons: string[] = [];
-    if (primary.tradeCount < minRequiredTrades) {
+    if (!evidence?.untouchedHoldout) reasons.push('No verified untouched holdout dataset.');
+    if (!evidence || !Number.isInteger(evidence.eligibleSessions) || evidence.eligibleSessions < 40) reasons.push('At least 40 eligible sessions required.');
+    if (!evidence || !Number.isFinite(evidence.largestPositiveMonthShare) || evidence.largestPositiveMonthShare < 0
+        || evidence.largestPositiveMonthShare > 0.5) reasons.push('Monthly P&L concentration is unverified or exceeds 50%.');
+    if (!Number.isInteger(primary.tradeCount) || primary.tradeCount < minRequiredTrades) {
         reasons.push(
             `Out-of-sample trade count (${primary.tradeCount}) is below the minimum ${minRequiredTrades}-trade sample size.`,
         );
     }
-    if (primary.expectancyR <= 0) {
+    if (!(primary.expectancyR > 0)) {
         reasons.push(`Net post-fee expectancy (${primary.expectancyR.toFixed(3)}R) must be > 0.00R.`);
     }
     if (primary.profitFactor < 1.2) {
@@ -291,14 +301,14 @@ export function evaluateStrategyResearchGate(
     if (primary.maxDrawdownPct > 6.0) {
         reasons.push(`Max drawdown (${primary.maxDrawdownPct.toFixed(2)}%) exceeds 6.0% threshold.`);
     }
-    if (primary.bootstrapLower95ExpectancyR <= 0) {
+    if (!(evidence && Number.isFinite(evidence.lower95WeekBlockExpectancyR) && evidence.lower95WeekBlockExpectancyR > 0)) {
         reasons.push(
             `95% bootstrap lower bound (${primary.bootstrapLower95ExpectancyR.toFixed(3)}R) must be > 0.00R.`,
         );
     }
-    if (friction2x.expectancyR < 0) {
+    if (!(friction2x.expectancyR > 0)) {
         reasons.push(
-            `2x friction stress-test expectancy (${friction2x.expectancyR.toFixed(3)}R) must remain non-negative.`,
+            `2x friction stress-test expectancy (${friction2x.expectancyR.toFixed(3)}R) must be positive.`,
         );
     }
 
@@ -332,11 +342,11 @@ export function runChronologicalStrategyBacktest(params: {
     const inSampleBars = sorted.slice(0, splitIdx);
     const oosBars = sorted.slice(splitIdx);
 
-    const evalBars = oosBars.length >= 10 ? oosBars : sorted;
+    const evalBars = oosBars.length >= 10 ? oosBars : [];
 
     const primaryRun = executeSingleSliceRun({
         bars: evalBars,
-        ablationId: 'FULL_NY_VALUE_RETEST_V1',
+        ablationId: 'OHLC_DIAGNOSTIC',
         startingCapitalUsdt,
     });
     const noFpRun = executeSingleSliceRun({
@@ -368,7 +378,6 @@ export function runChronologicalStrategyBacktest(params: {
     const researchGateVerdict = evaluateStrategyResearchGate(
         primaryRun.summary,
         friction2xRun.summary,
-        40,
     );
 
     return {

@@ -35,6 +35,7 @@ export interface FeeInclusiveSizingInput {
     entryPrice: number;
     stopPrice: number;
     targetPrice?: number;
+    riskBudgetCapUsdt?: number;
     riskFraction?: number; // default 0.0025 (0.25%)
     entryIsMaker?: boolean; // default true for NY_VALUE_RETEST_V1 limit entry
     schedule?: PaperFeeSchedule;
@@ -99,7 +100,10 @@ export function calculateFeeInclusivePositionSize(
         !Number.isFinite(input.stopPrice) ||
         input.stopPrice <= 0 ||
         !Number.isFinite(riskFraction) ||
-        riskFraction <= 0
+        riskFraction <= 0 ||
+        riskFraction > 0.0025 ||
+        (input.riskBudgetCapUsdt !== undefined && (!Number.isFinite(input.riskBudgetCapUsdt) || input.riskBudgetCapUsdt <= 0)) ||
+        ![schedule.makerFeeRate, schedule.takerFeeRate, schedule.stopSlippageRate].every((rate) => Number.isFinite(rate) && rate >= 0 && rate < 1)
     ) {
         return {
             valid: false,
@@ -140,12 +144,14 @@ export function calculateFeeInclusivePositionSize(
     }
 
     const fIn = input.entryIsMaker !== false ? schedule.makerFeeRate : schedule.takerFeeRate;
-    const fStop = schedule.takerFeeRate + schedule.stopSlippageRate;
-    const riskBudgetUsdt = input.equityUsdt * riskFraction;
+    const stopFill = input.stopPrice * (isLong ? 1 - schedule.stopSlippageRate : 1 + schedule.stopSlippageRate);
+    const fStop = schedule.takerFeeRate + schedule.stopSlippageRate
+        + (isLong ? -1 : 1) * schedule.takerFeeRate * schedule.stopSlippageRate;
+    const riskBudgetUsdt = Math.min(input.equityUsdt * riskFraction, input.riskBudgetCapUsdt ?? Infinity);
 
     const lossPerBtcUsdt = isLong
-        ? input.entryPrice * (1 + fIn) - input.stopPrice * (1 - fStop)
-        : input.stopPrice * (1 + fStop) - input.entryPrice * (1 - fIn);
+        ? input.entryPrice * (1 + fIn) - stopFill * (1 - schedule.takerFeeRate)
+        : stopFill * (1 + schedule.takerFeeRate) - input.entryPrice * (1 - fIn);
 
     if (lossPerBtcUsdt <= 0) {
         return {
@@ -442,6 +448,14 @@ export class PaperAccountLedger {
         regimeTag?: string;
         maxHoldBars5m?: number;
     }): { accepted: boolean; reason?: string; sizing?: FeeInclusiveSizingResult } {
+        if (!Number.isFinite(params.timestampMs) || params.side !== 'LONG'
+            || !Number.isFinite(params.targetPrice) || params.targetPrice <= params.entryPrice
+            || params.stopPrice >= params.entryPrice) {
+            return { accepted: false, reason: 'Invalid long-only spot order geometry or time.' };
+        }
+        if (params.tradeId && (this.state.openPosition?.tradeId === params.tradeId || this.state.journal.some((trade) => trade.tradeId === params.tradeId))) {
+            return { accepted: false, reason: 'Duplicate paper trade ID.' };
+        }
         this.syncWeekRollover(params.timestampMs);
         this.recomputeEquityAndLocks();
 
@@ -468,6 +482,7 @@ export class PaperAccountLedger {
             stopPrice: params.stopPrice,
             targetPrice: params.targetPrice,
             riskFraction: params.riskFraction ?? 0.0025,
+            riskBudgetCapUsdt: this.state.equityUsdt - this.state.weeklyStartEquityUsdt * (1 - this.weeklyLossLimitFraction),
             entryIsMaker: params.entryIsMaker ?? true,
             schedule: this.schedule,
         });
@@ -516,9 +531,11 @@ export class PaperAccountLedger {
         low: number;
         close: number;
     }): { closedTrade?: PaperJournalEntryV1 } {
+        if (![bar.timestampMs, bar.open, bar.high, bar.low, bar.close].every((value) => Number.isFinite(value) && value > 0)
+            || bar.low > Math.min(bar.open, bar.close) || bar.high < Math.max(bar.open, bar.close)) return {};
         this.syncWeekRollover(bar.timestampMs);
         const pos = this.state.openPosition;
-        if (!pos) {
+        if (!pos || bar.timestampMs <= pos.openedAtMs) {
             return {};
         }
 
@@ -538,8 +555,8 @@ export class PaperAccountLedger {
             const stopSlippage = this.schedule.stopSlippageRate;
             const execExitPrice =
                 pos.side === 'LONG'
-                    ? pos.stopPrice * (1 - stopSlippage)
-                    : pos.stopPrice * (1 + stopSlippage);
+                    ? Math.min(bar.open, pos.stopPrice) * (1 - stopSlippage)
+                    : Math.max(bar.open, pos.stopPrice) * (1 + stopSlippage);
             return {
                 closedTrade: this.closeOpenPosition({
                     timestampMs: bar.timestampMs,

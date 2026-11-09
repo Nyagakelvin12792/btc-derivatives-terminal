@@ -1,10 +1,9 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Clock, AlertTriangle, Calendar } from 'lucide-react';
 import {
     evaluateUsMarketContext,
-    type MacroReleaseWindowV1,
 } from '../../lib/market-data/us-context';
 import { cn } from '../../lib/ui/cn';
 
@@ -13,36 +12,24 @@ export interface UsMarketContextDrawerProps {
     className?: string;
 }
 
-const DEFAULT_UPCOMING_RELEASES: MacroReleaseWindowV1[] = [
-    {
-        id: 'cpi-release-window',
-        name: 'CPI',
-        timestampMs: Date.UTC(2026, 10, 12, 13, 30, 0), // 08:30 EST
-        suppressMinutesBefore: 30,
-        suppressMinutesAfter: 30,
-    },
-    {
-        id: 'fomc-release-window',
-        name: 'FOMC',
-        timestampMs: Date.UTC(2026, 10, 18, 19, 0, 0), // 14:00 EST
-        suppressMinutesBefore: 30,
-        suppressMinutesAfter: 30,
-    },
-];
-
 export default function UsMarketContextDrawer({
     timestampMs,
     className,
 }: UsMarketContextDrawerProps) {
     const [expanded, setExpanded] = useState(false);
-    const [fridayClose, setFridayClose] = useState<string>('69450');
-    const [sundayOpen, setSundayOpen] = useState<string>('69820');
-    const [etfFlowM, setEtfFlowM] = useState<string>('245.0');
+    const [fridayClose, setFridayClose] = useState<string>('');
+    const [sundayOpen, setSundayOpen] = useState<string>('');
+    const [etfFlowM, setEtfFlowM] = useState<string>('');
 
-    const effectiveTs = timestampMs ?? Date.now();
+    const [now, setNow] = useState<number | null>(null);
+    useEffect(() => {
+        const timer = window.setInterval(() => setNow(Date.now()), 1_000);
+        return () => window.clearInterval(timer);
+    }, []);
+    const effectiveTs = timestampMs ?? now ?? 0;
     const snapshot = useMemo(
         () =>
-            evaluateUsMarketContext(effectiveTs, DEFAULT_UPCOMING_RELEASES, {
+            evaluateUsMarketContext(effectiveTs, [], {
                 fridayClosePrice: fridayClose ? Number(fridayClose) : null,
                 sundayOpenPrice: sundayOpen ? Number(sundayOpen) : null,
                 etfNetFlowUsdMillions: etfFlowM ? Number(etfFlowM) : null,
@@ -50,7 +37,7 @@ export default function UsMarketContextDrawer({
         [effectiveTs, etfFlowM, fridayClose, sundayOpen],
     );
 
-    const nyTimeStr = `${String(snapshot.nyHour).padStart(2, '0')}:${String(snapshot.nyMinute).padStart(2, '0')} ${
+    const nyTimeStr = effectiveTs === 0 ? 'Awaiting clock' : `${String(snapshot.nyHour).padStart(2, '0')}:${String(snapshot.nyMinute).padStart(2, '0')} ${
         snapshot.isDstActive ? 'EDT' : 'EST'
     }`;
 

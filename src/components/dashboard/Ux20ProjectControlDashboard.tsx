@@ -103,8 +103,8 @@ export default function Ux20ProjectControlDashboard({
     }, [data, ux20Milestones]);
 
     const readinessGates = useMemo(() => {
-        return evaluateUx20ReadinessGates(ux20Milestones);
-    }, [ux20Milestones]);
+        return evaluateUx20ReadinessGates(ux20Milestones, data?.progress.sourceCommit);
+    }, [data?.progress.sourceCommit, ux20Milestones]);
 
     const allUx20Tasks = useMemo<ProjectTaskV1[]>(() => {
         return ux20Milestones.flatMap((m) => m.features.flatMap((f) => f.tasks));
@@ -367,8 +367,8 @@ export default function Ux20ProjectControlDashboard({
                         {readinessGates.strategyResearchReadiness.summary}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-3 text-[9px] text-[#5C697A]">
-                        <span>Holdout Trades: {readinessGates.strategyResearchReadiness.holdoutTradesCompleted}/{readinessGates.strategyResearchReadiness.holdoutTradesRequired}</span>
-                        <span>Sessions: {readinessGates.strategyResearchReadiness.eligibleSessionsCompleted}/{readinessGates.strategyResearchReadiness.eligibleSessionsRequired}</span>
+                        <span>Holdout Trades: {readinessGates.strategyResearchReadiness.holdoutTradesCompleted ?? 'Unverified'}/{readinessGates.strategyResearchReadiness.holdoutTradesRequired}</span>
+                        <span>Sessions: {readinessGates.strategyResearchReadiness.eligibleSessionsCompleted ?? 'Unverified'}/{readinessGates.strategyResearchReadiness.eligibleSessionsRequired}</span>
                     </div>
                 </div>
 
@@ -386,9 +386,9 @@ export default function Ux20ProjectControlDashboard({
                         {readinessGates.jevAutoPaperEligibility.summary}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-3 text-[9px] text-[#5C697A]">
-                        <span>Shadow Sessions: {readinessGates.jevAutoPaperEligibility.forwardShadowSessionsCompleted}/{readinessGates.jevAutoPaperEligibility.forwardShadowSessionsRequired}</span>
-                        <span>Manual Trades: {readinessGates.jevAutoPaperEligibility.manualPaperTradesCompleted}/{readinessGates.jevAutoPaperEligibility.manualPaperTradesRequired}</span>
-                        <span>Mismatches: {readinessGates.jevAutoPaperEligibility.unexplainedMismatches}</span>
+                        <span>Shadow Sessions: {readinessGates.jevAutoPaperEligibility.forwardShadowSessionsCompleted ?? 'Unverified'}/{readinessGates.jevAutoPaperEligibility.forwardShadowSessionsRequired}</span>
+                        <span>Manual Trades: {readinessGates.jevAutoPaperEligibility.manualPaperTradesCompleted ?? 'Unverified'}/{readinessGates.jevAutoPaperEligibility.manualPaperTradesRequired}</span>
+                        <span>Mismatches: {readinessGates.jevAutoPaperEligibility.unexplainedMismatches ?? 'Unverified'}</span>
                     </div>
                 </div>
             </div>

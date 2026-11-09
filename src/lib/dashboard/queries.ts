@@ -6,7 +6,9 @@ import type { DeribitDteFilter } from '@/lib/deribit/dte-filter';
 // Strict Zod Schema for API Boundary Runtime Validation (UX20.1-LIVE-01 / P1-3)
 export const TerrainDataSchema = z.object({
     schemaVersion: z.number().int().positive(),
-    timestamp: z.string().min(1),
+    timestamp: z.iso.datetime(),
+    sourceTime: z.iso.datetime().optional(),
+    coverage: z.object({ received: z.number().int().nonnegative().optional(), valid: z.number().int().nonnegative().optional(), selected: z.number().int().nonnegative() }).optional(),
     dataMode: z.enum(['LIVE', 'DEMO', 'DEGRADED']),
     assumptionModel: z.string().min(1),
     spotPrice: z.number().finite().positive(),
@@ -34,7 +36,11 @@ export const TerrainDataSchema = z.object({
     strikes: z.array(z.number().finite().positive()),
     expirations: z.array(z.string()),
     dtes: z.array(z.number().finite().nonnegative()),
-    surfaceGrid: z.array(z.array(z.unknown())),
+    surfaceGrid: z.array(z.array(z.looseObject({
+        strike: z.number().positive(), expiry: z.string().min(1), dte: z.number().nonnegative(),
+        observed: z.boolean(), gexExposure: z.number(), openInterestBtc: z.number().nonnegative(),
+        iv: z.number().positive().nullable(),
+    }))),
     keyLevels: z.record(z.string(), z.unknown()),
     maxPainByExpiry: z.array(z.unknown()),
     confluenceLevels: z.array(z.unknown()),
@@ -73,8 +79,8 @@ export async function fetchTerrainData(
         throw new Error(`Terrain API schema validation failed: ${parsed.error.issues[0]?.message ?? 'Malformed payload'}`);
     }
 
-    if (mode === 'LIVE' && parsed.data.dataMode !== 'LIVE') {
-        throw new Error(`Refusing non-LIVE terrain payload (${parsed.data.dataMode}) while terminal is in LIVE mode`);
+    if (mode === 'LIVE' && (parsed.data.dataMode !== 'LIVE' || !parsed.data.sourceTime || Date.now() - Date.parse(parsed.data.sourceTime) > 60_000 || Date.parse(parsed.data.sourceTime) - Date.now() > 5_000)) {
+        throw new Error('Deribit options payload is unavailable or stale');
     }
 
     return parsed.data as unknown as TerrainDataContractV2;

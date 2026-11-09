@@ -53,3 +53,13 @@ export function filterDeribitOptionsByDteOrExpiry(
     }
     return filterDeribitOptionsByDte(options, dteFilter);
 }
+
+export function refreshDeribitOptionDte(
+    options: readonly NormalizedDeribitOption[],
+    now: Date,
+): NormalizedDeribitOption[] {
+    return options.flatMap((option) => {
+        const dte = (option.expiryDate.getTime() - now.getTime()) / 86_400_000;
+        return dte > 0 ? [{ ...option, dte: dte as typeof option.dte, tte: (dte / 365) as typeof option.tte }] : [];
+    });
+}

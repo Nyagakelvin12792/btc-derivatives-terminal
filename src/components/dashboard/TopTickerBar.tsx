@@ -26,7 +26,7 @@ export default function TopTickerBar({ summary, onToggleDataMode }: TopTickerBar
         return () => clearInterval(timer);
     }, []);
 
-    const isPositiveChange = summary.spot24hChange >= 0;
+    const isPositiveChange = (summary.spot24hChange ?? 0) >= 0;
     const isDemo = summary.dataMode === 'DEMO';
     const isDegraded = summary.dataMode === 'DEGRADED';
 
@@ -47,13 +47,13 @@ export default function TopTickerBar({ summary, onToggleDataMode }: TopTickerBar
                     <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">24H CHANGE</span>
                     <div className="flex items-baseline gap-1.5 font-bold">
                         <span className={isPositiveChange ? 'text-emerald-400' : 'text-rose-400'}>
-                            {isPositiveChange ? '+' : ''}{summary.spot24hChange.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                            {summary.spot24hChange === null ? 'Unavailable' : `${isPositiveChange ? '+' : ''}${summary.spot24hChange.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}`}
                         </span>
-                        <span className={`text-[10px] px-1 py-0.2 rounded ${
+                        {summary.spot24hChangePct !== null && <span className={`text-[10px] px-1 py-0.2 rounded ${
                             isPositiveChange ? 'bg-emerald-950/60 text-emerald-400' : 'bg-rose-950/60 text-rose-400'
                         }`}>
                             {isPositiveChange ? '+' : ''}{summary.spot24hChangePct.toFixed(2)}%
-                        </span>
+                        </span>}
                     </div>
                 </div>
 
@@ -68,7 +68,7 @@ export default function TopTickerBar({ summary, onToggleDataMode }: TopTickerBar
                                 ? `${summary.totalOiBtc.toLocaleString()} BTC`
                                 : 'N/A'}
                         </span>
-                        {summary.openInterestChangePct > 0 && (
+                        {summary.openInterestChangePct !== null && summary.openInterestChangePct > 0 && (
                             <span className="text-[10px] text-emerald-400 font-semibold">+{summary.openInterestChangePct.toFixed(2)}%</span>
                         )}
                     </div>
@@ -78,8 +78,8 @@ export default function TopTickerBar({ summary, onToggleDataMode }: TopTickerBar
                 <div className="pl-5 flex items-baseline gap-2">
                     <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">IV 30D</span>
                     <div className="flex items-baseline gap-1.5">
-                        <span className="font-bold text-white">{summary.iv30d.toFixed(1)}%</span>
-                        <span className="text-[10px] text-emerald-400">+{summary.iv30dChange.toFixed(1)} vol</span>
+                        <span className="font-bold text-white">{summary.iv30d === null ? '—' : `${summary.iv30d.toFixed(1)}%`}</span>
+                        <span className="text-[10px] text-emerald-400">{summary.iv30dChange === null ? '—' : `${summary.iv30dChange.toFixed(1)} vol`}</span>
                     </div>
                 </div>
 
@@ -87,8 +87,8 @@ export default function TopTickerBar({ summary, onToggleDataMode }: TopTickerBar
                 <div className="pl-5 flex items-baseline gap-2">
                     <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">SKEW 25Δ</span>
                     <div className="flex items-baseline gap-1.5">
-                        <span className="font-bold text-white">{summary.skew25d.toFixed(1)}%</span>
-                        <span className="text-[10px] text-emerald-400">+{summary.skew25dChange.toFixed(1)} vol</span>
+                        <span className="font-bold text-white">{summary.skew25d === null ? '—' : `${summary.skew25d.toFixed(1)}%`}</span>
+                        <span className="text-[10px] text-emerald-400">{summary.skew25dChange === null ? '—' : `${summary.skew25dChange.toFixed(1)} vol`}</span>
                     </div>
                 </div>
 
@@ -96,8 +96,8 @@ export default function TopTickerBar({ summary, onToggleDataMode }: TopTickerBar
                 <div className="pl-5 flex items-baseline gap-2">
                     <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">FUNDING RATE</span>
                     <div className="flex items-baseline gap-1">
-                        <span className="font-bold text-emerald-400">{(summary.fundingRate).toFixed(4)}%</span>
-                        <span className="text-[10px] text-zinc-400">({summary.fundingPeriod})</span>
+                        <span className="font-bold text-emerald-400">{summary.fundingRate === null ? 'Unavailable' : `${summary.fundingRate.toFixed(4)}%`}</span>
+                        {summary.fundingRate !== null && <span className="text-[10px] text-zinc-400">({summary.fundingPeriod})</span>}
                     </div>
                 </div>
             </div>

@@ -67,3 +67,16 @@ describe('ReplayClockEngine (UX20.3-CLOCK-01)', () => {
         expect(snapA2.visibleCandles).toHaveLength(3);
     });
 });
+
+it('isolates inputs and output mutations, hashes content, and hides data until available', () => {
+    const trade = { timestamp: 1_000, availableAtMs: 2_000, price: 100, size: 1, side: 'BUY' as const };
+    const dataset = { datasetId: 'fixture', symbol: 'BTCUSDT', startTimeMs: 0, endTimeMs: 3_000, candles: [], trades: [trade] };
+    const clock = new ReplayClockEngine(dataset, 1_999);
+    expect(clock.getSnapshot().visibleTrades).toEqual([]);
+    const before = clock.seek(2_000);
+    trade.size = 2;
+    before.visibleTrades[0].size = 3;
+    expect(clock.getSnapshot().visibleTrades[0].size).toBe(1);
+    expect(clock.getSnapshot().deterministicRunHash).toBe(before.deterministicRunHash);
+    expect(new ReplayClockEngine(dataset, 2_000).getSnapshot().deterministicRunHash).not.toBe(before.deterministicRunHash);
+});

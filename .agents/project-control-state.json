@@ -9,62 +9,6 @@
   "codeRevision": "7ab2f19",
   "maxRetries": 3,
   "overrides": {
-    "UX20.0-BASE-01": {
-      "taskId": "UX20.0-BASE-01",
-      "status": "COMPLETE",
-      "evidenceStatus": "ACCEPTED",
-      "commit": "7ab2f19",
-      "branch": "main",
-      "startedAt": "2026-11-09T16:25:00.000Z",
-      "completedAt": "2026-11-09T16:32:00.000Z",
-      "updatedAt": "2026-11-09T16:32:00.000Z",
-      "reviewedBy": "ARCHITECT",
-      "reviewedAt": "2026-11-09T16:32:00.000Z",
-      "retryCount": 0,
-      "lastError": null,
-      "blockers": [],
-      "tests": [
-        {
-          "id": "ux20-0-base-01-test",
-          "command": "npx vitest run src/lib/project-control/project-control.test.ts",
-          "result": "PASS",
-          "passed": 8,
-          "failed": 0,
-          "skipped": 0,
-          "executedAt": "2026-11-09T16:32:00.000Z",
-          "commit": "7ab2f19",
-          "artifactPaths": ["docs/architecture.md", "docs/calculation-conventions.md"]
-        }
-      ]
-    },
-    "UX20.0-TRACK-02": {
-      "taskId": "UX20.0-TRACK-02",
-      "status": "COMPLETE",
-      "evidenceStatus": "ACCEPTED",
-      "commit": "7ab2f19",
-      "branch": "main",
-      "startedAt": "2026-11-09T16:30:00.000Z",
-      "completedAt": "2026-11-09T16:35:00.000Z",
-      "updatedAt": "2026-11-09T16:35:00.000Z",
-      "reviewedBy": "ARCHITECT",
-      "reviewedAt": "2026-11-09T16:35:00.000Z",
-      "retryCount": 0,
-      "lastError": null,
-      "blockers": [],
-      "tests": [
-        {
-          "id": "ux20-0-track-02-test",
-          "command": "npx vitest run src/lib/project-control/project-control.test.ts",
-          "result": "PASS",
-          "passed": 8,
-          "failed": 0,
-          "skipped": 0,
-          "executedAt": "2026-11-09T16:35:00.000Z",
-          "commit": "7ab2f19",
-          "artifactPaths": ["docs/ui-ux/UX20_PROGRESS.md", "src/lib/project-control/ux20-plan.ts"]
-        }
-      ]
-    },
     "UX17.0-AUDIT-01": {
       "taskId": "UX17.0-AUDIT-01",
       "status": "COMPLETE",
@@ -89,7 +33,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": ["docs/ui-ux/UX17_AUDIT_AND_DESIGN_SYSTEM.md"]
+          "artifactPaths": [
+            "docs/ui-ux/UX17_AUDIT_AND_DESIGN_SYSTEM.md"
+          ]
         }
       ]
     },
@@ -117,7 +63,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -145,7 +93,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -173,7 +123,9 @@
           "skipped": 1,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png"
+          ]
         }
       ]
     },
@@ -201,7 +153,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -229,7 +183,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -257,7 +213,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -285,7 +243,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -313,7 +273,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-minimalist-terminal-1920x1080.png"
+          ]
         }
       ]
     },
@@ -341,7 +303,9 @@
           "skipped": 0,
           "executedAt": "2026-11-04T14:45:00.000Z",
           "commit": "fc044c8",
-          "artifactPaths": [".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png"]
+          "artifactPaths": [
+            ".artifacts/ui-overhaul/ux17-tools-drawer-1920x1080.png"
+          ]
         }
       ]
     },

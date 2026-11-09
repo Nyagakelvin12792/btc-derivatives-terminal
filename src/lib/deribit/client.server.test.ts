@@ -16,6 +16,7 @@ const bookPayload = {
             open_interest: 10,
             mark_iv: 60,
             volume: 1,
+            creation_timestamp: now.getTime(),
         },
     ],
 };

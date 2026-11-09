@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { buildUx20Milestones, evaluateUx20ReadinessGates } from './ux20-plan';
 
 import {
     AgentUsageFileV1Schema,
@@ -38,7 +39,7 @@ describe('project-control contracts and calculations', () => {
         });
         expect(snapshot.totals.implementedWeight).toBeGreaterThan(snapshot.totals.acceptedWeight);
         expect(snapshot.totals.testedWeight).toBeGreaterThan(snapshot.totals.acceptedWeight);
-        expect(snapshot.totals.reviewRequiredTasks).toBe(0);
+        expect(snapshot.totals.reviewRequiredTasks).toBe(27);
     });
 
     it('retains committed task evidence when a local deployment SHA is unavailable', () => {
@@ -123,4 +124,16 @@ describe('project-control contracts and calculations', () => {
         expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.2')?.status).toBe('COMPLETE');
         expect(response.progress.milestones.find((milestone: MilestoneProgressV1) => milestone.id === 'UX16.3')?.status).toBe('COMPLETE');
     });
+});
+
+it('refuses UX20 readiness based on work labels and unrelated or undocumented evidence', () => {
+    const milestones = buildUx20Milestones();
+    const sha = 'a'.repeat(40);
+    for (const m of milestones) for (const f of m.features) for (const task of f.tasks) {
+        task.status = 'COMPLETE';
+        task.evidence.commit = sha;
+        task.evidence.evidenceStatus = 'UNVERIFIED';
+    }
+    expect(evaluateUx20ReadinessGates(milestones, sha).softwareReadiness.status).toBe('IN_PROGRESS');
+    expect(evaluateUx20ReadinessGates(milestones, sha).strategyResearchReadiness.holdoutTradesCompleted).toBeNull();
 });

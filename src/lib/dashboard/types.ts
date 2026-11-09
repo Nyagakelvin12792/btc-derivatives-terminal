@@ -55,16 +55,16 @@ export interface ExposureScales {
 
 export interface DealerEnvironmentSummaryData {
     spotPrice: number;
-    spot24hChange: number;
-    spot24hChangePct: number;
+    spot24hChange: number | null;
+    spot24hChangePct: number | null;
     openInterestUsd: number | null;
     openInterestBtc: number | null;
-    openInterestChangePct: number;
-    iv30d: number;
-    iv30dChange: number;
-    skew25d: number;
-    skew25dChange: number;
-    fundingRate: number;
+    openInterestChangePct: number | null;
+    iv30d: number | null;
+    iv30dChange: number | null;
+    skew25d: number | null;
+    skew25dChange: number | null;
+    fundingRate: number | null;
     fundingPeriod: string;
     utcTime: string;
     netGex: number;

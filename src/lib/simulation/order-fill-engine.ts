@@ -181,6 +181,11 @@ export class SimulatedOrderFillEngine {
             throw new Error(`Order currentPrice must be a finite positive number, got ${params.currentPrice}`);
         }
 
+        if (params.takeProfits?.some((tp) => !Number.isFinite(tp.price) || tp.price <= 0
+            || !Number.isFinite(tp.allocationPercent) || tp.allocationPercent <= 0 || tp.allocationPercent > 100)) {
+            throw new Error('Invalid take profit price or allocation.');
+        }
+
         const id = `ord-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
         const now = Date.now();
 
@@ -240,7 +245,10 @@ export class SimulatedOrderFillEngine {
      * Evaluates all open orders and open position against incoming market price tick / candle.
      */
     public processTick(tick: PriceTick): void {
+        if (![tick.time, tick.bid, tick.ask, tick.last, tick.high, tick.low].every((value) => Number.isFinite(value) && value > 0)
+            || tick.bid > tick.ask || tick.low > tick.high || !Number.isFinite(tick.volume) || tick.volume < 0) return;
         const now = tick.time;
+        let available = tick.volume;
         this.position.currentPrice = tick.last;
         this.position.lastUpdated = now;
 
@@ -261,15 +269,19 @@ export class SimulatedOrderFillEngine {
                 case 'LIMIT': {
                     if (order.side === 'BUY') {
                         // Limit Buy fills when market reaches or dips below limit price
-                        if (tick.low <= (order.limitPrice ?? 0)) {
+                        if (available > 0 && tick.low < (order.limitPrice ?? 0)) {
                             const fillPrice = Math.min(order.limitPrice ?? tick.last, tick.ask);
-                            this.executeFill(order, fillPrice, remainingQty, true, 'LIMIT_TOUCH', now);
+                            const fillQty = Math.min(remainingQty, available);
+                            available -= fillQty;
+                            this.executeFill(order, fillPrice, fillQty, true, 'LIMIT_TOUCH', now);
                         }
                     } else {
                         // Limit Sell fills when market reaches or rises above limit price
-                        if (tick.high >= (order.limitPrice ?? 0)) {
+                        if (available > 0 && tick.high > (order.limitPrice ?? 0)) {
                             const fillPrice = Math.max(order.limitPrice ?? tick.last, tick.bid);
-                            this.executeFill(order, fillPrice, remainingQty, true, 'LIMIT_TOUCH', now);
+                            const fillQty = Math.min(remainingQty, available);
+                            available -= fillQty;
+                            this.executeFill(order, fillPrice, fillQty, true, 'LIMIT_TOUCH', now);
                         }
                     }
                     break;
@@ -403,6 +415,18 @@ export class SimulatedOrderFillEngine {
         this.position.realizedPnl += realized;
         this.position.quantity -= closeQty;
 
+        const residual = quantity - closeQty;
+        if (residual > 0.0000001) {
+            this.position.side = order.side === 'BUY' ? 'LONG' : 'SHORT';
+            this.position.entryTimestamp = timestamp;
+            this.position.quantity = residual;
+            this.position.avgEntryPrice = price;
+            this.position.unrealizedPnl = 0;
+            this.position.stopLossPrice = order.stopLossPrice;
+            this.position.takeProfits = order.takeProfits.map((target) => ({ ...target }));
+            this.position.initialRiskDollar = order.stopLossPrice === undefined ? 0 : Math.abs(price - order.stopLossPrice) * residual;
+            return;
+        }
         if (this.position.quantity <= 0.0000001) {
             this.position.quantity = 0;
             this.position.side = 'FLAT';

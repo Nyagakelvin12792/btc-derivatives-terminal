@@ -29,10 +29,10 @@ export function sanitizeCsvCell(value: unknown, options?: { forceQuote?: boolean
     }
 
     const raw = String(value);
-    const isPureSignedNumber = /^-?\d+(?:\.\d+)?%?R?$/.test(raw.trim());
+    const isPureSignedNumber = /^-?\d+(?:\.\d+)?%?R?$/.test(raw);
 
     let safeText = raw.replace(/\r?\n/g, ' ');
-    if (!isPureSignedNumber && FORMULA_TRIGGER_RE.test(safeText)) {
+    if (/^[\t\r\n]/.test(raw) || !isPureSignedNumber && FORMULA_TRIGGER_RE.test(safeText)) {
         safeText = `'${safeText}`;
     }
 

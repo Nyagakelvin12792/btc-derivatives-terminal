@@ -1,5 +1,7 @@
 'use client';
 
+import { usePaperDesk } from '../../lib/execution/use-paper-desk';
+
 import React, { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import * as Dialog from '@radix-ui/react-dialog';
 import * as DropdownMenu from '@radix-ui/react-dropdown-menu';
@@ -202,15 +204,19 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     const [replayActive, setReplayActive] = useState(false);
     const [toolsDrawerOpen, setToolsDrawerOpen] = useState(false);
     const [showStudyChipsStrip, setShowStudyChipsStrip] = useState(false);
-    const [activeWorkspacePreset, setActiveWorkspacePreset] = useState<WorkspacePresetId>('TRADE_EXECUTION');
+    const savedWorkspacePreset = useTerminalStore((state) => state.workspacePreset);
+    const setActiveWorkspacePreset = useTerminalStore((state) => state.setWorkspacePreset);
+    const activeWorkspacePreset = savedWorkspacePreset && Object.hasOwn(BUILTIN_WORKSPACE_PRESETS, savedWorkspacePreset) ? savedWorkspacePreset : 'TRADE_EXECUTION';
     const [overlayDensity, setOverlayDensity] = useState<OverlayDensityMode>('STANDARD');
     const [splitLayoutMode, setSplitLayoutMode] = useState<ChartSplitLayoutMode>('MODE_B_CANDLE_AND_FOOTPRINT');
     const [priceScaleFit, setPriceScaleFit] = useState<PriceScaleFitMode>('CANDLE_FIT');
     const [footprintPreset, setFootprintPreset] = useState<FootprintPresetId>('DELTA_IMBALANCE');
     const [showSessionHighLowLines, setShowSessionHighLowLines] = useState(false);
     const [showSessionOpeningRange, setShowSessionOpeningRange] = useState(false);
-    const [selectedExpiryOverride, setSelectedExpiryOverride] = useState<string | null>(null);
-    const [utcNow, setUtcNow] = useState('--:--:--');
+    const selectedExpiryOverride = useTerminalStore((state) => state.optionsExpiryFilter);
+    const setSelectedExpiryOverride = useTerminalStore((state) => state.setOptionsExpiryFilter);
+    const [utcNowMs, setUtcNowMs] = useState<number | null>(null);
+    const utcNow = utcNowMs === null ? '--:--:--' : new Date(utcNowMs).toISOString().slice(11, 19);
     const riskSettings = useSyncExternalStore(
         subscribePersistedRiskSettings,
         readPersistedRiskSettings,
@@ -253,6 +259,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         },
         maxClientFrames: 1_800,
     });
+    const paperDesk = usePaperDesk(liquidityFeed, dataMode === 'LIVE' && !replayActive);
     const aggregateTradeFeed = useBinanceAggregateTradeCapture(dataMode === 'LIVE', {
         trueFlowInterval: BINANCE_INTERVALS[timeframe],
     });
@@ -271,13 +278,15 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     }, []);
 
     useEffect(() => {
-        const updateClock = () => setUtcNow(new Date().toISOString().slice(11, 19));
+        const updateClock = () => setUtcNowMs(Date.now());
         updateClock();
         const timer = window.setInterval(updateClock, 1000);
         return () => window.clearInterval(timer);
     }, []);
 
-    const isLiveOptionsUnavailable = dataMode === 'LIVE' && (isError || data.dataMode !== 'LIVE');
+    const optionsAgeMs = data.sourceTime && utcNowMs !== null ? utcNowMs - Date.parse(data.sourceTime) : null;
+    const optionsStale = optionsAgeMs !== null && optionsAgeMs > 60_000;
+    const isLiveOptionsUnavailable = replayActive || dataMode !== 'DEMO' && (isError || optionsStale || data.dataMode !== 'LIVE' || data.summary.contractsCount === 0);
 
     const effectiveOptionsData = useMemo<TerrainDataContractV2>(() => {
         if (isLiveOptionsUnavailable) {
@@ -299,29 +308,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                 },
             };
         }
-        const exactExpiry =
-            selectedExpiryOverride && !DTE_FILTERS.includes(selectedExpiryOverride as (typeof DTE_FILTERS)[number])
-                ? selectedExpiryOverride
-                : null;
-        if (!exactExpiry) return data;
-
-        const filteredContracts = (data.keyContracts || []).filter((c) => {
-            const cExp = String((c as { expiration?: string; expiry?: string }).expiration ?? (c as { expiry?: string }).expiry ?? '');
-            return cExp === exactExpiry || cExp.startsWith(exactExpiry);
-        });
-        const filteredMaxPain = (data.maxPainByExpiry || []).filter((mp) => {
-            const mpExp = String((mp as { expiration?: string; expiry?: string }).expiration ?? (mp as { expiry?: string }).expiry ?? '');
-            return mpExp === exactExpiry || mpExp.startsWith(exactExpiry);
-        });
-        if (filteredContracts.length === 0 && filteredMaxPain.length === 0) {
-            return data;
-        }
-        return {
-            ...data,
-            keyContracts: filteredContracts.length > 0 ? filteredContracts : data.keyContracts,
-            maxPainByExpiry: filteredMaxPain.length > 0 ? filteredMaxPain : data.maxPainByExpiry,
-        };
-    }, [data, isLiveOptionsUnavailable, selectedExpiryOverride]);
+        return data;
+    }, [data, isLiveOptionsUnavailable]);
 
     const metrics = useMemo<MarketMetrics>(() => {
         const summary = effectiveOptionsData.summary as unknown as Record<string, unknown>;
@@ -329,7 +317,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         const spot = numeric(effectiveOptionsData.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
         const callWall = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? spot * 1.05);
         const putWall = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? spot * 0.95);
-        const gammaFlip = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.gammaFlip) ?? numeric(summary.gammaFlip) ?? spot);
+        const gammaFlip = isLiveOptionsUnavailable || dataMode === 'LIVE' && !data.keyLevels?.gammaFlip?.crossings?.length ? 0 : (levelStrike(keyLevels.gammaFlip) ?? 0);
         const maxPain = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.primaryMaxPain) ?? numeric(summary.maxPainStrike) ?? spot);
         const netGex = numeric(summary.netGex, 0) ?? 0;
         const calls = (effectiveOptionsData.keyContracts || []).filter((contract) => contract.type === 'call');
@@ -338,15 +326,15 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         const putOi = puts.reduce((sum, contract) => sum + contract.openInterest, 0);
         const nearest = [...(effectiveOptionsData.keyContracts || [])].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0];
         return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex >= 0 };
-    }, [effectiveOptionsData, isLiveOptionsUnavailable]);
+    }, [data.keyLevels?.gammaFlip?.crossings?.length, dataMode, effectiveOptionsData, isLiveOptionsUnavailable]);
 
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
-    const displayedSpot = liveSpot ?? metrics.spot;
+    const displayedSpot = liveSpot ?? (dataMode === 'DEMO' || data.dataMode === 'LIVE' && !isError && !optionsStale ? metrics.spot : null);
     const changePct = dataMode === 'LIVE' ? marketFeed.ticker?.priceChangePercent : numeric((data.summary as unknown as Record<string, unknown>).spot24hChangePct);
     const rawExpiry = selectedExpiryOverride ?? data.expirations?.[0];
     const parsedExpiry = rawExpiry ? Date.parse(rawExpiry) : Number.NaN;
-    const expiryLabel = selectedExpiryOverride && DTE_FILTERS.includes(selectedExpiryOverride as any)
-        ? `DTE · ${selectedExpiryOverride}`
+    const expiryLabel = !selectedExpiryOverride && dteFilter !== 'ALL'
+        ? `DTE · ${dteFilter}`
         : rawExpiry
             ? Number.isFinite(parsedExpiry)
                 ? new Date(parsedExpiry).toLocaleDateString(undefined, { day: '2-digit', month: 'short' }).toUpperCase()
@@ -361,9 +349,21 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         setPriceScaleFit(preset.priceScaleFit);
         setFootprintPreset(preset.footprintPreset);
         setStudyPaneOpen(preset.indicators.showLowerStudy);
-    }, [setStudyPaneOpen]);
-    const deribitState = dataMode === 'LIVE' ? (isError || data.dataMode !== 'LIVE' ? 'OFFLINE' : 'LIVE') : 'DEMO';
-    const binanceState = dataMode === 'DEMO' ? 'DEMO' : marketFeed.state;
+    }, [setActiveWorkspacePreset, setStudyPaneOpen]);
+
+    useEffect(() => {
+        if (!savedWorkspacePreset || !Object.hasOwn(BUILTIN_WORKSPACE_PRESETS, savedWorkspacePreset)) return;
+        const preset = BUILTIN_WORKSPACE_PRESETS[savedWorkspacePreset];
+        const frame = requestAnimationFrame(() => {
+            setOverlayDensity(preset.overlayDensity);
+            setSplitLayoutMode(preset.splitLayoutMode);
+            setPriceScaleFit(preset.priceScaleFit);
+            setFootprintPreset(preset.footprintPreset);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [savedWorkspacePreset]);
+    const deribitState = dataMode === 'DEMO' ? 'SYNTHETIC_DEMO' : optionsStale ? 'STALE' : isLiveOptionsUnavailable ? 'OFFLINE' : 'LIVE';
+    const binanceState = dataMode === 'DEMO' ? 'SYNTHETIC_DEMO' : marketFeed.state;
 
     function saveLayout() {
         localStorage.setItem('btc-terminal-layout-snapshot', JSON.stringify({ timeframe, replayActive, activeOrderFlowStudy, dteFilter, chartLayers, savedAt: new Date().toISOString() }));
@@ -549,7 +549,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                     </div>
 
                     <div className="font-mono text-sm font-semibold tabular-nums text-[#D8DEE8] md:text-base">
-                        {displayedSpot.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}
+                        {displayedSpot?.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) ?? 'Unavailable'}
                     </div>
                     <div className={cn('hidden font-mono text-xs font-semibold tabular-nums sm:block', changePct === undefined ? 'text-[#8390A0]' : changePct >= 0 ? 'text-[#2CC7A0]' : 'text-[#E06379]')}>
                         {changePct === undefined ? '—' : `${changePct >= 0 ? '+' : ''}${changePct.toFixed(2)}%`}
@@ -634,7 +634,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                         data-testid={`expiry-dte-option-${filter}`}
                                         onClick={() => {
                                             setDteFilter(filter);
-                                            setSelectedExpiryOverride(filter);
+
                                         }}
                                         className={cn(
                                             'flex cursor-pointer items-center justify-between rounded px-2 py-1.5 outline-none data-[highlighted]:bg-[#39A9F5]/15',
@@ -661,7 +661,6 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                                     key={exp}
                                                     onClick={() => {
                                                         setSelectedExpiryOverride(exp);
-                                                        setDteFilter('ALL');
                                                     }}
                                                     className="flex cursor-pointer items-center justify-between rounded px-2 py-1.5 outline-none data-[highlighted]:bg-[#39A9F5]/15"
                                                 >
@@ -676,8 +675,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         </Popover.Portal>
                     </Popover.Root>
 
-                    <SourceChip label="Binance" state={binanceState} tone={binanceState === 'LIVE' ? 'live' : binanceState === 'DEMO' ? 'demo' : binanceState === 'STALE' || binanceState === 'CONNECTING' ? 'shadow' : 'off'} />
-                    <SourceChip label="Deribit" state={deribitState} tone={deribitState === 'LIVE' ? 'live' : deribitState === 'DEMO' ? 'demo' : 'off'} />
+                    <SourceChip label="Binance" state={binanceState} tone={binanceState === 'LIVE' ? 'live' : binanceState === 'SYNTHETIC_DEMO' ? 'demo' : binanceState === 'STALE' || binanceState === 'CONNECTING' ? 'shadow' : 'off'} />
+                    <SourceChip label="Deribit" state={deribitState} tone={deribitState === 'LIVE' ? 'live' : deribitState === 'SYNTHETIC_DEMO' ? 'demo' : deribitState === 'STALE' ? 'shadow' : 'off'} />
                     <SourceChip label="Jev" state="SHADOW OFF" tone="off" />
 
                     <button
@@ -772,7 +771,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         onClick={() => setReplayActive((active) => !active)}
                         className={cn('flex h-7 shrink-0 items-center gap-1.5 rounded px-2 text-[10px] text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]', replayActive && 'bg-[#E6B450]/15 text-[#E6B450]')}
                     >
-                        {replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Replay
+                        {replayActive ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}Historical Preview
                     </button>
 
                     <button
@@ -1073,7 +1072,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         </Panel>
 
                         {/* Right Dock / Inspector Panel */}
-                        {inspectorOpen && isDesktop && (
+                        {inspectorOpen && isDesktop && !replayActive && (
                             <>
                                 <Separator
                                     aria-label="Resize options inspector"
@@ -1086,8 +1085,9 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 </Separator>
                                 <Panel id="inspector" minSize="320px" maxSize="36%" defaultSize="22%" groupResizeBehavior="preserve-pixel-size">
                                     <DecisionDock
+                                        paperDesk={paperDesk}
                                         metrics={metrics}
-                                        data={data}
+                                        data={effectiveOptionsData}
                                         marketFeed={marketFeed}
                                         liquidityFeed={liquidityFeed}
                                         isError={isError}
@@ -1114,11 +1114,11 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                     <div className="flex min-w-0 items-center gap-4">
                         <span className="font-bold text-[#E06379]">NO LIVE EXECUTION</span>
                         <span className="hidden items-center gap-1 sm:flex">
-                            <span className={cn('size-1.5 rounded-full', binanceState === 'LIVE' ? 'bg-[#2CC7A0]' : binanceState === 'DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
+                            <span className={cn('size-1.5 rounded-full', binanceState === 'LIVE' ? 'bg-[#2CC7A0]' : binanceState === 'SYNTHETIC_DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
                             Candles {binanceState.toLowerCase()}
                         </span>
                         <span className="hidden items-center gap-1 md:flex">
-                            <span className={cn('size-1.5 rounded-full', deribitState === 'LIVE' ? 'bg-[#2CC7A0]' : deribitState === 'DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
+                            <span className={cn('size-1.5 rounded-full', deribitState === 'LIVE' ? 'bg-[#2CC7A0]' : deribitState === 'SYNTHETIC_DEMO' ? 'bg-[#E6B450]' : 'bg-[#5C697A]')} />
                             Options {deribitState.toLowerCase()}
                         </span>
                         <span className="hidden items-center gap-1 lg:flex" data-testid="footer-tape-status">
@@ -1202,8 +1202,9 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                         <Dialog.Content className="fixed inset-x-0 bottom-0 z-50 max-h-[86dvh] overflow-y-auto rounded-t-xl border border-[#18212C] bg-[#0C1118] pb-[env(safe-area-inset-bottom)] md:hidden">
                             <Dialog.Title className="sr-only">Decision Dock &amp; Options</Dialog.Title>
                             <DecisionDock
+                                        paperDesk={paperDesk}
                                 metrics={metrics}
-                                data={data}
+                                data={effectiveOptionsData}
                                 marketFeed={marketFeed}
                                 liquidityFeed={liquidityFeed}
                                 isError={isError}

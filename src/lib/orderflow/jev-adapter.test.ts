@@ -189,7 +189,7 @@ describe('Jev Shadow Adapter (UX16.7)', () => {
         });
 
         expect(response.stance).toBe('ABSTAIN');
-        expect(response.summary).toContain('timed out');
+        expect(response.summary).toBe('Jev shadow evaluation unavailable.');
     });
 
     it('evaluates an A-grade setup and returns AGREE stance with structured explanation', async () => {

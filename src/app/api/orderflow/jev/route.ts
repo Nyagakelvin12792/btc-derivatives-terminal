@@ -11,21 +11,37 @@ const NO_STORE = 'no-store';
 const MAX_JEV_PAYLOAD_BYTES = 64 * 1024;
 
 export async function POST(req: NextRequest) {
-    let rawText: string;
+    const headers = { 'Cache-Control': NO_STORE };
+    const oversized = () => NextResponse.json(
+        createAbstainResponse('jev-oversized-payload', 'Request payload exceeds 64 KB limit'),
+        { status: 413, headers }
+    );
+    if (Number(req.headers.get('content-length')) > MAX_JEV_PAYLOAD_BYTES) return oversized();
+    const reader = req.body?.getReader();
+    const decoder = new TextDecoder('utf-8', { fatal: true });
+    let rawText = '';
+    let bytes = 0;
     try {
-        rawText = await req.text();
+        if (reader) {
+            for (;;) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                bytes += value.byteLength;
+                if (bytes > MAX_JEV_PAYLOAD_BYTES) {
+                    void reader.cancel().catch(() => undefined);
+                    return oversized();
+                }
+                rawText += decoder.decode(value, { stream: true });
+            }
+            rawText += decoder.decode();
+        }
     } catch {
         return NextResponse.json(
             createAbstainResponse('jev-invalid-body', 'Unable to read request body'),
-            { status: 400, headers: { 'Cache-Control': NO_STORE } }
+            { status: 400, headers }
         );
-    }
-
-    if (rawText.length > MAX_JEV_PAYLOAD_BYTES) {
-        return NextResponse.json(
-            createAbstainResponse('jev-oversized-payload', 'Request payload exceeds 64 KB limit'),
-            { status: 413, headers: { 'Cache-Control': NO_STORE } }
-        );
+    } finally {
+        reader?.releaseLock();
     }
 
     let rawBody: unknown;
@@ -42,7 +58,7 @@ export async function POST(req: NextRequest) {
     if (!parseResult.success) {
         return NextResponse.json(
             createAbstainResponse(
-                (rawBody as { featurePacketHash?: string })?.featurePacketHash || 'jev-invalid-schema',
+                'jev-invalid-schema',
                 'Schema validation failed'
             ),
             { status: 400, headers: { 'Cache-Control': NO_STORE } }

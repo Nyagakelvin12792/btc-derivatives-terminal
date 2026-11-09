@@ -6,8 +6,10 @@ import { cn } from '../../lib/ui/cn';
 import { JevAdvisoryPanel } from './JevAdvisoryPanel';
 import OptionsStrikeExpiryMatrix from './OptionsStrikeExpiryMatrix';
 import UsMarketContextDrawer from './UsMarketContextDrawer';
+import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 
 export interface ContextModeProps {
+    optionsContract?: TerrainDataContractV2;
     spotPrice: number;
     callWall: number;
     putWall: number;
@@ -26,6 +28,7 @@ export interface ContextModeProps {
 }
 
 export default function ContextMode({
+    optionsContract,
     spotPrice,
     callWall,
     putWall,
@@ -155,6 +158,7 @@ export default function ContextMode({
 
             {/* 2D Strike x Expiry Options Matrix (UX20.5-SURFACE-06) */}
             <OptionsStrikeExpiryMatrix
+                contract={optionsContract}
                 spotPrice={spotPrice}
                 callWall={callWall}
                 putWall={putWall}

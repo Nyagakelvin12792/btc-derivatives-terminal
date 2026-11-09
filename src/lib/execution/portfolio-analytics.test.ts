@@ -30,13 +30,13 @@ describe('UX20.4-PORTFOLIO-03 Portfolio Analytics & Attribution Engine', () => {
             close: 71_250,
         });
 
-        // Trade 2: Losing Short (-1R)
+        // Trade 2: Losing Long (-1R)
         ledger.openPositionWithSizing({
             timestampMs: startTs + 1200_000,
-            side: 'SHORT',
+            side: 'LONG',
             entryPrice: 71_000,
-            stopPrice: 71_500,
-            targetPrice: 69_800,
+            stopPrice: 70_500,
+            targetPrice: 72_200,
             strategyId: 'MANUAL_DISCRETIONARY',
             executionSource: 'MANUAL',
             sessionTag: 'LONDON',
@@ -46,7 +46,7 @@ describe('UX20.4-PORTFOLIO-03 Portfolio Analytics & Attribution Engine', () => {
             timestampMs: startTs + 1800_000,
             open: 71_000,
             high: 71_600,
-            low: 70_900,
+            low: 70_400,
             close: 71_550,
         });
 

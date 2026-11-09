@@ -272,9 +272,12 @@ export function buildTerrainDataContract(params: {
     };
 }
 
-export function buildDemoTerrainDataContract(spotPrice: number, now: Date): TerrainDataContractV2 {
+export function buildDemoTerrainDataContract(
+    spotPrice: number, now: Date, filter?: (options: readonly NormalizedDeribitOption[]) => readonly NormalizedDeribitOption[],
+): TerrainDataContractV2 {
+    const options = buildDemoOptions(spotPrice, now);
     return buildTerrainDataContract({
-        options: buildDemoOptions(spotPrice, now),
+        options: filter ? filter(options) : options,
         spotPrice,
         now,
         dataMode: 'DEMO',
@@ -311,8 +314,7 @@ function calculatePutWall(exposures: readonly ContractExposure[]): KeyLevel {
         if (exposure.option.type !== 'put') continue;
         byStrike.set(exposure.option.strike, (byStrike.get(exposure.option.strike) ?? 0) + exposure.gexExposure);
     }
-    const fallback: number = exposures[0]?.option.strike ?? 0;
-    let bestStrike: number = fallback;
+    let bestStrike = 0;
     let bestExposure = 0;
     for (const [strike, exposure] of byStrike.entries()) {
         if (Math.abs(exposure) > Math.abs(bestExposure)) {
@@ -625,6 +627,7 @@ function buildKeyContracts(
                 confluenceScore,
                 behaviorZone,
                 volume: exposure.option.volume,
+                volumeUsd: exposure.option.volumeUsd,
             };
         })
         .sort((a, b) => Math.abs(b.gexExposure) - Math.abs(a.gexExposure))
