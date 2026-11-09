@@ -1,15 +1,19 @@
 /**
- * Jev Shadow Server Adapter (Milestone UX16.7)
+ * Jev Shadow Server Adapter (Milestone UX16.7 & UX20.2-JEV-01)
  *
- * Implements server-side schema-validated, rate-limited, kill-switched explanation
- * of an accepted deterministic feature packet.
+ * Implements server-side schema-validated, canonical-keyed, kill-switched deterministic
+ * explanation of an accepted setup feature packet.
  *
- * Jev can never alter state, grade, trigger, invalidation, or risk.
- * Conforms to Section 21 of the Institutional Activity Map Implementation Plan.
+ * Security & Integrity Guarantees (UX20.2-JEV-01):
+ * - Zero external LLM/provider calls with or without an API key ($0 spend).
+ * - Server-derived canonical packet hash prevents cross-user client hash collisions.
+ * - Abstention check runs BEFORE cache lookup so NO_SETUP after AGREE never returns a cached AGREE.
+ * - Bounded in-memory cache (max 256 entries, 60s TTL).
  */
 
 import {
     ORDERFLOW_SCHEMA_VERSION,
+    computeFeaturePacketHash,
     type JevShadowRequestV1,
     type JevShadowResponseV1,
     JevShadowRequestV1Schema,
@@ -25,23 +29,51 @@ export interface EvaluateJevShadowOptions {
     mockEvaluator?: (req: JevShadowRequestV1) => Promise<Partial<JevShadowResponseV1>>;
 }
 
-/**
- * In-memory short TTL cache (60s) keyed by featurePacketHash.
- */
 const cache = new Map<string, { response: JevShadowResponseV1; expiresAt: number }>();
 const CACHE_TTL_MS = 60_000;
+const MAX_CACHE_ENTRIES = 256;
 
 export function clearJevShadowCache(): void {
     cache.clear();
 }
 
-/**
- * Creates a safe fallback abstention response.
- */
+function setBoundedCache(key: string, response: JevShadowResponseV1): void {
+    const now = Date.now();
+    if (cache.size >= MAX_CACHE_ENTRIES) {
+        // Evict expired or oldest entry
+        for (const [k, v] of cache.entries()) {
+            if (v.expiresAt <= now) {
+                cache.delete(k);
+            }
+        }
+        if (cache.size >= MAX_CACHE_ENTRIES) {
+            const firstKey = cache.keys().next().value;
+            if (firstKey !== undefined) cache.delete(firstKey);
+        }
+    }
+    cache.set(key, { response, expiresAt: now + CACHE_TTL_MS });
+}
+
+export function computeServerCanonicalPacketHash(request: JevShadowRequestV1): string {
+    const a = request.assessment;
+    return computeFeaturePacketHash({
+        state: a.state,
+        grade: a.grade,
+        zoneLabel: a.zone?.label ?? null,
+        zoneLow: a.zone?.low ?? null,
+        zoneHigh: a.zone?.high ?? null,
+        triggerPrice: a.trigger?.price ?? null,
+        invalidationPrice: a.invalidation?.price ?? null,
+        evidenceIds: a.evidenceIds,
+        conflictIds: a.conflictIds,
+        mandatoryGates: a.mandatoryGates,
+    });
+}
+
 export function createAbstainResponse(
     featurePacketHash: string,
     reason: string,
-    model: string = 'jev-v1-shadow'
+    model: string = 'jev-v1-local-deterministic'
 ): JevShadowResponseV1 {
     return {
         schemaVersion: ORDERFLOW_SCHEMA_VERSION,
@@ -58,50 +90,47 @@ export function createAbstainResponse(
     };
 }
 
-/**
- * Evaluates Jev shadow explanation with strict server safeguards.
- */
 export async function evaluateJevShadow(options: EvaluateJevShadowOptions): Promise<JevShadowResponseV1> {
     const {
         request,
         enabled = process.env.JEV_SHADOW_ENABLED === 'true',
-        apiKey = process.env.JEV_API_KEY || process.env.GEMINI_API_KEY,
-        model = 'jev-v1-shadow',
+        model = 'jev-v1-local-deterministic',
         timeoutMs = 4000,
         mockEvaluator,
     } = options;
 
     // 1. Strict Schema Validation on Input Request
     const validatedRequest = JevShadowRequestV1Schema.parse(request);
-    const hash = validatedRequest.featurePacketHash;
+    const serverCanonicalHash = computeServerCanonicalPacketHash(validatedRequest);
+    const responseHash = validatedRequest.featurePacketHash;
 
     // 2. Kill Switch Safeguard
     if (!enabled) {
-        return createAbstainResponse(hash, 'Jev shadow explanation is disabled by kill switch.', model);
+        return createAbstainResponse(responseHash, 'Jev shadow explanation is disabled by kill switch.', model);
     }
 
-    // 3. Cache Lookup
-    const cached = cache.get(hash);
+    // 3. Abstention Check BEFORE Cache Lookup (prevents reused client key returning stale AGREE on NO_SETUP)
+    if (
+        validatedRequest.assessment.state === 'INSUFFICIENT_DATA' ||
+        validatedRequest.assessment.state === 'AVOID' ||
+        validatedRequest.assessment.state === 'NO_SETUP' ||
+        validatedRequest.missingInputs.length > 0 ||
+        validatedRequest.assessment.dataQuality.quality === 'UNAVAILABLE'
+    ) {
+        const reason = validatedRequest.missingInputs.length > 0
+            ? `Missing required market inputs (${validatedRequest.missingInputs.join(', ')}). Jev shadow abstains.`
+            : `Deterministic state is ${validatedRequest.assessment.state}. Jev shadow abstains on unqualified setups.`;
+        return createAbstainResponse(responseHash, reason, model);
+    }
+
+    // 4. Server-Owned Canonical Cache Key Lookup
+    const cacheKey = `${serverCanonicalHash}::${responseHash}`;
+    const cached = cache.get(cacheKey);
     if (cached && cached.expiresAt > Date.now()) {
         return cached.response;
     }
 
-    // 4. Missing Critical Data or Non-Actionable State Safeguard
-    if (
-        validatedRequest.assessment.state === 'INSUFFICIENT_DATA' ||
-        validatedRequest.assessment.state === 'AVOID' ||
-        validatedRequest.assessment.state === 'NO_SETUP'
-    ) {
-        const abstain = createAbstainResponse(
-            hash,
-            `Deterministic state is ${validatedRequest.assessment.state}. Jev shadow abstains on unqualified setups.`,
-            model
-        );
-        cache.set(hash, { response: abstain, expiresAt: Date.now() + CACHE_TTL_MS });
-        return abstain;
-    }
-
-    // 5. Execution via Mock Evaluator or Upstream Model
+    // 5. Pure Local Deterministic Synthesis (or test mockEvaluator) — Zero external LLM calls
     try {
         let responsePayload: JevShadowResponseV1;
 
@@ -128,18 +157,9 @@ export async function evaluateJevShadow(options: EvaluateJevShadowOptions): Prom
                 riskNotes: result.riskNotes ?? [],
                 model,
                 generatedAt: new Date().toISOString(),
-                featurePacketHash: hash,
+                featurePacketHash: responseHash,
             });
-        } else if (!apiKey) {
-            // No credentials configured server-side
-            return createAbstainResponse(
-                hash,
-                'Jev upstream model credentials not configured. Adapter abstains.',
-                model
-            );
         } else {
-            // Deterministic synthesis based on verified setup gates & evidence
-            // (Provides high-availability bounded explanation without unvetted external calls)
             const isLong = validatedRequest.assessment.state.includes('LONG');
             const grade = validatedRequest.assessment.grade;
             const zone = validatedRequest.assessment.zone;
@@ -186,19 +206,18 @@ export async function evaluateJevShadow(options: EvaluateJevShadowOptions): Prom
                 ],
                 model,
                 generatedAt: new Date().toISOString(),
-                featurePacketHash: hash,
+                featurePacketHash: responseHash,
             });
         }
 
-        // Feature hash validation safeguard
-        if (responsePayload.featurePacketHash !== hash) {
-            return createAbstainResponse(hash, 'Feature packet hash mismatch detected. Response discarded.', model);
+        if (responsePayload.featurePacketHash !== responseHash) {
+            return createAbstainResponse(responseHash, 'Feature packet hash mismatch detected. Response discarded.', model);
         }
 
-        cache.set(hash, { response: responsePayload, expiresAt: Date.now() + CACHE_TTL_MS });
+        setBoundedCache(cacheKey, responsePayload);
         return responsePayload;
     } catch (err: unknown) {
         const errorMsg = err instanceof Error ? err.message : 'Unknown error';
-        return createAbstainResponse(hash, `Jev shadow evaluation degraded: ${errorMsg}`, model);
+        return createAbstainResponse(responseHash, `Jev shadow evaluation degraded: ${errorMsg}`, model);
     }
 }

@@ -3,50 +3,62 @@ import { z } from 'zod';
 import { TerrainDataContractV2 } from '@/lib/terrain/types';
 import type { DeribitDteFilter } from '@/lib/deribit/dte-filter';
 
-// Zod Schema for API Boundary Runtime Validation
+// Strict Zod Schema for API Boundary Runtime Validation (UX20.1-LIVE-01 / P1-3)
 export const TerrainDataSchema = z.object({
-    schemaVersion: z.number(),
-    timestamp: z.string(),
+    schemaVersion: z.number().int().positive(),
+    timestamp: z.string().min(1),
     dataMode: z.enum(['LIVE', 'DEMO', 'DEGRADED']),
-    assumptionModel: z.string(),
-    spotPrice: z.number(),
+    assumptionModel: z.string().min(1),
+    spotPrice: z.number().finite().positive(),
     summary: z.object({
-        totalCallGex: z.number(),
-        totalPutGex: z.number(),
-        netGex: z.number(),
-        totalVannaExposure: z.number(),
-        totalCharmExposure: z.number(),
-        totalOpenInterest: z.number(),
-        gammaFlip: z.number(),
-        maxPainStrike: z.number(),
-        topPositiveGexStrike: z.number(),
-        topNegativeGexStrike: z.number(),
-        callWallExposure: z.number(),
-        putWallExposure: z.number(),
-        contractsCount: z.number(),
+        totalCallGex: z.number().finite(),
+        totalPutGex: z.number().finite(),
+        netGex: z.number().finite(),
+        totalVannaExposure: z.number().finite(),
+        totalCharmExposure: z.number().finite(),
+        totalOpenInterest: z.number().finite().nonnegative(),
+        gammaFlip: z.number().finite().nonnegative(),
+        maxPainStrike: z.number().finite().nonnegative(),
+        topPositiveGexStrike: z.number().finite().nonnegative(),
+        topNegativeGexStrike: z.number().finite().nonnegative(),
+        callWallExposure: z.number().finite(),
+        putWallExposure: z.number().finite(),
+        contractsCount: z.number().int().nonnegative(),
     }),
     scales: z.object({
-        gex: z.object({ min: z.number(), max: z.number(), robustAbsMax: z.number(), unit: z.string() }),
-        vanna: z.object({ min: z.number(), max: z.number(), robustAbsMax: z.number(), unit: z.string() }),
-        charm: z.object({ min: z.number(), max: z.number(), robustAbsMax: z.number(), unit: z.string() }),
-        openInterest: z.object({ min: z.number(), max: z.number(), robustAbsMax: z.number(), unit: z.string() }),
+        gex: z.object({ min: z.number().finite(), max: z.number().finite(), robustAbsMax: z.number().finite(), unit: z.string() }),
+        vanna: z.object({ min: z.number().finite(), max: z.number().finite(), robustAbsMax: z.number().finite(), unit: z.string() }),
+        charm: z.object({ min: z.number().finite(), max: z.number().finite(), robustAbsMax: z.number().finite(), unit: z.string() }),
+        openInterest: z.object({ min: z.number().finite(), max: z.number().finite(), robustAbsMax: z.number().finite(), unit: z.string() }),
     }),
-    strikes: z.array(z.number()),
+    strikes: z.array(z.number().finite().positive()),
     expirations: z.array(z.string()),
-    dtes: z.array(z.number()),
-    surfaceGrid: z.array(z.array(z.any())),
-    keyLevels: z.any(),
-    maxPainByExpiry: z.array(z.any()),
-    confluenceLevels: z.array(z.any()),
-    vannaContours: z.array(z.any()),
-    charmGlyphs: z.array(z.any()),
-    confluenceFloor: z.array(z.array(z.any())),
-    keyContracts: z.array(z.any()),
+    dtes: z.array(z.number().finite().nonnegative()),
+    surfaceGrid: z.array(z.array(z.unknown())),
+    keyLevels: z.record(z.string(), z.unknown()),
+    maxPainByExpiry: z.array(z.unknown()),
+    confluenceLevels: z.array(z.unknown()),
+    vannaContours: z.array(z.unknown()),
+    charmGlyphs: z.array(z.unknown()),
+    confluenceFloor: z.array(z.array(z.unknown())),
+    keyContracts: z.array(z.unknown()),
 });
 
-export async function fetchTerrainData(mode: 'LIVE' | 'DEMO' | 'DEGRADED', dteFilter: DeribitDteFilter = 'ALL'): Promise<TerrainDataContractV2> {
+export async function fetchTerrainData(
+    mode: 'LIVE' | 'DEMO' | 'DEGRADED',
+    dteFilter: DeribitDteFilter = 'ALL',
+    exactExpiry?: string | null,
+): Promise<TerrainDataContractV2> {
     const params = new URLSearchParams({ dte: dteFilter });
-    if (mode === 'DEMO') params.set('mode', 'demo');
+    if (mode === 'DEMO') {
+        params.set('mode', 'demo');
+    } else if (mode === 'LIVE') {
+        params.set('strict', '1');
+    }
+    if (exactExpiry && exactExpiry.trim().length > 0 && exactExpiry !== 'ALL') {
+        params.set('expiry', exactExpiry.trim());
+    }
+
     const url = `/api/deribit?${params}`;
     const res = await fetch(url);
 
@@ -54,24 +66,32 @@ export async function fetchTerrainData(mode: 'LIVE' | 'DEMO' | 'DEGRADED', dteFi
         throw new Error(`Failed to fetch terrain feed: ${res.status} ${res.statusText}`);
     }
 
-    const json = await res.json();
+    const json: unknown = await res.json();
     const parsed = TerrainDataSchema.safeParse(json);
 
     if (!parsed.success) {
-        console.warn('Terrain API schema validation warning:', parsed.error);
-        return json as TerrainDataContractV2;
+        throw new Error(`Terrain API schema validation failed: ${parsed.error.issues[0]?.message ?? 'Malformed payload'}`);
     }
 
-    return parsed.data as TerrainDataContractV2;
+    if (mode === 'LIVE' && parsed.data.dataMode !== 'LIVE') {
+        throw new Error(`Refusing non-LIVE terrain payload (${parsed.data.dataMode}) while terminal is in LIVE mode`);
+    }
+
+    return parsed.data as unknown as TerrainDataContractV2;
 }
 
-export function useTerrainQuery(dataMode: 'LIVE' | 'DEMO' | 'DEGRADED', dteFilter: DeribitDteFilter = 'ALL') {
+export function useTerrainQuery(
+    dataMode: 'LIVE' | 'DEMO' | 'DEGRADED',
+    dteFilter: DeribitDteFilter = 'ALL',
+    exactExpiry?: string | null,
+) {
+    const normalizedExpiry = exactExpiry && exactExpiry.trim().length > 0 ? exactExpiry.trim() : 'ALL';
     return useQuery({
-        queryKey: ['terrainData', dataMode, dteFilter],
-        queryFn: () => fetchTerrainData(dataMode, dteFilter),
+        queryKey: ['terrainData', dataMode, dteFilter, normalizedExpiry],
+        queryFn: () => fetchTerrainData(dataMode, dteFilter, exactExpiry),
         refetchInterval: dataMode === 'LIVE' ? 3000 : false,
         staleTime: dataMode === 'LIVE' ? 2500 : Infinity,
-        retry: 2,
+        retry: 1,
         refetchOnWindowFocus: dataMode === 'LIVE',
     });
 }

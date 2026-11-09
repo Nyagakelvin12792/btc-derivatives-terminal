@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
     evaluateJevDecision,
+    evaluateJevDecisionFromPartial,
     type DeterministicMarketState,
 } from './jev-framework';
 
@@ -58,5 +59,27 @@ describe('Jev Decision Framework (UX19.6)', () => {
         expect(res.tradeScenario.cautions.length).toBeGreaterThan(0);
         expect(res.tradeScenario.cautions[0]).toContain('Call Wall');
         expect(res.stance).toBe('CAUTION');
+    });
+
+    it('abstains when required market-state inputs are missing instead of inventing fallback values (UX20.2-JEV-01)', () => {
+        const partial = {
+            currentPrice: 78500,
+            vwapPrice: undefined,
+            vpPoc: undefined,
+            vpVah: 78900,
+            vpVal: 77500,
+            netDelta: undefined,
+            cvdSlope: 'RISING' as const,
+            gammaRegime: 'SHORT_GAMMA_EXPANSION' as const,
+            callWall: undefined,
+            putWall: 76000,
+            dataQualityOk: true,
+            spreadBps: 1.2,
+        };
+
+        const res = evaluateJevDecisionFromPartial(partial, 'ADVISORY');
+        expect(res.stance).toBe('ABSTAIN');
+        expect(res.gatePassed).toBe(false);
+        expect(res.advisorySummary).toContain('Abstaining: missing required market inputs');
     });
 });

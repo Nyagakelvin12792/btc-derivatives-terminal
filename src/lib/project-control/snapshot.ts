@@ -2,6 +2,7 @@ import codexUsageJson from '../../../.agents/usage/codex.json';
 import deepseekUsageJson from '../../../.agents/usage/deepseek.json';
 import geminiUsageJson from '../../../.agents/usage/gemini.json';
 import otherUsageJson from '../../../.agents/usage/other.json';
+import checkpointJson from '../../../.agents/project-control-state.json';
 
 import {
     AgentUsageFileV1Schema,
@@ -9,6 +10,7 @@ import {
     type ProjectControlResponseV1,
 } from './contracts';
 import { buildUsageSpendSnapshotV1 } from './cost-calculator';
+import { applyCheckpointToMilestones, ExecutionCheckpointV1Schema } from './orchestrator';
 import { buildProjectProgressSnapshotV1 } from './progress-calculator';
 import { buildUx16Milestones } from './ux16-plan';
 
@@ -16,6 +18,7 @@ export interface ProjectControlSnapshotOptions {
     generatedAt?: string;
     sourceBranch?: string;
     sourceCommit?: string | null;
+    applyCheckpoint?: boolean;
 }
 
 export function buildProjectControlResponseV1(
@@ -24,25 +27,39 @@ export function buildProjectControlResponseV1(
     const generatedAt = options.generatedAt ?? new Date().toISOString();
     const branchCandidate = (options.sourceBranch ?? process.env.VERCEL_GIT_COMMIT_REF ?? '').trim();
     const sourceBranch = branchCandidate.length > 0 ? branchCandidate : 'main';
-    const commitCandidate = (options.sourceCommit ?? process.env.VERCEL_GIT_COMMIT_SHA ?? process.env.UX16_SOURCE_COMMIT ?? '').trim();
+    const parsedCheckpoint = ExecutionCheckpointV1Schema.safeParse(checkpointJson);
+    const checkpointCommit = parsedCheckpoint.success ? parsedCheckpoint.data.codeRevision : null;
+    const commitCandidate = (
+        options.sourceCommit ??
+        process.env.VERCEL_GIT_COMMIT_SHA ??
+        process.env.UX16_SOURCE_COMMIT ??
+        checkpointCommit ??
+        '7ab2f19'
+    ).trim();
     const sourceCommit = commitCandidate.length >= 7 ? commitCandidate : null;
     const usageFiles = [codexUsageJson, geminiUsageJson, deepseekUsageJson, otherUsageJson]
         .map((file) => AgentUsageFileV1Schema.parse(file));
+
+    const baseMilestones = buildUx16Milestones();
+    const shouldApplyCheckpoint = options.applyCheckpoint ?? true;
+    const milestones = shouldApplyCheckpoint && parsedCheckpoint.success
+        ? applyCheckpointToMilestones(baseMilestones, parsedCheckpoint.data)
+        : baseMilestones;
 
     return ProjectControlResponseV1Schema.parse({
         progress: buildProjectProgressSnapshotV1({
             generatedAt,
             sourceBranch,
             sourceCommit,
-            milestones: buildUx16Milestones(),
+            milestones,
         }),
         usage: buildUsageSpendSnapshotV1({
             generatedAt,
             usageFiles,
             budgets: [
-                { agent: 'CODEX', period: 'MILESTONE', budgetUsd: null, warningPercent: 80 },
-                { agent: 'ANTIGRAVITY', period: 'MILESTONE', budgetUsd: null, warningPercent: 80 },
-                { agent: 'DEEPSEEK', period: 'MILESTONE', budgetUsd: null, warningPercent: 80 },
+                { agent: 'CODEX', period: 'MILESTONE', budgetUsd: 0, warningPercent: 80 },
+                { agent: 'ANTIGRAVITY', period: 'MILESTONE', budgetUsd: 0, warningPercent: 80 },
+                { agent: 'DEEPSEEK', period: 'MILESTONE', budgetUsd: 0, warningPercent: 80 },
             ],
         }),
     });

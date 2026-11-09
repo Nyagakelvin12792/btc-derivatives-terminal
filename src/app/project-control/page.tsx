@@ -30,6 +30,14 @@ export default function ProjectControlPage() {
                     </div>
 
                     <div className="flex items-center gap-2 font-mono text-[8px] text-[#5C697A]">
+                        <Link
+                            href="/project-control/ux20"
+                            className="rounded border border-[#39A9F5]/40 bg-[#39A9F5]/15 px-2 py-0.5 font-bold text-[#39A9F5] hover:bg-[#39A9F5]/25"
+                            data-testid="open-ux20-dashboard-link"
+                        >
+                            UX20 MASTER PLAN DASHBOARD →
+                        </Link>
+                        <span>·</span>
                         <span>READ-ONLY OBSERVABILITY</span>
                         <span>·</span>
                         <span className="rounded bg-[#18212C] px-1.5 py-0.5 text-[#39A9F5]">NO LIVE EXECUTION</span>

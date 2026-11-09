@@ -284,3 +284,104 @@ export function evaluateJevDecision(
         gatePassed: true,
     };
 }
+
+
+const REQUIRED_MARKET_STATE_FIELDS: ReadonlyArray<keyof DeterministicMarketState> = [
+    'currentPrice',
+    'vwapPrice',
+    'vpPoc',
+    'vpVah',
+    'vpVal',
+    'netDelta',
+    'cvdSlope',
+    'gammaRegime',
+    'callWall',
+    'putWall',
+    'dataQualityOk',
+    'spreadBps',
+];
+
+/**
+ * Evaluates a partial market state fail-closed (UX20.2-JEV-01 / P0-1):
+ * If any required field is missing, non-finite, or non-positive for prices,
+ * abstains immediately without inventing fallback numbers, grades, or targets.
+ */
+export function evaluateJevDecisionFromPartial(
+    partial: Partial<DeterministicMarketState> | undefined | null,
+    mode: JevOperationalMode = 'SHADOW',
+): JevAdvisoryOutput {
+    const now = Date.now();
+    if (mode === 'DISABLED') {
+        return evaluateJevDecision(
+            {
+                currentPrice: 0,
+                vwapPrice: 0,
+                vpPoc: 0,
+                vpVah: 0,
+                vpVal: 0,
+                netDelta: 0,
+                cvdSlope: 'FLAT',
+                gammaRegime: 'LONG_GAMMA_MEAN_REVERTING',
+                callWall: 0,
+                putWall: 0,
+                dataQualityOk: false,
+                spreadBps: 0,
+            },
+            'DISABLED',
+        );
+    }
+
+    const missingFields: string[] = [];
+    if (!partial) {
+        missingFields.push(...REQUIRED_MARKET_STATE_FIELDS);
+    } else {
+        for (const key of REQUIRED_MARKET_STATE_FIELDS) {
+            const val = partial[key];
+            if (val === undefined || val === null) {
+                missingFields.push(String(key));
+            } else if (typeof val === 'number' && !Number.isFinite(val)) {
+                missingFields.push(String(key));
+            } else if (
+                (key === 'currentPrice' ||
+                    key === 'vwapPrice' ||
+                    key === 'vpPoc' ||
+                    key === 'vpVah' ||
+                    key === 'vpVal' ||
+                    key === 'callWall' ||
+                    key === 'putWall') &&
+                typeof val === 'number' &&
+                val <= 0
+            ) {
+                missingFields.push(String(key));
+            }
+        }
+    }
+
+    if (missingFields.length > 0) {
+        return {
+            mode,
+            timestamp: now,
+            regime: 'COMPRESSION',
+            bias: 'NEUTRAL',
+            setupGrade: 'NONE',
+            confluenceCount: 0,
+            confluences: [],
+            stance: 'ABSTAIN',
+            confidenceScore: 0,
+            invalidationPrice: 0,
+            triggerPrice: 0,
+            targetPrice: 0,
+            advisorySummary: `Abstaining: missing required market inputs (${missingFields.join(', ')}). No synthetic values are substituted.`,
+            tradeScenario: {
+                setupName: 'NO TRADE - MISSING INPUTS',
+                recommendedRiskR: 0,
+                conditionsMet: [],
+                cautions: [`Missing verified inputs: ${missingFields.join(', ')}`],
+                noTradeReason: `Incomplete market state (${missingFields.join(', ')})`,
+            },
+            gatePassed: false,
+        };
+    }
+
+    return evaluateJevDecision(partial as DeterministicMarketState, mode);
+}

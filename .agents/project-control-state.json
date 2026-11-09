@@ -1,14 +1,70 @@
 {
   "schemaVersion": "execution-checkpoint-v1",
-  "initiativeId": "UX17-MINIMALIST-WORKSPACE",
-  "activeMilestoneId": null,
-  "activeTaskId": null,
-  "assignedAgent": null,
-  "taskStartedAt": null,
-  "lastCheckpointAt": "2026-11-04T14:46:00.000Z",
-  "codeRevision": "fc044c8",
+  "initiativeId": "UX20-BTC-TERMINAL-MASTER-PLAN",
+  "activeMilestoneId": "UX20.7",
+  "activeTaskId": "UX20.7-GATE-01",
+  "assignedAgent": "ARCHITECT",
+  "taskStartedAt": "2026-11-09T17:10:00.000Z",
+  "lastCheckpointAt": "2026-11-09T17:10:00.000Z",
+  "codeRevision": "7ab2f19",
   "maxRetries": 3,
   "overrides": {
+    "UX20.0-BASE-01": {
+      "taskId": "UX20.0-BASE-01",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "7ab2f19",
+      "branch": "main",
+      "startedAt": "2026-11-09T16:25:00.000Z",
+      "completedAt": "2026-11-09T16:32:00.000Z",
+      "updatedAt": "2026-11-09T16:32:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-09T16:32:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux20-0-base-01-test",
+          "command": "npx vitest run src/lib/project-control/project-control.test.ts",
+          "result": "PASS",
+          "passed": 8,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-09T16:32:00.000Z",
+          "commit": "7ab2f19",
+          "artifactPaths": ["docs/architecture.md", "docs/calculation-conventions.md"]
+        }
+      ]
+    },
+    "UX20.0-TRACK-02": {
+      "taskId": "UX20.0-TRACK-02",
+      "status": "COMPLETE",
+      "evidenceStatus": "ACCEPTED",
+      "commit": "7ab2f19",
+      "branch": "main",
+      "startedAt": "2026-11-09T16:30:00.000Z",
+      "completedAt": "2026-11-09T16:35:00.000Z",
+      "updatedAt": "2026-11-09T16:35:00.000Z",
+      "reviewedBy": "ARCHITECT",
+      "reviewedAt": "2026-11-09T16:35:00.000Z",
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": [
+        {
+          "id": "ux20-0-track-02-test",
+          "command": "npx vitest run src/lib/project-control/project-control.test.ts",
+          "result": "PASS",
+          "passed": 8,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-09T16:35:00.000Z",
+          "commit": "7ab2f19",
+          "artifactPaths": ["docs/ui-ux/UX20_PROGRESS.md", "src/lib/project-control/ux20-plan.ts"]
+        }
+      ]
+    },
     "UX17.0-AUDIT-01": {
       "taskId": "UX17.0-AUDIT-01",
       "status": "COMPLETE",

@@ -1,5 +1,7 @@
 # UI/UX Overhaul Progress
 
+> **UX20 Master Plan Active:** See [UX20_PROGRESS.md](./UX20_PROGRESS.md) for the canonical UX20 Master Plan implementation ledger and `/project-control/ux20` for live dashboard telemetry.
+
 Version: 3.22
 Last updated: 2026-11-04
 Overall status: UX16.0–UX16.8 & UX17.0–UX17.11 COMPLETE (100.0% IMPLEMENTED / 100.0% TESTED) · MINIMALIST INSTITUTIONAL WORKSPACE & PROJECT CONTROL INTEGRATION

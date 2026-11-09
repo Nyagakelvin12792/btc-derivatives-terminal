@@ -825,7 +825,7 @@ export default function MarketStructureChart({
         const previousCount = previousBarCountRef.current;
         const contextChanged = chartContextRef.current !== chartContextKey;
         const wasAtRealtimeEdge = previousRange !== null && previousRange.to >= previousCount - 1.5;
-        candles.setData(bars);
+        if (!contextChanged && previousCount === bars.length && bars.length > 0) { candles.update(bars[bars.length - 1]); } else { candles.setData(bars); }
         if (contextChanged || previousRange === null) {
             chartContextRef.current = chartContextKey;
             showRecentBars(chart, bars.length);
@@ -980,7 +980,42 @@ export default function MarketStructureChart({
         return () => {
             cancelAnimationFrame(frame);
         };
-    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, drawingDraft, drawings, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
+    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
+
+    useEffect(() => {
+        const chart = priceChartRef.current;
+        const candles = priceSeriesRef.current;
+        if (!chart || !candles || !bars.length) return;
+        const hostWidth = chartHostRef.current?.clientWidth || overlayLayout.width || 800;
+        const hostHeight = chartHostRef.current?.clientHeight || overlayLayout.height || 460;
+        const barTimes = bars.map((bar) => Number(bar.time));
+        const tfSec = TIMEFRAME_SECONDS[timeframe];
+        const continuousTimeToX = (timeSeconds: number): number | null => {
+            const logical = timeToLogicalIndex(barTimes, timeSeconds, tfSec);
+            if (logical !== null) {
+                const logicalCoord = chart.timeScale().logicalToCoordinate(logical as any);
+                if (logicalCoord !== null && Number.isFinite(Number(logicalCoord))) {
+                    return Number(logicalCoord);
+                }
+            }
+            const direct = chart.timeScale().timeToCoordinate(timeSeconds as DemoMarketBar['time']);
+            return direct === null ? null : Number(direct);
+        };
+        const projector: ChartProjector = {
+            timeToX: continuousTimeToX,
+            priceToY: (price: number) => {
+                const coord = candles.priceToCoordinate(price);
+                return coord === null ? null : Number(coord);
+            },
+            width: hostWidth,
+            height: hostHeight,
+        };
+        const drawingSource = drawingDraft ? [...drawings, drawingDraft] : drawings;
+        setDrawingViews(drawingSource.flatMap((drawing) => {
+            const view = projectDrawing(drawing, projector, drawing.id === 'drawing-preview');
+            return view ? [view] : [];
+        }));
+    }, [bars, drawingDraft, drawings, overlayLayout.height, overlayLayout.width, timeframe, visibleLogicalRangeState]);
 
     useEffect(() => {
         if (!studyPaneOpen || !hasChartData) return;

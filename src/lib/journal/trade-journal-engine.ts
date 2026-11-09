@@ -6,6 +6,8 @@
  * Provides clean CSV export for institutional record-keeping.
  */
 
+import { sanitizeCsvCell } from '../security/csv-sanitizer';
+
 export interface TradeRecord {
     id: string;
     tradeNumber: number;
@@ -278,8 +280,8 @@ export class TradeJournalEngine {
             t.netPnl.toFixed(2),
             t.returnPercent.toFixed(2) + '%',
             t.rMultiple.toFixed(2) + 'R',
-            t.setupGrade,
-            `"${(t.notes || '').replace(/"/g, '""')}"`,
+            sanitizeCsvCell(t.setupGrade),
+            sanitizeCsvCell(t.notes || '', { forceQuote: true }),
         ]);
 
         return [headers.join(','), ...rows.map((r) => r.join(','))].join('\r\n');

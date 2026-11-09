@@ -23,6 +23,7 @@ import {
     type JevShadowResponseV1,
 } from '../../lib/orderflow/jev-contracts';
 import { cn } from '../../lib/ui/cn';
+import StrategyLabPanel from './StrategyLabPanel';
 
 export interface SetupModeProps {
     assessment: SetupAssessmentV1;
@@ -564,6 +565,7 @@ export default function SetupMode({
                 <p className="mt-2 text-[8px] leading-relaxed text-[#8390A0]">
                     Replay calibration verified across trend, range, volatility, gaps, spoof pulls, genuine persistence, and absorption. Rule-grade A cannot be promoted without empirical paper calibration.
                 </p>
+                <div className="mt-3"><StrategyLabPanel spotPrice={assessment.zone?.low ?? 69_800} /></div>
             </div>
         </div>
     );

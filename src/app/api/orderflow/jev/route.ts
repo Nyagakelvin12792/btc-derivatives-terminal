@@ -8,11 +8,29 @@ import {
 } from '../../../../lib/orderflow/jev-adapter';
 
 const NO_STORE = 'no-store';
+const MAX_JEV_PAYLOAD_BYTES = 64 * 1024;
 
 export async function POST(req: NextRequest) {
+    let rawText: string;
+    try {
+        rawText = await req.text();
+    } catch {
+        return NextResponse.json(
+            createAbstainResponse('jev-invalid-body', 'Unable to read request body'),
+            { status: 400, headers: { 'Cache-Control': NO_STORE } }
+        );
+    }
+
+    if (rawText.length > MAX_JEV_PAYLOAD_BYTES) {
+        return NextResponse.json(
+            createAbstainResponse('jev-oversized-payload', 'Request payload exceeds 64 KB limit'),
+            { status: 413, headers: { 'Cache-Control': NO_STORE } }
+        );
+    }
+
     let rawBody: unknown;
     try {
-        rawBody = await req.json();
+        rawBody = JSON.parse(rawText);
     } catch {
         return NextResponse.json(
             createAbstainResponse('jev-invalid-json', 'Invalid JSON body'),
@@ -25,7 +43,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
             createAbstainResponse(
                 (rawBody as { featurePacketHash?: string })?.featurePacketHash || 'jev-invalid-schema',
-                `Schema validation failed: ${parseResult.error.message}`
+                'Schema validation failed'
             ),
             { status: 400, headers: { 'Cache-Control': NO_STORE } }
         );
@@ -40,10 +58,9 @@ export async function POST(req: NextRequest) {
             status: 200,
             headers: { 'Cache-Control': NO_STORE },
         });
-    } catch (err: unknown) {
-        const message = err instanceof Error ? err.message : 'Unknown error';
+    } catch {
         return NextResponse.json(
-            createAbstainResponse(parseResult.data.featurePacketHash, `Jev evaluation failed: ${message}`),
+            createAbstainResponse(parseResult.data.featurePacketHash, 'Jev local evaluation failed closed'),
             { status: 200, headers: { 'Cache-Control': NO_STORE } }
         );
     }

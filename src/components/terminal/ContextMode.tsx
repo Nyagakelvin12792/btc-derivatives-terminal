@@ -4,6 +4,8 @@ import React from 'react';
 import { Target, Compass, Clock, CheckCircle2 } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
 import { JevAdvisoryPanel } from './JevAdvisoryPanel';
+import OptionsStrikeExpiryMatrix from './OptionsStrikeExpiryMatrix';
+import UsMarketContextDrawer from './UsMarketContextDrawer';
 
 export interface ContextModeProps {
     spotPrice: number;
@@ -147,6 +149,17 @@ export default function ContextMode({
                     )}
                 </div>
             </div>
+
+            {/* US Session & Macro Context Drawer (UX20.6-USVIEW-05) */}
+            <UsMarketContextDrawer />
+
+            {/* 2D Strike x Expiry Options Matrix (UX20.5-SURFACE-06) */}
+            <OptionsStrikeExpiryMatrix
+                spotPrice={spotPrice}
+                callWall={callWall}
+                putWall={putWall}
+                gammaFlip={gammaFlip}
+            />
 
             {/* Jev Structured Advisory Decision Framework (UX19.6) */}
             <JevAdvisoryPanel

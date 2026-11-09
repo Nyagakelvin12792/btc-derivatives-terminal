@@ -250,3 +250,55 @@ function normalizeDeribitOption(
         return null;
     }
 }
+
+export function normalizeIndexPriceStrict(payload: unknown): Usd {
+    const envelope = assertDeribitEnvelope(payload, 'object');
+    const result = envelope.result as Record<string, unknown>;
+    const indexPrice = finiteNumberInRange(result.index_price, MIN_USD_PRICE, MAX_USD_PRICE);
+    if (indexPrice === null || indexPrice <= 0) {
+        throw new DeribitValidationError('Deribit index_price is missing or out of valid bounds in strict LIVE mode');
+    }
+    return asUsd(indexPrice);
+}
+
+export interface DeribitStrictNormalizationResult {
+    readonly options: NormalizedDeribitOption[];
+    readonly totalActiveCount: number;
+    readonly validIvCount: number;
+    readonly droppedMissingIvCount: number;
+}
+
+export function normalizeDeribitOptionsStrict(
+    bookItems: readonly DeribitBookSummaryItem[],
+    now: Date,
+): DeribitStrictNormalizationResult {
+    if (!Number.isFinite(now.getTime())) {
+        throw new DeribitValidationError('Normalization timestamp must be a valid Date');
+    }
+
+    const options: NormalizedDeribitOption[] = [];
+    let totalActiveCount = 0;
+    let droppedMissingIvCount = 0;
+
+    for (const item of bookItems) {
+        const parsed = parseDeribitInstrument(item.instrumentName);
+        if (!parsed) continue;
+        const msDiff = parsed.expiryDate.getTime() - now.getTime();
+        if (msDiff <= 0) continue;
+        totalActiveCount += 1;
+
+        if (item.markIv === null || !Number.isFinite(item.markIv) || item.markIv <= 0) {
+            droppedMissingIvCount += 1;
+            continue;
+        }
+        const option = normalizeDeribitOption(item, now);
+        if (option) options.push(option);
+    }
+
+    return {
+        options,
+        totalActiveCount,
+        validIvCount: options.length,
+        droppedMissingIvCount,
+    };
+}

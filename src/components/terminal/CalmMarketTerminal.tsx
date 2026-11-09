@@ -277,22 +277,68 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         return () => window.clearInterval(timer);
     }, []);
 
+    const isLiveOptionsUnavailable = dataMode === 'LIVE' && (isError || data.dataMode !== 'LIVE');
+
+    const effectiveOptionsData = useMemo<TerrainDataContractV2>(() => {
+        if (isLiveOptionsUnavailable) {
+            return {
+                ...data,
+                dataMode: 'DEGRADED',
+                keyLevels: {} as TerrainDataContractV2['keyLevels'],
+                keyContracts: [],
+                confluenceLevels: [],
+                maxPainByExpiry: [],
+                surfaceGrid: [],
+                summary: {
+                    ...data.summary,
+                    totalCallGex: 0,
+                    totalPutGex: 0,
+                    netGex: 0,
+                    totalOpenInterest: 0,
+                    contractsCount: 0,
+                },
+            };
+        }
+        const exactExpiry =
+            selectedExpiryOverride && !DTE_FILTERS.includes(selectedExpiryOverride as (typeof DTE_FILTERS)[number])
+                ? selectedExpiryOverride
+                : null;
+        if (!exactExpiry) return data;
+
+        const filteredContracts = (data.keyContracts || []).filter((c) => {
+            const cExp = String((c as { expiration?: string; expiry?: string }).expiration ?? (c as { expiry?: string }).expiry ?? '');
+            return cExp === exactExpiry || cExp.startsWith(exactExpiry);
+        });
+        const filteredMaxPain = (data.maxPainByExpiry || []).filter((mp) => {
+            const mpExp = String((mp as { expiration?: string; expiry?: string }).expiration ?? (mp as { expiry?: string }).expiry ?? '');
+            return mpExp === exactExpiry || mpExp.startsWith(exactExpiry);
+        });
+        if (filteredContracts.length === 0 && filteredMaxPain.length === 0) {
+            return data;
+        }
+        return {
+            ...data,
+            keyContracts: filteredContracts.length > 0 ? filteredContracts : data.keyContracts,
+            maxPainByExpiry: filteredMaxPain.length > 0 ? filteredMaxPain : data.maxPainByExpiry,
+        };
+    }, [data, isLiveOptionsUnavailable, selectedExpiryOverride]);
+
     const metrics = useMemo<MarketMetrics>(() => {
-        const summary = data.summary as unknown as Record<string, unknown>;
-        const keyLevels = (data.keyLevels || {}) as unknown as Record<string, unknown>;
-        const spot = numeric(data.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
-        const callWall = levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? spot * 1.05;
-        const putWall = levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? spot * 0.95;
-        const gammaFlip = levelStrike(keyLevels.gammaFlip) ?? numeric(summary.gammaFlip) ?? spot;
-        const maxPain = levelStrike(keyLevels.primaryMaxPain) ?? numeric(summary.maxPainStrike) ?? spot;
+        const summary = effectiveOptionsData.summary as unknown as Record<string, unknown>;
+        const keyLevels = (effectiveOptionsData.keyLevels || {}) as unknown as Record<string, unknown>;
+        const spot = numeric(effectiveOptionsData.spotPrice, numeric(summary.spotPrice, 68_000)) ?? 68_000;
+        const callWall = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.callWall) ?? numeric(summary.topPositiveGexStrike) ?? spot * 1.05);
+        const putWall = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.putWall) ?? numeric(summary.topNegativeGexStrike) ?? spot * 0.95);
+        const gammaFlip = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.gammaFlip) ?? numeric(summary.gammaFlip) ?? spot);
+        const maxPain = isLiveOptionsUnavailable ? 0 : (levelStrike(keyLevels.primaryMaxPain) ?? numeric(summary.maxPainStrike) ?? spot);
         const netGex = numeric(summary.netGex, 0) ?? 0;
-        const calls = (data.keyContracts || []).filter((contract) => contract.type === 'call');
-        const puts = (data.keyContracts || []).filter((contract) => contract.type === 'put');
+        const calls = (effectiveOptionsData.keyContracts || []).filter((contract) => contract.type === 'call');
+        const puts = (effectiveOptionsData.keyContracts || []).filter((contract) => contract.type === 'put');
         const callOi = calls.reduce((sum, contract) => sum + contract.openInterest, 0);
         const putOi = puts.reduce((sum, contract) => sum + contract.openInterest, 0);
-        const nearest = [...(data.keyContracts || [])].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0];
+        const nearest = [...(effectiveOptionsData.keyContracts || [])].sort((a, b) => Math.abs(a.strike - spot) - Math.abs(b.strike - spot))[0];
         return { spot, callWall, putWall, gammaFlip, maxPain, netGex, totalCallGex: numeric(summary.totalCallGex), totalPutGex: numeric(summary.totalPutGex), contractsCount: numeric(summary.contractsCount), putCallRatio: callOi > 0 ? putOi / callOi : undefined, atmIv: nearest?.iv, callOi, putOi, longGamma: netGex >= 0 };
-    }, [data]);
+    }, [effectiveOptionsData, isLiveOptionsUnavailable]);
 
     const liveSpot = dataMode === 'LIVE' ? marketFeed.ticker?.lastPrice ?? marketFeed.candles.at(-1)?.close : undefined;
     const displayedSpot = liveSpot ?? metrics.spot;
@@ -1003,7 +1049,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             onResetAllDefaults={resetWorkspaceUi}
                                         />
                                         <MarketStructureChart
-                                            data={data}
+                                            data={effectiveOptionsData}
                                             marketFeed={marketFeed}
                                             liquidityFeed={liquidityFeed}
                                             activeTool={activeTool}

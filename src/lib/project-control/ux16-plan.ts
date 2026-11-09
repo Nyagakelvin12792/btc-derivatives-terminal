@@ -9,6 +9,7 @@ import {
 import { buildUx17Milestones } from './ux17-plan';
 import { buildUx18Milestones } from './ux18-plan';
 import { buildUx19Milestones } from './ux19-plan';
+import { buildUx20Milestones } from './ux20-plan';
 
 const UPDATED_AT = '2026-11-03T00:00:00.000Z';
 
@@ -581,6 +582,7 @@ export function buildUx16Milestones(): MilestoneProgressV1[] {
         ...buildUx17Milestones(),
         ...buildUx18Milestones(),
         ...buildUx19Milestones(),
+        ...buildUx20Milestones(),
     ];
 }
 

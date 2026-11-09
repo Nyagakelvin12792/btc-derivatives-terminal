@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { sanitizeCsvCell } from '../security/csv-sanitizer';
 import type { DemoMarketBar } from '../ui/market-fixtures';
 
 export const ManagedTradeStatusSchema = z.enum([
@@ -597,7 +598,7 @@ export function exportTradesToCsv(trades: readonly ManagedTrade[]): string {
     ];
     const rows = trades.map((t) => {
         const r = t.initialRiskUsd > 0 ? (t.realizedPnlUsd / t.initialRiskUsd).toFixed(2) : '0.00';
-        const escapeCsv = (val: string) => `"${val.replace(/"/g, '""')}"`;
+        const escapeCsv = (val: string) => sanitizeCsvCell(val, { forceQuote: true });
         return [
             t.id,
             t.symbol,

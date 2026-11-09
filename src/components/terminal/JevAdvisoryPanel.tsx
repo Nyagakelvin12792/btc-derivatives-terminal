@@ -1,18 +1,15 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
     ChevronDown,
     ChevronUp,
-    Shield,
-    Activity,
     AlertTriangle,
     CheckCircle2,
     Cpu,
-    ExternalLink,
 } from 'lucide-react';
 import {
-    evaluateJevDecision,
+    evaluateJevDecisionFromPartial,
     loadPersistedJevMode,
     savePersistedJevMode,
     type DeterministicMarketState,
@@ -29,22 +26,9 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
     const [mode, setMode] = useState<JevOperationalMode>(() => loadPersistedJevMode());
     const [isExpanded, setIsExpanded] = useState<boolean>(true);
 
-    const defaultMarket: DeterministicMarketState = {
-        currentPrice: marketState?.currentPrice ?? 78602,
-        vwapPrice: marketState?.vwapPrice ?? 78150,
-        vpPoc: marketState?.vpPoc ?? 78032,
-        vpVah: marketState?.vpVah ?? 78513,
-        vpVal: marketState?.vpVal ?? 76710,
-        netDelta: marketState?.netDelta ?? 478,
-        cvdSlope: marketState?.cvdSlope ?? 'RISING',
-        gammaRegime: marketState?.gammaRegime ?? 'LONG_GAMMA_MEAN_REVERTING',
-        callWall: marketState?.callWall ?? 78000,
-        putWall: marketState?.putWall ?? 76812,
-        dataQualityOk: marketState?.dataQualityOk ?? true,
-        spreadBps: marketState?.spreadBps ?? 1.5,
-    };
-
-    const decision: JevAdvisoryOutput = evaluateJevDecision(defaultMarket, mode);
+    // UX20.2-JEV-01 / P0-1: Never invent fallback prices or delta values.
+    // Missing inputs fail closed into ABSTAIN / NO TRADE.
+    const decision: JevAdvisoryOutput = evaluateJevDecisionFromPartial(marketState, mode);
 
     const handleModeChange = (nextMode: JevOperationalMode) => {
         setMode(nextMode);
@@ -61,15 +45,14 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
                 <div className="flex items-center gap-2">
                     <Cpu className="size-3.5 text-cyan-400" />
                     <span className="text-[10px] font-bold tracking-wide text-zinc-100">
-                        JEV DECISION FRAMEWORK
+                        JEV OPERATOR EVALUATION
                     </span>
                     <span className="rounded bg-cyan-950/60 px-1.5 py-0.5 text-[8.5px] font-semibold text-cyan-300 border border-cyan-800/40">
-                        TypeSafe AI
+                        LOCAL DETERMINISTIC
                     </span>
                 </div>
 
                 <div className="flex items-center gap-1.5">
-                    {/* Operational Mode Selector */}
                     <div className="flex items-center rounded-md border border-[#233549] bg-[#060c14] p-0.5 text-[8.5px]">
                         {(['DISABLED', 'SHADOW', 'ADVISORY', 'EVALUATED'] as const).map((m) => (
                             <button
@@ -107,6 +90,7 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
                     <span className="text-zinc-600">|</span>
                     <span className="text-zinc-400">Stance:</span>
                     <span
+                        data-testid="jev-stance-badge"
                         className={`rounded px-1 py-0.5 font-bold ${
                             decision.stance === 'AGREE'
                                 ? 'bg-emerald-950/60 text-emerald-400 border border-emerald-800/40'
@@ -127,7 +111,7 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
                 </div>
 
                 <div className="flex items-center gap-2 font-mono text-[8.5px] text-zinc-400">
-                    <span>Confidence: {(decision.confidenceScore * 100).toFixed(0)}%</span>
+                    <span>Rule Score: {(decision.confidenceScore * 100).toFixed(0)}%</span>
                 </div>
             </div>
 
@@ -140,7 +124,6 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
                         </div>
                     ) : (
                         <>
-                            {/* Summary & Thesis */}
                             <div className="rounded border border-[#233549] bg-[#0c1624]/90 p-2.5">
                                 <div className="flex items-center justify-between font-semibold text-zinc-200 mb-1">
                                     <span>Setup: {decision.tradeScenario.setupName}</span>
@@ -151,23 +134,23 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
                                 <p className="text-zinc-300 leading-relaxed">{decision.advisorySummary}</p>
                             </div>
 
-                            {/* Execution Parameters */}
-                            <div className="grid grid-cols-3 gap-2 font-mono text-[9px]">
-                                <div className="rounded border border-[#1c2c3d] bg-[#070e17] p-2">
-                                    <div className="text-zinc-400 text-[8px] uppercase">Trigger / Spot</div>
-                                    <div className="font-bold text-zinc-100">${decision.triggerPrice.toLocaleString()}</div>
+                            {decision.gatePassed && (
+                                <div className="grid grid-cols-3 gap-2 font-mono text-[9px]">
+                                    <div className="rounded border border-[#1c2c3d] bg-[#070e17] p-2">
+                                        <div className="text-zinc-400 text-[8px] uppercase">Trigger / Spot</div>
+                                        <div className="font-bold text-zinc-100">${decision.triggerPrice.toLocaleString()}</div>
+                                    </div>
+                                    <div className="rounded border border-[#1c2c3d] bg-[#070e17] p-2">
+                                        <div className="text-rose-400/80 text-[8px] uppercase">Invalidation</div>
+                                        <div className="font-bold text-rose-300">${decision.invalidationPrice.toLocaleString()}</div>
+                                    </div>
+                                    <div className="rounded border border-[#1c2c3d] bg-[#070e17] p-2">
+                                        <div className="text-emerald-400/80 text-[8px] uppercase">Target (Wall)</div>
+                                        <div className="font-bold text-emerald-300">${decision.targetPrice.toLocaleString()}</div>
+                                    </div>
                                 </div>
-                                <div className="rounded border border-[#1c2c3d] bg-[#070e17] p-2">
-                                    <div className="text-rose-400/80 text-[8px] uppercase">Invalidation</div>
-                                    <div className="font-bold text-rose-300">${decision.invalidationPrice.toLocaleString()}</div>
-                                </div>
-                                <div className="rounded border border-[#1c2c3d] bg-[#070e17] p-2">
-                                    <div className="text-emerald-400/80 text-[8px] uppercase">Target (Wall)</div>
-                                    <div className="font-bold text-emerald-300">${decision.targetPrice.toLocaleString()}</div>
-                                </div>
-                            </div>
+                            )}
 
-                            {/* Confluences & Cautions */}
                             <div className="space-y-1">
                                 <div className="text-[8.5px] font-bold uppercase tracking-wider text-zinc-400">
                                     Verified Market Confluences ({decision.confluenceCount})
@@ -186,10 +169,9 @@ export function JevAdvisoryPanel({ marketState, className = '' }: JevAdvisoryPan
                                 ))}
                             </div>
 
-                            {/* Guardrail Disclaimer */}
                             <div className="border-t border-[#182635] pt-2 text-[8px] leading-3 text-zinc-400 flex items-center justify-between">
-                                <span>Experimental advisory classification signal. Does not alter deterministic risk limits.</span>
-                                <span className="font-mono text-zinc-400">TypeSafe AI v1</span>
+                                <span>Deterministic local rule classification (not a calibrated win probability).</span>
+                                <span className="font-mono text-zinc-400">Local v1 · $0</span>
                             </div>
                         </>
                     )}

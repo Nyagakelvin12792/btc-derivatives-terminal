@@ -43,6 +43,7 @@ import {
     validateTakeProfitAllocations,
 } from '../../lib/risk/trade-manager';
 import { cn } from '../../lib/ui/cn';
+import PortfolioAnalyticsPanel from './PortfolioAnalyticsPanel';
 import type { DrawingObject, PositionDrawingType } from './drawing-model';
 
 export interface PositionRiskSettings {
@@ -1225,6 +1226,7 @@ export default function RiskTerminal({
                             </div>
                         </div>
                     </div>
+                    <PortfolioAnalyticsPanel trades={managedTrades} />
                 </div>
             )}
         </div>

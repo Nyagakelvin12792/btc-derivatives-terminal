@@ -165,8 +165,20 @@ export class SimulatedOrderFillEngine {
         notes?: string;
         setupGrade?: 'A' | 'AA' | 'AAA' | 'UNCATEGORIZED';
     }): SimulatedOrder {
-        if (params.quantity <= 0) {
-            throw new Error(`Order quantity must be positive, got ${params.quantity}`);
+        if (!Number.isFinite(params.quantity) || params.quantity <= 0) {
+            throw new Error(`Order quantity must be a finite positive number, got ${params.quantity}`);
+        }
+        if (params.limitPrice !== undefined && (!Number.isFinite(params.limitPrice) || params.limitPrice <= 0)) {
+            throw new Error(`Order limitPrice must be a finite positive number, got ${params.limitPrice}`);
+        }
+        if (params.stopPrice !== undefined && (!Number.isFinite(params.stopPrice) || params.stopPrice <= 0)) {
+            throw new Error(`Order stopPrice must be a finite positive number, got ${params.stopPrice}`);
+        }
+        if (params.stopLossPrice !== undefined && (!Number.isFinite(params.stopLossPrice) || params.stopLossPrice <= 0)) {
+            throw new Error(`Order stopLossPrice must be a finite positive number, got ${params.stopLossPrice}`);
+        }
+        if (params.currentPrice !== undefined && (!Number.isFinite(params.currentPrice) || params.currentPrice <= 0)) {
+            throw new Error(`Order currentPrice must be a finite positive number, got ${params.currentPrice}`);
         }
 
         const id = `ord-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

@@ -9,6 +9,13 @@ vi.mock('@/lib/deribit/client.server', () => ({
 
 vi.mock('@/lib/deribit/dte-filter', () => ({
     isDeribitDteFilter: (value: string) => ['0-2D', '7D', '14D', '30D', 'ALL'].includes(value),
+    filterDeribitOptionsByDteOrExpiry: (options: NormalizedDeribitChain['options'], filter: string, exactExpiry?: string | null) => {
+        if (exactExpiry && exactExpiry !== 'ALL') {
+            return options.filter((option) => option.expiryStr === exactExpiry);
+        }
+        const limit = filter === '0-2D' ? 2 : filter === '7D' ? 7 : filter === '14D' ? 14 : filter === '30D' ? 30 : Number.POSITIVE_INFINITY;
+        return options.filter((option) => option.dte <= limit);
+    },
     filterDeribitOptionsByDte: (options: NormalizedDeribitChain['options'], filter: string) => {
         const limit = filter === '0-2D' ? 2 : filter === '7D' ? 7 : filter === '14D' ? 14 : filter === '30D' ? 30 : Number.POSITIVE_INFINITY;
         return options.filter((option) => option.dte <= limit);
