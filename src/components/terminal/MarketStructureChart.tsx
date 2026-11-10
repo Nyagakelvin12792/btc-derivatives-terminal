@@ -152,6 +152,7 @@ interface MarketStructureChartProps {
     onFootprintDisplayModeChange?: (mode: FootprintDisplayMode) => void;
     onFootprintIntervalChange?: (interval: TrueFlowInterval | null) => void;
     footprintHistory?: BinanceMarketBar[];
+    footprintTickSize?: number;
     footprintHistoryState?: 'loading' | 'error' | null;
     footprintLayout?: ChartSplitLayoutMode;
     asOfMs?: number | null;
@@ -287,6 +288,7 @@ export default function MarketStructureChart({
     onFootprintDisplayModeChange,
     onFootprintIntervalChange,
     footprintHistory,
+    footprintTickSize,
     footprintHistoryState,
     footprintLayout = DEFAULT_FOOTPRINT_LAYOUT,
     asOfMs,
@@ -1702,7 +1704,7 @@ export default function MarketStructureChart({
     const selectedDrawing = drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
     const selectedDrawingView = drawingViews.find((view) => view.drawing.id === selectedDrawingId && !view.preview) ?? null;
 
-    if (!bars.length && !replayActive) {
+    if (!bars.length && !replayActive && !footprintSnapshot?.footprintBars.length && !footprintBars.length) {
         return (
             <TerminalChartLoader
                 feedState={marketFeed.state}
@@ -1805,6 +1807,7 @@ export default function MarketStructureChart({
                                 replayCursorMs={recordedView?.cursorMs}
                                 dataMode={dataMode}
                                 historyState={footprintHistoryState}
+                                tickSize={footprintTickSize}
                                 asOfMs={asOfMs}
                                 onExportTape={replayActive ? undefined : onExportFootprintTape}
                             />
@@ -1854,6 +1857,9 @@ export default function MarketStructureChart({
                         if (activeTool === 'cursor' && syncedHoverTime !== null) setLinkedSelectionTime(syncedHoverTime);
                     }}
                 />
+                {!bars.length && !replayActive && <div className="absolute inset-0 grid place-items-center p-3 text-center text-xs text-slate-400">
+                    Candlestick history is unavailable. The Footprint has its own trade feed.
+                </div>}
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
                 </div>}

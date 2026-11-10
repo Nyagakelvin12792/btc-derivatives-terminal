@@ -15,6 +15,7 @@ export const FOOTPRINT_DISPLAY_MODES = {
 } as const;
 
 export type FootprintDisplayMode = keyof typeof FOOTPRINT_DISPLAY_MODES;
+export type FootprintNumericContent = 'AUTO' | 'BID_ASK' | 'DELTA' | 'VOLUME' | 'NONE';
 
 export const FOOTPRINT_STAT_LABELS = {
     ASK: 'Ask volume (BTC)',
@@ -98,6 +99,7 @@ export type FootprintLayout = ReturnType<typeof createFootprintLayout>;
 export interface FootprintRenderOptions extends FootprintLayoutInput {
     bars: readonly FootprintRenderBar[];
     mode: FootprintDisplayMode;
+    numericContent?: FootprintNumericContent;
     selectedTime: number | null;
     pricePrecision?: number;
     tickSize?: number;
@@ -230,6 +232,7 @@ function renderCell(
     ctx: CanvasRenderingContext2D,
     cell: FootprintWorkspaceCandle['cells'][number],
     mode: FootprintDisplayMode,
+    numericContent: FootprintNumericContent,
     center: number,
     top: number,
     width: number,
@@ -247,7 +250,9 @@ function renderCell(
     const left = center - width / 2;
     const baseline = top + height / 2;
     const half = Math.max(0, width / 2 - 5);
-    const showText = width >= (mode === 'BID_ASK' ? 88 : 46) && height >= 12;
+    const content = numericContent !== 'AUTO' ? numericContent
+        : mode === 'BID_ASK' ? 'BID_ASK' : mode === 'DELTA' || mode === 'DELTA_PROFILE' ? 'DELTA' : 'VOLUME';
+    const showText = content !== 'NONE' && width >= (content === 'BID_ASK' ? 88 : 46) && height >= 12;
     const signColor = delta >= 0 ? buy : sell;
     const intensity = Math.sqrt(total / maximum);
 
@@ -263,18 +268,8 @@ function renderCell(
         ctx.globalAlpha = showImbalances && cell.buyImbalance ? 0.58 : 0.28;
         ctx.fillStyle = buy;
         ctx.fillRect(center + 4, top, askWidth, height);
-        if (showText) {
-            ctx.globalAlpha = 1;
-            ctx.fillStyle = bid > 0 ? sell : MUTED;
-            ctx.textAlign = 'right';
-            ctx.fillText(formatFootprintQuantity(bid), center - 6, baseline, Math.max(1, half - 3));
-            ctx.fillStyle = ask > 0 ? buy : MUTED;
-            ctx.textAlign = 'left';
-            ctx.fillText(formatFootprintQuantity(ask), center + 6, baseline, Math.max(1, half - 3));
-        }
     } else {
         const isDelta = mode === 'DELTA' || mode === 'DELTA_PROFILE';
-        const value = isDelta ? delta : total;
         const ratio = isDelta ? Math.abs(delta) / maxDelta : total / maximum;
         ctx.fillStyle = isDelta ? signColor : mode === 'HEATMAP' ? POC : '#70a1cc';
         ctx.globalAlpha = 0.14 + Math.sqrt(ratio) * 0.48;
@@ -289,11 +284,20 @@ function renderCell(
             ctx.fillStyle = cell.buyImbalance ? buy : sell;
             ctx.fillRect(cell.buyImbalance ? left + width - 2 : left, top, 2, height);
         }
-        if (showText) {
-            ctx.globalAlpha = 1;
+    }
+    if (showText) {
+        ctx.globalAlpha = 1;
+        if (content === 'BID_ASK') {
+            ctx.fillStyle = bid > 0 ? sell : MUTED;
+            ctx.textAlign = 'right';
+            ctx.fillText(formatFootprintQuantity(bid), center - 6, baseline, Math.max(1, half - 3));
+            ctx.fillStyle = ask > 0 ? buy : MUTED;
+            ctx.textAlign = 'left';
+            ctx.fillText(formatFootprintQuantity(ask), center + 6, baseline, Math.max(1, half - 3));
+        } else {
             ctx.textAlign = 'center';
             ctx.fillStyle = LIGHT;
-            ctx.fillText(formatFootprintQuantity(value), center, baseline, width - 4);
+            ctx.fillText(formatFootprintQuantity(content === 'DELTA' ? delta : total), center, baseline, width - 4);
         }
     }
     ctx.globalAlpha = 1;
@@ -323,7 +327,7 @@ function renderCandle(
                 if (cell.priceLow >= options.viewport.maxPrice) break;
                 const highY = yForPrice(cell.priceHigh);
                 const lowY = yForPrice(cell.priceLow);
-                renderCell(ctx, cell, options.mode, x, highY + 0.5, width, lowY - highY - 1,
+                renderCell(ctx, cell, options.mode, options.numericContent ?? 'AUTO', x, highY + 0.5, width, lowY - highY - 1,
                     intensity.volume, intensity.delta, options.showImbalances !== false, buy, sell);
             }
         }

@@ -1,3 +1,4 @@
+import { normalizeFootprintInstrument } from './footprint-instrument';
 import { buildBinanceMarketSnapshot, normalizeBinanceKlines, normalizeBinanceOrderBook } from './normalization';
 import {
     BINANCE_MARKET_SCHEMA_VERSION,
@@ -26,10 +27,10 @@ function requestSignal(): AbortSignal | undefined {
     return abortSignal.timeout?.(REQUEST_TIMEOUT_MS);
 }
 
-async function fetchJson(url: string, fresh = false): Promise<unknown> {
+async function fetchJson(url: string, fresh = false, revalidate = REVALIDATE_SECONDS): Promise<unknown> {
     const response = await fetch(url, {
         headers: { accept: 'application/json' },
-        ...(fresh ? { cache: 'no-store' as const } : { next: { revalidate: REVALIDATE_SECONDS } }),
+        ...(fresh ? { cache: 'no-store' as const } : { next: { revalidate } }),
         signal: requestSignal(),
     } satisfies NextFetchInit);
 
@@ -146,4 +147,8 @@ export async function fetchBinanceVolumeProfileBars(
         timestamp: now.toISOString(),
         candles,
     };
+}
+
+export async function fetchFootprintInstrument() {
+    return normalizeFootprintInstrument(await fetchJson(`${BINANCE_MARKET_BASE_URL}/exchangeInfo?symbol=BTCUSDT`, false, 3600));
 }

@@ -50,7 +50,7 @@ export type AggregateTradeWorkerEvent =
     | { type: 'ERROR'; code: AggregateTradeWorkerErrorCode; message: string; recoverable: boolean };
 
 const DEFAULT_CONFIG: AggregateTradeWorkerConfig = Object.freeze({
-    streamUrl: 'wss://stream.binance.com/stream?streams=btcusdt@aggTrade',
+    streamUrl: 'wss://data-stream.binance.vision/stream?streams=btcusdt@aggTrade',
     flushIntervalMs: 250,
     statusIntervalMs: 1_000,
     reconnectBaseMs: 1_000,

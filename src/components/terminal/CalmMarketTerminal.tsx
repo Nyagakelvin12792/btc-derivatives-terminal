@@ -57,7 +57,7 @@ import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
 import type { AggregateTradeCaptureSnapshotV1 } from '../../lib/orderflow/contracts';
 import type { TrueFlowInterval } from '../../lib/orderflow/true-flow-contracts';
-import { useFootprintHistory } from '../../lib/binance/use-footprint-history';
+import { useFootprintHistory, useFootprintInstrument } from '../../lib/binance/use-footprint-history';
 import type { FootprintDisplayMode } from './footprint-workspace-renderer';
 import { DEFAULT_FOOTPRINT_LAYOUT, FOOTPRINT_PRESET_MODES, isFootprintDisplayMode, isFootprintInterval, isFootprintLayout, readFootprintPreference, writeFootprintPreference } from './footprint-preferences';
 import {
@@ -303,6 +303,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     const paperDesk = usePaperDesk(liquidityFeed, dataMode === 'LIVE' && !replayActive);
     const independentFootprint = !replayActive && chartLayers.leftExecutionPane !== false
         && splitLayoutMode !== 'MODE_A_CANDLE_ONLY' ? footprintInterval : null;
+    const footprintInstrument = useFootprintInstrument(dataMode === 'LIVE' && chartLayers.leftExecutionPane !== false && splitLayoutMode !== 'MODE_A_CANDLE_ONLY');
     const footprintHistory = useFootprintHistory(footprintInterval ?? BINANCE_INTERVALS[timeframe],
         dataMode === 'LIVE' && independentFootprint !== null && independentFootprint !== BINANCE_INTERVALS[timeframe]);
     const aggregateTradeFeed = useBinanceAggregateTradeCapture(dataMode === 'LIVE', {
@@ -1149,6 +1150,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                                 writeFootprintPreference('interval', interval);
                                             }}
                                             footprintHistory={footprintHistory.data}
+                                            footprintTickSize={footprintInstrument.data?.tickSize}
                                             footprintHistoryState={footprintHistory.fetchStatus === 'fetching' && !footprintHistory.data ? 'loading' : footprintHistory.isError ? 'error' : null}
                                             footprintLayout={splitLayoutMode}
                                             asOfMs={utcNowMs}

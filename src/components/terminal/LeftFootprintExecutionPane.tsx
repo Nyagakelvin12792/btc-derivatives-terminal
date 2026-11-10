@@ -10,12 +10,17 @@ import {
     type FootprintPriceRange, type FootprintTimeRange,
 } from '../../lib/chart-coordination/footprint-viewport';
 import { FOOTPRINT_INTERVALS, FOOTPRINT_MODES, FOOTPRINT_STATS, readFootprintPreference, writeFootprintPreference } from './footprint-preferences';
-import { createFootprintLayout, renderFootprintCursor, renderFootprintWorkspace, type FootprintDisplayMode, type FootprintRenderBar, type FootprintStat } from './footprint-workspace-renderer';
+import { createFootprintLayout, renderFootprintCursor, renderFootprintWorkspace, type FootprintDisplayMode, type FootprintNumericContent, type FootprintRenderBar, type FootprintStat } from './footprint-workspace-renderer';
 import FootprintCandleInspector from './FootprintCandleInspector';
 
 const control = 'min-h-7 rounded border border-[#263544] bg-[#101822] px-1.5 text-xs text-slate-200 hover:border-sky-600 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40';
 const EMPTY_ROWS: readonly FootprintStat[] = [];
 const NO_CURSOR = { time: null, price: null };
+const contentChoices = { AUTO: 'Match mode', BID_ASK: 'Bid × Ask', DELTA: 'Delta', VOLUME: 'Volume', NONE: 'Hide numbers' } satisfies Record<FootprintNumericContent, string>;
+const palettes = {
+    STANDARD: { label: 'Teal and rose', buy: '#4dd4af', sell: '#f88799' },
+    CONTRAST: { label: 'Blue and orange', buy: '#77bdff', sell: '#ffb463' },
+} as const;
 const groupingChoices = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
 
 interface Preferences {
@@ -29,12 +34,14 @@ interface Preferences {
     cvd: boolean;
     precision: number;
     showImbalances: boolean;
+    numericContent: FootprintNumericContent;
+    palette: keyof typeof palettes;
     levels: number[];
 }
 
 const defaultPreferences: Preferences = {
     mode: 'BID_ASK', linked: false, grouping: 0, ratio: 3, minVolume: 5000,
-    rows: [...FOOTPRINT_STATS], statsHeight: 125, cvd: false, precision: 0, showImbalances: true, levels: [],
+    rows: [...FOOTPRINT_STATS], statsHeight: 125, cvd: false, precision: 0, showImbalances: true, numericContent: 'AUTO', palette: 'STANDARD', levels: [],
 };
 
 function readPreferences(): Preferences {
@@ -53,6 +60,8 @@ function readPreferences(): Preferences {
         statsHeight: typeof saved.statsHeight === 'number' && saved.statsHeight >= 75 && saved.statsHeight <= 230 ? saved.statsHeight : 125,
         cvd: saved.cvd === true,
         showImbalances: saved.showImbalances !== false,
+        numericContent: saved.numericContent && Object.hasOwn(contentChoices, saved.numericContent) ? saved.numericContent : 'AUTO',
+        palette: saved.palette === 'CONTRAST' ? 'CONTRAST' : 'STANDARD',
         precision: saved.precision === 1 || saved.precision === 2 ? saved.precision : 0,
         levels: Array.isArray(saved.levels) ? saved.levels.filter((price) => Number.isFinite(price) && price > 0).slice(0, 20) : [],
     };
@@ -80,6 +89,7 @@ export interface LeftFootprintExecutionPaneProps {
     dataMode?: 'LIVE' | 'DEMO' | 'DEGRADED';
     historyState?: 'loading' | 'error' | null;
     asOfMs?: number | null;
+    tickSize?: number;
     onExportTape?: () => void;
 }
 
@@ -91,7 +101,7 @@ type Drag = {
 export default function LeftFootprintExecutionPane({
     bars, timeframeSeconds, interval = null, displayMode, onDisplayModeChange, onIntervalChange, trueFlowSnapshot, linkedRange,
     hoveredPrice, hoveredTime, linkedSelectionTime, onSelectTime, onHoverCrosshair, onTimeRangeChange, onClosePane,
-    showStudies = true, replayActive = false, replayCursorMs, dataMode = 'LIVE', historyState, asOfMs, onExportTape,
+    showStudies = true, replayActive = false, replayCursorMs, dataMode = 'LIVE', historyState, asOfMs, tickSize, onExportTape,
 }: LeftFootprintExecutionPaneProps) {
     const host = useRef<HTMLDivElement>(null);
     const chartCanvas = useRef<HTMLCanvasElement>(null);
@@ -193,12 +203,13 @@ export default function LeftFootprintExecutionPane({
         const frame = requestAnimationFrame(() => {
             if (!chartCanvas.current) return;
             renderFootprintWorkspace(chartCanvas.current, {
-                ...size, viewport, bars: renderBars, mode: activeMode, statsRows, statsHeight, cvdHeight,
-                selectedTime: selectedColumn, timeframeSeconds, pricePrecision: settings.precision, showImbalances: settings.showImbalances,
+                ...size, viewport, bars: renderBars, mode: activeMode, numericContent: settings.numericContent,
+                buyColor: palettes[settings.palette].buy, sellColor: palettes[settings.palette].sell, statsRows, statsHeight, cvdHeight,
+                selectedTime: selectedColumn, timeframeSeconds, pricePrecision: settings.precision, tickSize, showImbalances: settings.showImbalances,
             });
         });
         return () => cancelAnimationFrame(frame);
-    }, [size, viewport, renderBars, activeMode, settings.precision, settings.showImbalances, statsRows, statsHeight, cvdHeight, selectedColumn, timeframeSeconds]);
+    }, [size, viewport, renderBars, activeMode, settings.numericContent, settings.palette, settings.precision, settings.showImbalances, statsRows, statsHeight, cvdHeight, selectedColumn, timeframeSeconds, tickSize]);
 
     useEffect(() => {
         const frame = requestAnimationFrame(() => {
@@ -268,7 +279,8 @@ export default function LeftFootprintExecutionPane({
     }
 
     function alignedPrice(y: number) {
-        return Math.round(layout.priceForY(y) / sourceBucket) * sourceBucket;
+        const increment = tickSize ?? sourceBucket;
+        return Number((Math.round(layout.priceForY(y) / increment) * increment).toFixed(10));
     }
 
     function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
@@ -280,7 +292,7 @@ export default function LeftFootprintExecutionPane({
         if (Math.abs(dx) + Math.abs(dy) < 4 && !start.moved) return;
         start.moved = true;
         if (start.kind === 'level') {
-            levelDraft.current = Math.max(sourceBucket, alignedPrice(y));
+            levelDraft.current = Math.max(tickSize ?? sourceBucket, alignedPrice(y));
             if (cursorCanvas.current) {
                 const levels = settings.levels.map((price, index) => index === start.levelIndex ? levelDraft.current! : price);
                 renderFootprintCursor(cursorCanvas.current, { ...size, layout, cursor: NO_CURSOR, levels });
@@ -376,12 +388,22 @@ export default function LeftFootprintExecutionPane({
                 </div>
                 <div className="flex flex-wrap items-center gap-1" aria-label="Footprint presets">
                     <span className="text-slate-400">Presets</span>
-                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'BID_ASK', showImbalances: true })}>Bid × Ask</button>
-                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'DELTA_PROFILE', showImbalances: true })}>Delta analysis</button>
-                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'VOLUME_PROFILE', showImbalances: false })}>Volume analysis</button>
+                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'BID_ASK', numericContent: 'AUTO', showImbalances: true })}>Bid × Ask</button>
+                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'DELTA_PROFILE', numericContent: 'AUTO', showImbalances: true })}>Delta analysis</button>
+                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'VOLUME_PROFILE', numericContent: 'AUTO', showImbalances: false })}>Volume analysis</button>
                 </div>
                 <label><input type="checkbox" checked={settings.showImbalances} onChange={(event) => changeSettings({ showImbalances: event.target.checked })} /> Highlight imbalances</label>
                 <div className="grid grid-cols-2 gap-2">
+                    <label>Cell numbers
+                        <select className={`${control} w-full`} value={settings.numericContent} onChange={(event) => changeSettings({ numericContent: event.target.value as FootprintNumericContent })}>
+                            {Object.entries(contentChoices).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        </select>
+                    </label>
+                    <label>Colors
+                        <select className={`${control} w-full`} value={settings.palette} onChange={(event) => changeSettings({ palette: event.target.value as keyof typeof palettes })}>
+                            {Object.entries(palettes).map(([value, palette]) => <option key={value} value={value}>{palette.label}</option>)}
+                        </select>
+                    </label>
                     <label>Price grouping
                         <select className={`${control} w-full`} value={settings.grouping} onChange={(event) => changeSettings({ grouping: Number(event.target.value) })}>
                             <option value={0}>Auto</option>{groupingChoices.map((step) => <option key={step} value={step}>{step} USDT</option>)}
@@ -426,6 +448,7 @@ export default function LeftFootprintExecutionPane({
                 {coverageTimes?.coverageStart != null && lastCoverage?.coverageEnd != null && <p className="text-slate-400">
                     Observed range {new Date(coverageTimes.coverageStart).toISOString()} to {new Date(lastCoverage.coverageEnd).toISOString()}. Individual candles may have gaps.
                 </p>}
+                <p className="text-slate-400">Exchange tick {tickSize ?? 'unavailable'} · Source bin {sourceBucket} USDT · Display bin {displayStep} USDT.</p>
                 <p className="text-slate-400">Wheel zooms around the cursor. Drag the plot to pan. Drag either axis to scale. Click a candle for exact values.</p>
             </div>}
             <div ref={host} data-testid="footprint-chart-surface" className={`relative min-h-0 flex-1 touch-none overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-400 ${drawLevel ? 'cursor-crosshair' : ''}`}
