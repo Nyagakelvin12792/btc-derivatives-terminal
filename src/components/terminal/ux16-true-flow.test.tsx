@@ -276,13 +276,15 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
                     events={[]}
                     dataMode="LIVE"
                     trueFlowSnapshot={snapshot}
+                    tradeTape={{ trades: [trade(101, 5, 100, 1, 'BUY')], coverage: snapshot.coverage }}
                 />,
             );
 
             expect(html).toContain('data-testid="flow-cvd-status"');
             expect(html).toContain('TRADE_BASED');
-            expect(html).toContain('data-testid="flow-footprint-status"');
-            expect(html).toContain('READY');
+            expect(html).not.toContain('data-testid="flow-footprint-status"');
+            expect(html).toContain('data-testid="flow-trade-tape"');
+            expect(html).toContain('BUY');
             expect(html).toContain('data-testid="flow-trade-vp-container"');
         });
     });

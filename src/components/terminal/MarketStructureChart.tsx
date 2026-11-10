@@ -155,6 +155,8 @@ interface MarketStructureChartProps {
     footprintTickSize?: number;
     footprintHistoryState?: 'loading' | 'error' | null;
     footprintLayout?: ChartSplitLayoutMode;
+    experimentalFootprint?: boolean;
+    onCloseFootprint?: () => void;
     asOfMs?: number | null;
     onExportFootprintTape?: () => void;
     priceScaleFit?: PriceScaleFitMode;
@@ -291,6 +293,8 @@ export default function MarketStructureChart({
     footprintTickSize,
     footprintHistoryState,
     footprintLayout = DEFAULT_FOOTPRINT_LAYOUT,
+    experimentalFootprint = false,
+    onCloseFootprint,
     asOfMs,
     onExportFootprintTape,
     priceScaleFit = 'CANDLE_FIT',
@@ -300,7 +304,7 @@ export default function MarketStructureChart({
 }: MarketStructureChartProps) {
     const liquidityFeed = useMemo(() => replayActive ? { ...incomingLiquidity, frames: [], snapshot: null } : incomingLiquidity, [incomingLiquidity, replayActive]);
     const mainFlowInterval = timeframe.toLowerCase() as TrueFlowInterval;
-    const replay = useFootprintReplay(replayActive, mainFlowInterval, footprintInterval ?? mainFlowInterval);
+    const replay = useFootprintReplay(replayActive, mainFlowInterval, experimentalFootprint ? footprintInterval ?? mainFlowInterval : mainFlowInterval);
     const recordedView = replay.view;
     const trueFlowSnapshot = replayActive ? recordedView?.main ?? null : incomingFlow;
     const workspaceContainerRef = useRef<HTMLDivElement>(null);
@@ -531,7 +535,7 @@ export default function MarketStructureChart({
         : replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, recordedBars, replayActive]);
     const barTimes = useMemo(() => bars.map((b) => Number(b.time)), [bars]);
     const mainInterval = TIMEFRAME_SECONDS[timeframe];
-    const footprintSeconds = (!replayActive || recordedView) && footprintInterval ? FOOTPRINT_INTERVALS[footprintInterval] : mainInterval;
+    const footprintSeconds = experimentalFootprint && footprintLayout !== 'MODE_A_CANDLE_ONLY' && (!replayActive || recordedView) && footprintInterval ? FOOTPRINT_INTERVALS[footprintInterval] : mainInterval;
     const footprintBars = useMemo<DemoMarketBar[]>(() => {
         if (footprintSeconds === mainInterval) return bars;
         if (recordedView) return [];
@@ -1022,7 +1026,7 @@ export default function MarketStructureChart({
                         densityMode: liquidityDensityMode,
                     })
                     : [],
-                footprintBars: chartLayers.footprint && trueFlowSnapshot
+                footprintBars: experimentalFootprint && chartLayers.footprint && trueFlowSnapshot
                     ? projectFootprintBarsToChart(trueFlowSnapshot.footprintBars, {
                         width: hostWidth,
                         height: hostHeight,
@@ -1042,7 +1046,7 @@ export default function MarketStructureChart({
         return () => {
             cancelAnimationFrame(frame);
         };
-    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
+    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, experimentalFootprint, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
 
     useEffect(() => {
         const chart = priceChartRef.current;
@@ -1740,7 +1744,7 @@ export default function MarketStructureChart({
     const toolbarPosition = selectedDrawingAnchor
         ? constrainToolbarPosition(selectedDrawingAnchor, overlayLayout)
         : { left: 0, top: 0 };
-    const showLeftExecutionPane = chartLayers.leftExecutionPane !== false && footprintLayout !== 'MODE_A_CANDLE_ONLY';
+    const showLeftExecutionPane = experimentalFootprint && footprintLayout !== 'MODE_A_CANDLE_ONLY';
 
     return (
         <div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-[#080d14]">
@@ -1801,7 +1805,7 @@ export default function MarketStructureChart({
                                 onSelectTime={setLinkedSelectionTime}
                                 onHoverCrosshair={handleLeftPaneCrosshair}
                                 onTimeRangeChange={handleFootprintRange}
-                                onClosePane={() => toggleChartLayer('leftExecutionPane')}
+                                onClosePane={onCloseFootprint}
                                 showStudies={footprintLayout === 'MODE_C_DUAL_SYNC_CVD'}
                                 replayActive={replayActive}
                                 replayCursorMs={recordedView?.cursorMs}
@@ -1913,7 +1917,7 @@ export default function MarketStructureChart({
                     />
                 )}
 
-                {chartLayers.footprint && (
+                {experimentalFootprint && chartLayers.footprint && (
                     <CandleFootprintCanvasOverlay
                         projectedBars={overlayLayout.footprintBars}
                         projectedTradeVp={null}
@@ -2466,7 +2470,7 @@ export default function MarketStructureChart({
                     paneHeight={studyPaneHeight}
                     maxPaneHeight={STUDY_PANE_MAX_HEIGHT}
                     onCvdAnchorChange={setCvdAnchor}
-                    cvdSourceMode={cvdSourceMode}
+                    cvdSourceMode={recordedView ? 'CAPTURED' : cvdSourceMode}
                     onCvdSourceModeChange={setCvdSourceMode}
                     onResizeHeight={handleResizeStudyPane}
                     onResetChartAndObjects={resetChartViewAndObjects}

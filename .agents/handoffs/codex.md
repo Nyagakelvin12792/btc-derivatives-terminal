@@ -117,3 +117,12 @@ belongs to the user and was preserved. No deployment or remote push was made.
 >>> NEXT AGENT: Architect
 >>> ACTION REQUIRED: Review the independent chart, validate live tape on an unrestricted client, and run the browser and latency acceptance checks.
 >>> TARGET: PR #2, /project-control/ux21, docs/ui-ux/UX21_PROGRESS.md
+
+>>> COMPLETED BY: Codex
+>>> STATUS: REVIEW REQUIRED
+>>> BRANCH: codex/ux21-footprint
+>>> COMMIT: 14bedc9913f3ccfb57a28b4ebae57cc318f16841
+>>> TESTS: TypeScript and 481 Vitest tests passed in the implementation pass. Desktop and mobile rollout regression cases cover legacy preferences and explicit opt-in.
+>>> NEXT AGENT: Architect
+>>> ACTION REQUIRED: Review the default workspace and verify extended-session trade tape behavior.
+>>> TARGET: PR #2, terminal workspace and Flow panel

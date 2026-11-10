@@ -58,6 +58,7 @@ function buildSnapshots(): { initial: FixtureSnapshots; updated: FixtureSnapshot
 async function seedTerminal(page: Page, mode: 'LIVE' | 'DEMO', snapshots?: ReturnType<typeof buildSnapshots>) {
     await page.clock.setFixedTime(FIXTURE_NOW);
     await page.addInitScript(({ mode, snapshots }) => {
+        localStorage.setItem('btc-terminal.footprint.experimental-enabled', 'true');
         const storageKey = 'btc-terminal-ui-v1';
         if (!localStorage.getItem(storageKey)) {
             localStorage.setItem(storageKey, JSON.stringify({
@@ -424,4 +425,42 @@ test.describe('UX21 Footprint workspace', () => {
             body: Buffer.from(JSON.stringify(latency, null, 2)), contentType: 'application/json',
         });
     });
+});
+
+test('legacy layouts keep Footprint off until explicit experimental opt-in', async ({ page, isMobile }) => {
+    await page.addInitScript(() => {
+        if (sessionStorage.getItem('experimental-rollout-fixture')) return;
+        sessionStorage.setItem('experimental-rollout-fixture', 'true');
+        localStorage.setItem('btc-terminal-ui-v1', JSON.stringify({
+            state: { dataMode: 'DEMO', chartLayers: { leftExecutionPane: true, footprint: true } },
+            version: 1,
+        }));
+        localStorage.setItem('btc-terminal.footprint.layout', JSON.stringify('MODE_C_DUAL_SYNC_CVD'));
+    });
+    await page.goto('/');
+    await expect(page.getByRole('group', { name: 'Demo BTC price chart' })).toBeVisible();
+    const footprint = page.getByTestId('left-footprint-execution-pane');
+    await expect(footprint).toHaveCount(0);
+    await expect(page.getByTestId('candle-footprint-canvas-overlay')).toHaveCount(0);
+
+    await page.getByTestId('workspace-mode-flow').click();
+    await expect(page.getByTestId('flow-trade-tape')).toBeVisible();
+    await expect(page.getByTestId('order-flow-pane')).toHaveAttribute('data-study', 'CVD');
+    await expect(footprint).toHaveCount(0);
+    if (isMobile) await page.getByRole('button', { name: 'Close Decision Dock' }).click();
+
+    await page.getByRole('tab', { name: 'Delta', exact: true }).click();
+    await expect(page.getByTestId('order-flow-pane')).toHaveAttribute('data-study', 'DELTA');
+    await expect(page.getByTestId('order-flow-pane')).toContainText('BTC');
+    if (isMobile) return;
+
+    await page.getByRole('button', { name: 'Tools & Presets', exact: true }).click();
+    await page.getByRole('button', { name: 'Order Flow', exact: true }).click();
+    await page.getByRole('checkbox', { name: 'Experimental Footprint' }).check();
+    await expect(footprint).toBeVisible();
+    await page.getByRole('button', { name: 'Close tools drawer' }).click();
+    await page.getByRole('button', { name: 'Hide Footprint' }).click();
+    await expect(footprint).toHaveCount(0);
+    await page.reload();
+    await expect(footprint).toHaveCount(0);
 });

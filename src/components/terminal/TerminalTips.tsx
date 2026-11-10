@@ -6,7 +6,7 @@ import { ArrowRight, CircleHelp, X } from 'lucide-react';
 const tips = [
     { id: 'options', title: 'Strike × Expiry Matrix', path: 'Context → Decision', description: 'Compare GEX, open interest, and implied volatility. Use the expiry menu in the header to narrow the chain. Live cells require fresh Deribit data.' },
     { id: 'us', title: 'US Market Context', path: 'Context → Decision', description: 'Check the New York session clock. Expand the panel for manual CME and ETF context.' },
-    { id: 'flow', title: 'Footprint & Order Flow', path: 'Flow → Decision', description: 'Use the left chart to choose a timeframe and zoom. Click a candle for the inspector or open Settings for statistics and captured CVD. Blank rows mean trade coverage is unavailable.' },
+    { id: 'flow', title: 'Delta, CVD & Trade Tape', path: 'Flow → Decision', description: 'Use the lower chart for Delta or CVD and the Flow panel for recent Binance Spot trades. Experimental Footprint is under Tools & Presets → Order Flow.' },
     { id: 'strategy', title: 'Strategy Lab', path: 'Setup → Decision', description: 'Inspect a local point-in-time dataset or run the synthetic OHLC diagnostic. Jev auto-paper is disabled.' },
     { id: 'paper', title: 'Manual Paper Desk', path: 'Decision Dock → Risk', description: 'Draw a Long Position, then use Simulate Trade when verified quotes are available. Partial fills and remaining protective exits are recorded in the paper journal.' },
     { id: 'portfolio', title: 'Portfolio Analytics', path: 'Risk → Analytics', description: 'Review simulated account equity, drawdown, and trade attribution from the reconciled paper journal.' },

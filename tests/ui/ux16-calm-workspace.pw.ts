@@ -107,10 +107,11 @@ test.describe('UX16.0 Calm Analytical Instrument Shell & Modes', () => {
         const flowContainer = page.getByTestId('flow-mode-container');
         await expect(flowContainer).toBeVisible();
         await expect(page.getByTestId('flow-liquidity-surface-container')).toBeVisible();
-        await expect(page.getByTestId('flow-footprint-container')).toBeVisible();
+        await expect(page.getByTestId('flow-footprint-container')).toHaveCount(0);
+        await expect(page.getByTestId('flow-trade-tape')).toBeVisible();
         await expect(page.getByTestId('flow-cvd-container')).toBeVisible();
         await expect(page.getByTestId('flow-events-container')).toBeVisible();
-        await expect(flowContainer.getByText('UNAVAILABLE')).toBeVisible();
+        await expect(flowContainer.getByTestId('flow-cvd-status')).toHaveText('UNAVAILABLE');
         await expect(flowContainer.getByText('0 OBSERVED')).toBeVisible();
         await expect(flowContainer.getByText('No active deterministic microstructure events in current window.')).toBeVisible();
         await expect(flowContainer.getByText('PROBABLE_ABSORPTION')).toHaveCount(0);
