@@ -1,6 +1,6 @@
 export const BINANCE_MARKET_SCHEMA_VERSION = 1 as const;
 
-export type BinanceInterval = '1m' | '5m' | '15m' | '1h' | '4h' | '1d';
+export type BinanceInterval = '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 export type BinanceProfileInterval = '1s' | '1m' | '5m' | '15m' | '30m' | '1h' | '4h' | '1d';
 export type MarketFeedState = 'CONNECTING' | 'LIVE' | 'STALE' | 'OFFLINE';
 export type LiquiditySequenceState = 'BUFFERING' | 'LIVE' | 'STALE' | 'GAP' | 'OFFLINE';

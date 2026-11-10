@@ -43,9 +43,14 @@ export interface DepthObservation {
  * Compares aggressive buyers at price level i against aggressive sellers at level i - 1,
  * and aggressive sellers at price level i against aggressive buyers at level i + 1.
  */
+function neighboringBins(lower: FootprintCellV1, upper: FootprintCellV1): boolean {
+    return Math.abs(lower.priceHigh - upper.priceLow) <= Math.max(1e-9, Math.abs(upper.priceLow) * 1e-12);
+}
+
 export function calculateDiagonalImbalance(
     cells: readonly FootprintCellV1[],
     config: Partial<ImbalanceConfigV1> = {},
+    comparison: { requireAdjacent?: boolean; minOpposingNotionalUsd?: number } = {},
 ): FootprintCellV1[] {
     if (!cells.length) return [];
 
@@ -57,6 +62,7 @@ export function calculateDiagonalImbalance(
     // Ensure cells are sorted strictly ascending by price
     const sorted = [...cells].sort((left, right) => left.priceMid - right.priceMid);
     const n = sorted.length;
+    const minOpposing = comparison.minOpposingNotionalUsd ?? 0;
 
     return sorted.map((cell, i) => {
         const askExecuted = cell.buyNotionalUsd;
@@ -65,9 +71,9 @@ export function calculateDiagonalImbalance(
         // Buy Imbalance: Ask(i) vs Bid(i - 1)
         let buyQualifies = false;
         let buyRatio: number | null = null;
-        if (i > 0) {
+        if (i > 0 && (!comparison.requireAdjacent || neighboringBins(sorted[i - 1], cell))) {
             const bidBelow = sorted[i - 1].sellNotionalUsd;
-            if (bidBelow > 0) {
+            if (bidBelow > 0 && bidBelow >= minOpposing) {
                 const ratio = askExecuted / bidBelow;
                 if (
                     ratio >= cfg.ratioThreshold &&
@@ -77,7 +83,7 @@ export function calculateDiagonalImbalance(
                     buyQualifies = true;
                     buyRatio = Math.round(ratio * 100) / 100;
                 }
-            } else if (!cfg.ignoreZeroComparisons && askExecuted >= cfg.minDominantNotionalUsd) {
+            } else if (bidBelow === 0 && !cfg.ignoreZeroComparisons && askExecuted >= cfg.minDominantNotionalUsd) {
                 buyQualifies = true;
                 buyRatio = 99.99;
             }
@@ -86,9 +92,9 @@ export function calculateDiagonalImbalance(
         // Sell Imbalance: Bid(i) vs Ask(i + 1)
         let sellQualifies = false;
         let sellRatio: number | null = null;
-        if (i < n - 1) {
+        if (i < n - 1 && (!comparison.requireAdjacent || neighboringBins(cell, sorted[i + 1]))) {
             const askAbove = sorted[i + 1].buyNotionalUsd;
-            if (askAbove > 0) {
+            if (askAbove > 0 && askAbove >= minOpposing) {
                 const ratio = bidExecuted / askAbove;
                 if (
                     ratio >= cfg.ratioThreshold &&
@@ -98,7 +104,7 @@ export function calculateDiagonalImbalance(
                     sellQualifies = true;
                     sellRatio = Math.round(ratio * 100) / 100;
                 }
-            } else if (!cfg.ignoreZeroComparisons && bidExecuted >= cfg.minDominantNotionalUsd) {
+            } else if (askAbove === 0 && !cfg.ignoreZeroComparisons && bidExecuted >= cfg.minDominantNotionalUsd) {
                 sellQualifies = true;
                 sellRatio = 99.99;
             }
@@ -170,6 +176,14 @@ export function detectStackedImbalances(
     };
 
     for (const cell of sorted) {
+        if (currentBuyRun.length && !neighboringBins(currentBuyRun[currentBuyRun.length - 1], cell)) {
+            flushRun(currentBuyRun, 'BUY');
+            currentBuyRun = [];
+        }
+        if (currentSellRun.length && !neighboringBins(currentSellRun[currentSellRun.length - 1], cell)) {
+            flushRun(currentSellRun, 'SELL');
+            currentSellRun = [];
+        }
         if (cell.buyImbalance) {
             currentBuyRun.push(cell);
         } else {

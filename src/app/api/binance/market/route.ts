@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { fetchBinanceMarketSnapshot } from '@/lib/binance/client.server';
 import type { BinanceInterval } from '@/lib/binance/types';
 
-const ALLOWED_INTERVALS = new Set<BinanceInterval>(['1m', '5m', '15m', '1h', '4h', '1d']);
+const ALLOWED_INTERVALS = new Set<BinanceInterval>(['1m', '5m', '15m', '30m', '1h', '4h', '1d']);
 const CACHE_CONTROL = 'public, max-age=1, s-maxage=2, stale-while-revalidate=4';
 
 export async function GET(request: NextRequest) {

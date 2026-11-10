@@ -5,7 +5,7 @@ import type {
     ClassifiedTradeV1,
     TradeCaptureBoundaryV1,
 } from './contracts';
-import type { TrueFlowInterval, TrueFlowSnapshotV1 } from './true-flow-contracts';
+import { TrueFlowIntervalSchema, type TrueFlowInterval, type TrueFlowSnapshotV1 } from './true-flow-contracts';
 
 export type AggregateTradeWorkerErrorCode = 'INVALID_CONFIG' | 'INVALID_EVENT' | 'SOCKET_UNAVAILABLE' | 'DERIVATION_LIMIT';
 
@@ -27,13 +27,15 @@ export interface AggregateTradeWorkerConfig extends AggregateTradeTapeOptions {
 export type AggregateTradeWorkerConfigOverrides = Partial<AggregateTradeWorkerConfig>;
 
 export type AggregateTradeWorkerCommand =
-    | { type: 'START'; config: AggregateTradeWorkerConfig }
+    | { type: 'START'; config: AggregateTradeWorkerConfig; footprintInterval?: TrueFlowInterval | null }
+    | { type: 'SET_INTERVALS'; main: TrueFlowInterval; footprint: TrueFlowInterval | null }
     | { type: 'CLEAR' }
     | { type: 'STOP' };
 
 export type AggregateTradeWorkerEvent =
     | { type: 'TRADE_BATCH'; trades: ClassifiedTradeV1[] }
-    | { type: 'TRUE_FLOW_SNAPSHOT'; snapshot: TrueFlowSnapshotV1 }
+    | { type: 'TRUE_FLOW_SNAPSHOT'; snapshot: TrueFlowSnapshotV1 | null }
+    | { type: 'FOOTPRINT_SNAPSHOT'; snapshot: TrueFlowSnapshotV1 | null }
     | { type: 'BOUNDARY'; boundary: TradeCaptureBoundaryV1 }
     | {
         type: 'STATUS';
@@ -48,7 +50,7 @@ export type AggregateTradeWorkerEvent =
     | { type: 'ERROR'; code: AggregateTradeWorkerErrorCode; message: string; recoverable: boolean };
 
 const DEFAULT_CONFIG: AggregateTradeWorkerConfig = Object.freeze({
-    streamUrl: 'wss://stream.binance.com:9443/stream?streams=btcusdt@aggTrade',
+    streamUrl: 'wss://data-stream.binance.vision/stream?streams=btcusdt@aggTrade',
     flushIntervalMs: 250,
     statusIntervalMs: 1_000,
     reconnectBaseMs: 1_000,
@@ -91,7 +93,7 @@ export function createAggregateTradeWorkerConfig(
     config.staleAfterMs = positiveInteger(config.staleAfterMs, 'staleAfterMs');
     config.maxTrades = positiveInteger(config.maxTrades, 'maxTrades');
     config.maxBoundaries = positiveInteger(config.maxBoundaries, 'maxBoundaries');
-    if (!['1m', '5m', '15m', '1h', '4h', '1d'].includes(config.trueFlowInterval)) {
+    if (!TrueFlowIntervalSchema.safeParse(config.trueFlowInterval).success) {
         throw new RangeError('trueFlowInterval was invalid');
     }
     if (!Number.isFinite(config.trueFlowPriceBucket) || config.trueFlowPriceBucket <= 0) {

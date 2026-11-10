@@ -35,6 +35,17 @@ describe('UX16.2 Child B: Project-Control Dashboard Components', () => {
             }
         });
 
+        it('scopes the Footprint dashboard to the UX21 milestone and evidence totals', () => {
+            const html = renderToStaticMarkup(
+                <ProjectControlDashboard initialData={mockData} initiative="UX21" />,
+            );
+            expect(html).toContain('UX21 INITIATIVE');
+            expect(html).toContain('data-testid="milestone-card-ux21.0"');
+            expect(html).toContain('data-testid="milestone-card-ux21.4"');
+            expect(html).not.toContain('data-testid="milestone-card-ux20.');
+            expect(html).toMatch(/data-testid="accepted-percent">0%/);
+        });
+
         it('displays branch, commit, and project ID in header', () => {
             const html = renderToStaticMarkup(<ProjectControlDashboard initialData={mockData} />);
             expect(html).toContain('btc-derivatives-terminal');

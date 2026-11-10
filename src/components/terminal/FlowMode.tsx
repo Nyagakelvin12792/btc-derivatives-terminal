@@ -2,12 +2,17 @@
 
 import React from 'react';
 import { Activity, BarChart2, Layers, Waves } from 'lucide-react';
-import type { CaptureCoverageV1, MarketEvidenceV1 } from '../../lib/orderflow/contracts';
+import type { CaptureCoverageV1, ClassifiedTradeV1, MarketEvidenceV1 } from '../../lib/orderflow/contracts';
 import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import { cn } from '../../lib/ui/cn';
 import TrueCvdPane from './TrueCvdPane';
 import FootprintChartOverlay from './FootprintChartOverlay';
 import CapturedVolumeProfileOverlay from './CapturedVolumeProfileOverlay';
+
+export interface FlowTradeTape {
+    trades: readonly ClassifiedTradeV1[];
+    coverage: CaptureCoverageV1;
+}
 
 export interface FlowModeProps {
     liquidityStatus: 'LIVE' | 'BUFFERING' | 'PAUSED' | 'OFFLINE' | 'GAP' | 'STALE';
@@ -18,6 +23,8 @@ export interface FlowModeProps {
     events: MarketEvidenceV1[];
     dataMode: CaptureCoverageV1['dataMode'];
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
+    experimentalFootprint?: boolean;
+    tradeTape?: FlowTradeTape;
     className?: string;
 }
 
@@ -40,6 +47,8 @@ export default function FlowMode({
     events,
     dataMode,
     trueFlowSnapshot,
+    experimentalFootprint = false,
+    tradeTape,
     className,
 }: FlowModeProps) {
     const latestSegment = trueFlowSnapshot?.cvdSegments.at(-1);
@@ -47,10 +56,12 @@ export default function FlowMode({
     const effectiveCvdUsd = latestSegment ? latestSegment.finalCumulativeDeltaNotionalUsd : currentCvdUsd;
     const effectiveFootprintStatus = trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 ? 'READY' : footprintStatus;
 
-    const imbalancedCellsCount = trueFlowSnapshot?.footprintBars.reduce(
+    const imbalancedCellsCount = experimentalFootprint ? trueFlowSnapshot?.footprintBars.reduce(
         (sum, bar) => sum + (bar.footprint?.cells ?? []).filter((c) => c.buyImbalance || c.sellImbalance).length,
         0,
-    ) ?? 0;
+    ) ?? 0 : 0;
+    const recentTrades = tradeTape?.trades.slice(-8).reverse() ?? [];
+    const tapeStatus = tradeTape?.coverage.sequenceState ?? 'UNAVAILABLE';
 
     return (
         <div className={cn('space-y-2.5 p-3 font-sans text-[#D8DEE8]', className)} data-testid="flow-mode-container">
@@ -62,6 +73,28 @@ export default function FlowMode({
                 <p className="mt-1 text-[10px] text-[#8390A0]">Only captured, provenance-labelled execution evidence appears here.</p>
             </div>
 
+            <section className="rounded border border-[#18212C] bg-[#0C1118] p-3" aria-label="Recent Binance Spot trades" data-testid="flow-trade-tape">
+                <div className="flex items-center justify-between text-xs font-semibold">
+                    <h3>Recent Binance Spot trades</h3><span className="text-[10px] text-[#8390A0]">{tapeStatus}</span>
+                </div>
+                {recentTrades.length ? (
+                    <table className="mt-2 w-full text-left font-mono text-[10px] tabular-nums">
+                        <thead className="text-[#8390A0]"><tr><th scope="col">UTC</th><th scope="col">Taker</th><th scope="col">USDT</th><th scope="col" className="text-right">BTC</th></tr></thead>
+                        <tbody>{recentTrades.map((trade) => (
+                            <tr key={trade.aggregateTradeId} className="border-t border-[#18212C]">
+                                <td>{new Date(trade.tradeTime).toISOString().slice(11, 19)}</td>
+                                <td className={trade.aggressor === 'BUY' ? 'text-emerald-300' : 'text-rose-300'}>{trade.aggressor}</td>
+                                <td>{trade.price.toLocaleString('en-US', { maximumFractionDigits: 8 })}</td>
+                                <td className="text-right">{trade.quantityBtc.toLocaleString('en-US', { maximumFractionDigits: 8 })}</td>
+                            </tr>
+                        ))}</tbody>
+                    </table>
+                ) : <p className="mt-2 text-[10px] text-[#8390A0]">No captured trades available.</p>}
+                {tradeTape && (tradeTape.coverage.gapCount > 0 || tapeStatus !== 'LIVE') && (
+                    <p className="mt-2 text-[10px] text-[#8390A0]">Capture gaps: {tradeTape.coverage.gapCount}. Recent rows show retained trades only.</p>
+                )}
+            </section>
+
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-liquidity-surface-container">
                 <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">
                     <span className="flex items-center gap-1.5"><Waves className="size-3 text-[#39A9F5]" />LIQUIDITY CAPTURE</span>
@@ -71,7 +104,7 @@ export default function FlowMode({
                 <p className="mt-1 text-[9px] text-[#5C697A]">This is capture coverage, not an institutional-activity signal.</p>
             </div>
 
-            <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-footprint-container">
+            {experimentalFootprint && <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-footprint-container">
                 <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">
                     <span className="flex items-center gap-1.5"><Layers className="size-3 text-[#39A9F5]" />FOOTPRINT</span>
                     <span data-testid="flow-footprint-status">{effectiveFootprintStatus}</span>
@@ -83,7 +116,7 @@ export default function FlowMode({
                             <span className="font-bold text-[#D8DEE8]">{trueFlowSnapshot.footprintBars.length}</span>
                         </div>
                         <div className="flex justify-between mt-0.5">
-                            <span>TOTAL TRADES:</span>
+                            <span>AGGREGATE MESSAGES:</span>
                             <span className="text-[#D8DEE8]">{trueFlowSnapshot.totals.tradeCount}</span>
                         </div>
                         {imbalancedCellsCount > 0 ? (
@@ -98,7 +131,7 @@ export default function FlowMode({
                 ) : (
                     <p className="mt-2 text-[9px] leading-relaxed text-[#8390A0]">Trade-classified footprint calculation active in UX16.2+. No bar imbalance is inferred from candles.</p>
                 )}
-            </div>
+            </div>}
 
             <div className="rounded border border-[#18212C] bg-[#0C1118] p-3" data-testid="flow-cvd-container">
                 <div className="flex items-center justify-between font-mono text-[9px] font-bold text-[#8390A0]">
@@ -143,7 +176,7 @@ export default function FlowMode({
                     <div className="h-64 border-t border-[#18212C]"><TrueCvdPane snapshot={trueFlowSnapshot} showProvenance={false} /></div>
                 </details>
             )}
-            {trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 && (
+            {experimentalFootprint && trueFlowSnapshot && trueFlowSnapshot.footprintBars.length > 0 && (
                 <details className="rounded border border-[#18212C] bg-[#0C1118]" data-testid="flow-footprint-details">
                     <summary className="cursor-pointer px-3 py-2 font-mono text-[9px] font-semibold text-[#D8DEE8]">Inspect captured footprint</summary>
                     <div className="h-72 border-t border-[#18212C]"><FootprintChartOverlay bars={trueFlowSnapshot.footprintBars} /></div>

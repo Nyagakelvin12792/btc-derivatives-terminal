@@ -1,0 +1,445 @@
+{
+  "schemaVersion": "execution-checkpoint-v1",
+  "initiativeId": "UX21-FOOTPRINT",
+  "activeMilestoneId": "UX21.4",
+  "activeTaskId": "UX21.4-TEST",
+  "assignedAgent": "CODEX",
+  "taskStartedAt": "2026-11-10T06:04:08.000Z",
+  "lastCheckpointAt": "2026-11-10T06:10:00.000Z",
+  "codeRevision": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+  "maxRetries": 3,
+  "overrides": {
+    "UX21.0-RESEARCH": {
+      "taskId": "UX21.0-RESEARCH",
+      "status": "COMPLETE",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": "2026-11-10T06:04:08.000Z",
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": []
+    },
+    "UX21.0-AUDIT": {
+      "taskId": "UX21.0-AUDIT",
+      "status": "COMPLETE",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": "2026-11-10T06:04:08.000Z",
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [],
+      "tests": []
+    },
+    "UX21.1-CHART": {
+      "taskId": "UX21.1-CHART",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Full browser regression remains open."
+      ],
+      "tests": []
+    },
+    "UX21.1-SCALES": {
+      "taskId": "UX21.1-SCALES",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Viewport math passed. Browser pointer and touch regression remains open."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.1-LAYOUT": {
+      "taskId": "UX21.1-LAYOUT",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Narrow-screen and resize persistence remain to be exercised in the browser suite."
+      ],
+      "tests": []
+    },
+    "UX21.1-SYNC": {
+      "taskId": "UX21.1-SYNC",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Timestamp mapping passed. Cross-pane feedback checks remain open in the browser suite."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.1-DRAW": {
+      "taskId": "UX21.1-DRAW",
+      "status": "IN_PROGRESS",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Editable Footprint horizontal levels shipped to preview. Broader Footprint drawing parity remains open."
+      ],
+      "tests": []
+    },
+    "UX21.2-TAPE": {
+      "taskId": "UX21.2-TAPE",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Hosted browser observed live developing trade capture. Automatic older trade archive ingestion remains open."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.2-BINS": {
+      "taskId": "UX21.2-BINS",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Regrouping and conservation fixture tests passed."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.2-TIMEFRAMES": {
+      "taskId": "UX21.2-TIMEFRAMES",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "H1 and H4 reconciled against fixture executions. Full live historical trade coverage remains data-dependent."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.2-MODES": {
+      "taskId": "UX21.2-MODES",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Hosted toolbar inspected. Dense captured ladder visual regression remains open."
+      ],
+      "tests": []
+    },
+    "UX21.3-STATS": {
+      "taskId": "UX21.3-STATS",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Ten rows displayed in the hosted preview. Captured values and alignment still require browser fixture execution."
+      ],
+      "tests": []
+    },
+    "UX21.3-CVD": {
+      "taskId": "UX21.3-CVD",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Numerical continuity tests passed. The CVD browser geometry test remains open."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.3-INSPECT": {
+      "taskId": "UX21.3-INSPECT",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Exact observed values and availability labels implemented. Recorded tape browser fixture remains open."
+      ],
+      "tests": []
+    },
+    "UX21.4-REPLAY": {
+      "taskId": "UX21.4-REPLAY",
+      "status": "REVIEW_REQUIRED",
+      "evidenceStatus": "TESTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Causal data replay passed. The uploaded-file browser regression remains open."
+      ],
+      "tests": [
+        {
+          "id": "ux21-local-vitest",
+          "command": "npx vitest run",
+          "result": "PASS",
+          "passed": 481,
+          "failed": 0,
+          "skipped": 0,
+          "executedAt": "2026-11-10T06:10:00.000Z",
+          "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+          "artifactPaths": [
+            "src/lib/chart-coordination/footprint-viewport.test.ts",
+            "src/lib/orderflow/footprint-workspace.test.ts",
+            "tests/ui/ux21-footprint.pw.ts"
+          ]
+        }
+      ]
+    },
+    "UX21.4-PERF": {
+      "taskId": "UX21.4-PERF",
+      "status": "IN_PROGRESS",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Node data and mock Canvas timings recorded. Real browser frame and input latency remain unmeasured."
+      ],
+      "tests": []
+    },
+    "UX21.4-TEST": {
+      "taskId": "UX21.4-TEST",
+      "status": "IN_PROGRESS",
+      "evidenceStatus": "IMPLEMENTED",
+      "commit": "90bc4b66ebf8515e0abaf865e1a370be25da5c84",
+      "branch": "codex/ux21-footprint",
+      "startedAt": "2026-11-10T06:04:08.000Z",
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:10:00.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Local Chromium startup was blocked by Unix socket restrictions. Hosted smoke is separate from Playwright execution."
+      ],
+      "tests": []
+    },
+    "UX21.4-ACCEPT": {
+      "taskId": "UX21.4-ACCEPT",
+      "status": "BLOCKED",
+      "evidenceStatus": "UNVERIFIED",
+      "commit": null,
+      "branch": "codex/ux21-footprint",
+      "startedAt": null,
+      "completedAt": null,
+      "updatedAt": "2026-11-10T06:04:08.000Z",
+      "reviewedBy": null,
+      "reviewedAt": null,
+      "retryCount": 0,
+      "lastError": null,
+      "blockers": [
+        "Independent release review, full browser suite, frame benchmarks and longer historical trade coverage remain open."
+      ],
+      "tests": []
+    }
+  }
+}

@@ -218,12 +218,12 @@ export default function LowerStudyPane({
 
     const showingCapturedCvd = activeStudy === 'CVD' && Boolean(trueFlowSnapshot) && cvdSourceMode === 'CAPTURED';
 
-    const sourceDescription = dataMode === 'LIVE'
+    const sourceDescription = showingCapturedCvd
+        ? `${trueFlowSnapshot?.coverage.source === 'BINANCE_SPOT' ? 'Binance Spot aggregate trades' : 'Recorded trade source'} · current continuity segment`
+        : dataMode === 'LIVE'
         ? activeStudy === 'BOOK' || activeStudy === 'LIQUIDITY'
             ? 'Binance Spot L2 · top 20 depth'
-            : showingCapturedCvd
-                ? 'Binance Spot aggregate trades · current continuity segment'
-                : 'Binance aggressor volume · bar precision'
+            : 'Binance aggressor volume · bar precision'
         : 'demo fixture';
 
     return (
@@ -263,7 +263,7 @@ export default function LowerStudyPane({
                                 lastCvd >= 0 ? 'text-emerald-300' : 'text-rose-300',
                             )}
                         >
-                            {formatCompactUsd(lastCvd)}
+                            {showingCapturedCvd ? `${formatCompactUsd(lastCvd)} USDT` : `${lastCvd.toLocaleString('en-US', { maximumFractionDigits: 8 })} BTC`}
                         </span>
                     )}
                     {activeStudy === 'DELTA' && (
@@ -273,7 +273,7 @@ export default function LowerStudyPane({
                                 lastDelta >= 0 ? 'text-emerald-300' : 'text-rose-300',
                             )}
                         >
-                            {formatCompactUsd(lastDelta)}
+                            {lastDelta.toLocaleString('en-US', { maximumFractionDigits: 8 })} BTC
                         </span>
                     )}
                     {activeStudy === 'CVD' && trueFlowSnapshot && onCvdSourceModeChange && (

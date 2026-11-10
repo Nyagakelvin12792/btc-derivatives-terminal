@@ -45,7 +45,7 @@ const runtime = new BinanceAggregateTradeRuntime({
 function isCommand(value: unknown): value is AggregateTradeWorkerCommand {
     if (!value || typeof value !== 'object') return false;
     const type = (value as { type?: unknown }).type;
-    return type === 'START' || type === 'CLEAR' || type === 'STOP';
+    return type === 'START' || type === 'SET_INTERVALS' || type === 'CLEAR' || type === 'STOP';
 }
 
 scope.onmessage = (message) => {
@@ -59,7 +59,10 @@ scope.onmessage = (message) => {
         return;
     }
     try {
-        if (message.data.type === 'START') runtime.start(createAggregateTradeWorkerConfig(message.data.config));
+        if (message.data.type === 'START') {
+            runtime.start(createAggregateTradeWorkerConfig(message.data.config), message.data.footprintInterval);
+        }
+        if (message.data.type === 'SET_INTERVALS') runtime.setIntervals(message.data.main, message.data.footprint);
         if (message.data.type === 'CLEAR') runtime.clear();
         if (message.data.type === 'STOP') runtime.stop();
     } catch {

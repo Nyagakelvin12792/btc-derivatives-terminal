@@ -63,6 +63,7 @@ export function createAggregateTradeTapeOptions(
 export class AggregateTradeTape {
     private readonly options: AggregateTradeTapeOptions;
     private readonly trades: ClassifiedTradeV1[] = [];
+    private nextTradeSlot = 0;
     private readonly retainedIds = new Set<number>();
     private readonly boundaries: TradeCaptureBoundaryV1[] = [];
     private readonly stats: AggregateTradeCaptureStatsV1 = {
@@ -133,12 +134,11 @@ export class AggregateTradeTape {
             this.sequenceState = 'LIVE';
         }
 
-        this.trades.push(trade);
+        const replaced = this.trades[this.nextTradeSlot];
+        if (replaced) this.retainedIds.delete(replaced.aggregateTradeId);
+        this.trades[this.nextTradeSlot] = trade;
+        this.nextTradeSlot = (this.nextTradeSlot + 1) % this.options.maxTrades;
         this.retainedIds.add(trade.aggregateTradeId);
-        while (this.trades.length > this.options.maxTrades) {
-            const removed = this.trades.shift();
-            if (removed) this.retainedIds.delete(removed.aggregateTradeId);
-        }
         this.stats.acceptedCount += 1;
         this.lastAggregateTradeId = trade.aggregateTradeId;
         this.coverageStart = this.coverageStart === null
@@ -183,6 +183,7 @@ export class AggregateTradeTape {
 
     clear(): void {
         this.trades.length = 0;
+        this.nextTradeSlot = 0;
         this.retainedIds.clear();
         this.boundaries.length = 0;
         this.stats.acceptedCount = 0;
@@ -204,7 +205,9 @@ export class AggregateTradeTape {
         const telemetry = this.telemetry(capturedAt);
         return AggregateTradeCaptureSnapshotV1Schema.parse({
             schemaVersion: ORDERFLOW_SCHEMA_VERSION,
-            trades: this.trades,
+            trades: this.trades.length === this.options.maxTrades && this.nextTradeSlot !== 0
+                ? [...this.trades.slice(this.nextTradeSlot), ...this.trades.slice(0, this.nextTradeSlot)]
+                : this.trades,
             boundaries: this.boundaries,
             coverage: telemetry.coverage,
             stats: telemetry.stats,

@@ -213,7 +213,7 @@ export const AggregateTradeCapabilityV1Schema = z.object({
 export type AggregateTradeCapabilityV1 = z.infer<typeof AggregateTradeCapabilityV1Schema>;
 
 export const FootprintCellV1Schema = z.object({
-    priceLow: positiveFinite,
+    priceLow: nonNegativeFinite,
     priceHigh: positiveFinite,
     priceMid: positiveFinite,
     buyVolumeBtc: nonNegativeFinite,
@@ -243,13 +243,21 @@ export const FootprintCellV1Schema = z.object({
 
 export type FootprintCellV1 = z.infer<typeof FootprintCellV1Schema>;
 
+export const TrueFlowIntervalSchema = z.enum(['1m', '5m', '15m', '30m', '1h', '4h', '1d']);
+
 export const FootprintBarV1Schema = z.object({
     schemaVersion: z.literal(ORDERFLOW_SCHEMA_VERSION),
     openTime: safeInteger,
     closeTime: safeInteger,
-    interval: z.enum(['1m', '5m', '15m', '1h', '4h', '1d']),
+    interval: TrueFlowIntervalSchema,
     priceBucket: positiveFinite,
     cells: z.array(FootprintCellV1Schema).max(5_000),
+    observedOhlc: z.object({
+        open: positiveFinite, high: positiveFinite, low: positiveFinite, close: positiveFinite,
+    }).strict().optional(),
+    executionCount: safeInteger.nullable().optional(),
+    firstAggregateTradeId: safeInteger.optional(),
+    lastAggregateTradeId: safeInteger.optional(),
     totalNotionalUsd: nonNegativeFinite,
     deltaNotionalUsd: z.number().finite(),
     pocPrice: positiveFinite.nullable(),

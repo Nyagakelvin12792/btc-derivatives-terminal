@@ -8,7 +8,7 @@ import { X, Activity } from 'lucide-react';
 import { cn } from '../../lib/ui/cn';
 import { useTerminalStore } from '../../lib/dashboard/store';
 import ContextMode from './ContextMode';
-import FlowMode from './FlowMode';
+import FlowMode, { type FlowTradeTape } from './FlowMode';
 import SetupMode from './SetupMode';
 import RiskTerminal, { type PositionRiskSettings } from './RiskTerminal';
 import type { DrawingObject, PositionDrawingType, PositionPrices } from './drawing-model';
@@ -61,6 +61,8 @@ export interface DecisionDockProps {
     onSettingsChange: (settings: PositionRiskSettings) => void;
     optionsContent: React.ReactNode;
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
+    experimentalFootprint?: boolean;
+    tradeTape?: FlowTradeTape;
 }
 
 export default function DecisionDock({
@@ -79,6 +81,8 @@ export default function DecisionDock({
     onSettingsChange,
     optionsContent,
     trueFlowSnapshot,
+    experimentalFootprint,
+    tradeTape,
 }: DecisionDockProps) {
     const {
         workspaceMode,
@@ -367,6 +371,8 @@ export default function DecisionDock({
                                     retainedFrames={dataMode === 'DEMO' ? 0 : liquidityFeed.frames.length}
                                     footprintStatus={trueFlowSnapshot ? (trueFlowSnapshot.footprintBars.length > 0 ? 'READY' : 'AWAITING_CAPTURE') : 'NOT_CONNECTED'}
                                     cvdStatus={trueFlowSnapshot && trueFlowSnapshot.cvdSegments.length > 0 ? 'TRADE_BASED' : 'UNAVAILABLE'}
+                                    experimentalFootprint={experimentalFootprint}
+                                    tradeTape={tradeTape}
                                     currentCvdUsd={trueFlowSnapshot?.cvdSegments.at(-1)?.finalCumulativeDeltaNotionalUsd ?? null}
                                     events={flowEvidence}
                                     dataMode={orderflowMode}

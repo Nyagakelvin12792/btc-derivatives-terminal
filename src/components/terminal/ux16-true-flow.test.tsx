@@ -17,7 +17,8 @@ import CandleFootprintCanvasOverlay, {
     projectFootprintBarsToChart,
     projectTradeVolumeProfileToChart,
 } from './CandleFootprintCanvasOverlay';
-import LeftFootprintExecutionPane, { buildSkeletonExecutionBars } from './LeftFootprintExecutionPane';
+import LeftFootprintExecutionPane from './LeftFootprintExecutionPane';
+import { buildFootprintWorkspace } from '../../lib/orderflow/footprint-workspace';
 import { calculateTradingSessions } from '../../lib/orderflow/trading-sessions';
 import TradingSessionsOverlay from './TradingSessionsOverlay';
 import TerminalChartLoader from './TerminalChartLoader';
@@ -275,13 +276,15 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
                     events={[]}
                     dataMode="LIVE"
                     trueFlowSnapshot={snapshot}
+                    tradeTape={{ trades: [trade(101, 5, 100, 1, 'BUY')], coverage: snapshot.coverage }}
                 />,
             );
 
             expect(html).toContain('data-testid="flow-cvd-status"');
             expect(html).toContain('TRADE_BASED');
-            expect(html).toContain('data-testid="flow-footprint-status"');
-            expect(html).toContain('READY');
+            expect(html).not.toContain('data-testid="flow-footprint-status"');
+            expect(html).toContain('data-testid="flow-trade-tape"');
+            expect(html).toContain('BUY');
             expect(html).toContain('data-testid="flow-trade-vp-container"');
         });
     });
@@ -336,86 +339,43 @@ describe('UX16.2 Child A: True-Flow Presentation Components', () => {
         });
     });
 
-    describe('LeftFootprintExecutionPane (Synchronized Left Skeleton Candle & Delta Ladder Pane)', () => {
-        it('builds skeleton execution bars with Bid×Ask ladders, POC, and renders FOOTPRINT / DELTA LADDER / HEATMAP + IMB controls', () => {
-            const demoBars = createDemoMarketBars(77900, 24, 60);
-            const snapshot = createTestSnapshot(false);
-            const { executionBars, bucketStep } = buildSkeletonExecutionBars(demoBars, 10, 60, snapshot, [], 14);
-
-            expect(executionBars).toHaveLength(10);
-            expect(bucketStep).toBeGreaterThan(0);
-            expect(executionBars[0].cells.length).toBeGreaterThan(0);
-            expect(executionBars[0].cells.some((c) => c.isPoc)).toBe(true);
-
-            const html = renderToStaticMarkup(
-                <LeftFootprintExecutionPane
-                    bars={demoBars}
-                    timeframeSeconds={60}
-                    trueFlowSnapshot={snapshot}
-                    hoveredPrice={77900}
-                />,
-            );
-
+    describe('Independent Footprint workspace', () => {
+        it('exposes the compact controls and leaves demo OHLC unclassified', () => {
+            const html = renderToStaticMarkup(<LeftFootprintExecutionPane
+                bars={createDemoMarketBars(77900, 24, 60)}
+                timeframeSeconds={60}
+                dataMode="DEMO"
+                trueFlowSnapshot={createTestSnapshot()}
+            />);
             expect(html).toContain('data-testid="left-footprint-execution-pane"');
-            expect(html).toContain('data-testid="exec-mode-footprint"');
-            expect(html).toContain('data-testid="exec-mode-delta-ladder"');
-            expect(html).toContain('data-testid="exec-mode-candle-vp"');
-            expect(html).toContain('data-testid="exec-mode-heatmap-imbalance"');
+            expect(html).toContain('data-testid="exec-mode"');
+            expect(html).toContain('data-testid="exec-timeframe"');
             expect(html).toContain('data-testid="exec-zoom-in"');
             expect(html).toContain('data-testid="exec-zoom-out"');
-            expect(html).toContain('data-testid="exec-sync-toggle"');
+            expect(html).toContain('aria-pressed="false"');
+            expect(html).toContain('data-trade-candles="0"');
+            expect(html).toContain('data-stats-rows="10"');
+            expect(html).toContain('No captured trades');
         });
 
-        it('synchronizes skeleton execution bars with visible logical range when synced', () => {
-            const demoBars = createDemoMarketBars(77900, 50, 60);
-            const snapshot = createTestSnapshot(false);
-            const { executionBars } = buildSkeletonExecutionBars(
-                demoBars,
-                10,
-                60,
-                snapshot,
-                [],
-                14,
-                { from: 10, to: 18 },
-                true
-            );
-
-            expect(executionBars.length).toBeLessThanOrEqual(10);
-            expect(executionBars[0].vahPrice).toBeGreaterThanOrEqual(executionBars[0].valPrice);
-            expect(executionBars[0].maxLevelVolume).toBeGreaterThan(0);
+        it('conserves actual aggressor volumes and never generates rows from OHLC', () => {
+            const snapshot = createTestSnapshot();
+            const candles = buildFootprintWorkspace(snapshot, 10, BASE_TIME + 70_000);
+            expect(candles).toHaveLength(2);
+            expect(candles[0].askVolumeBtc).toBe(1);
+            expect(candles[0].bidVolumeBtc).toBe(2);
+            expect(candles[0].deltaBtc).toBe(-1);
+            expect(candles[1].developing).toBe(true);
+            expect(buildFootprintWorkspace(null, 10, BASE_TIME + 70_000)).toEqual([]);
         });
 
-        it('supports 1:1 price scale synchronization and renders price sync toggle', () => {
-            const demoBars = createDemoMarketBars(77900, 30, 60);
-            const snapshot = createTestSnapshot(false);
-            const { minPrice, maxPrice } = buildSkeletonExecutionBars(
-                demoBars,
-                10,
-                60,
-                snapshot,
-                [],
-                14,
-                null,
-                true,
-                { min: 75000, max: 82000 },
-                true
-            );
-
-            expect(minPrice).toBeLessThanOrEqual(75000);
-            expect(maxPrice).toBeGreaterThanOrEqual(82000);
-
-            const html = renderToStaticMarkup(
-                <LeftFootprintExecutionPane
-                    bars={demoBars}
-                    timeframeSeconds={60}
-                    trueFlowSnapshot={snapshot}
-                    mainChartPriceRange={{ min: 75000, max: 82000 }}
-                    hoveredPrice={77900}
-                />
-            );
-
-            expect(html).toContain('data-testid="exec-price-sync-toggle"');
-            expect(html).toContain('PRICE SYNC');
+        it('hides statistics in the chart-only split', () => {
+            const html = renderToStaticMarkup(<LeftFootprintExecutionPane
+                bars={createDemoMarketBars(77900, 20, 60)}
+                timeframeSeconds={60}
+                showStudies={false}
+            />);
+            expect(html).toContain('data-stats-rows="0"');
         });
     });
 

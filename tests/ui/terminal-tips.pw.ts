@@ -15,7 +15,7 @@ test('Tips reaches terminal features from a closed or preview workspace', async 
     for (const [label, target] of [
         ['Strike × Expiry Matrix', 'options-strike-expiry-matrix'],
         ['US Market Context', 'us-market-context-drawer'],
-        ['Footprint & Order Flow', 'flow-mode-container'],
+        ['Delta, CVD & Trade Tape', 'flow-mode-container'],
         ['Strategy Lab', 'strategy-lab-panel'],
         ['Manual Paper Desk', 'paper-desk'],
         ['Portfolio Analytics', 'risk-analytics-panel'],

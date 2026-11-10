@@ -42,6 +42,8 @@ export interface ToolsDrawerProps {
     overlayDensity: OverlayDensityMode;
     onChangeOverlayDensity: (density: OverlayDensityMode) => void;
     splitLayoutMode: ChartSplitLayoutMode;
+    experimentalFootprint: boolean;
+    onExperimentalFootprintChange: (enabled: boolean) => void;
     onChangeSplitLayoutMode: (mode: ChartSplitLayoutMode) => void;
     priceScaleFit: PriceScaleFitMode;
     onChangePriceScaleFit: (fit: PriceScaleFitMode) => void;
@@ -108,6 +110,8 @@ export default function ToolsDrawer({
     overlayDensity,
     onChangeOverlayDensity,
     splitLayoutMode,
+    experimentalFootprint,
+    onExperimentalFootprintChange,
     onChangeSplitLayoutMode,
     priceScaleFit,
     onChangePriceScaleFit,
@@ -391,7 +395,14 @@ export default function ToolsDrawer({
 
                     {activeCategory === 'ORDER_FLOW' && (
                         <div className="space-y-2.5" data-testid="tools-section-order-flow">
-                            <span className="font-bold text-[#D8DEE8]">Synchronized Footprint &amp; CVD Layout</span>
+                            <span className="font-bold text-[#D8DEE8]">Order Flow Studies</span>
+                            <label className="flex items-center gap-2 text-[10px] text-[#D8DEE8]">
+                                <input type="checkbox" checked={experimentalFootprint}
+                                    onChange={(event) => onExperimentalFootprintChange(event.target.checked)} />
+                                Experimental Footprint
+                            </label>
+                            <p className="text-[9px] text-[#8390A0]">Optional price-level view. Delta, CVD and the trade tape work with this off.</p>
+                            {experimentalFootprint && <>
                             <div className="space-y-1">
                                 <span className="text-[8px] uppercase text-[#5C697A]">Split-Screen Workspace Mode</span>
                                 <div className="grid grid-cols-1 gap-1">
@@ -444,6 +455,7 @@ export default function ToolsDrawer({
                                 </div>
                             </div>
 
+                            </>}
                             <div className="flex items-center justify-between pt-1">
                                 <span className="text-[9px] text-[#8390A0]">Lower CVD / Delta Pane</span>
                                 <button

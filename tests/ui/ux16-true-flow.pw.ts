@@ -54,10 +54,8 @@ test.describe('UX16.2 True Flow Presentation & Semantic Zoom Acceptance', () => 
             await expect(cvdStatus).toBeVisible();
             await expect(cvdStatus).toHaveText(/UNAVAILABLE|TRADE_BASED/);
 
-            // Footprint must be NOT_CONNECTED or AWAITING_CAPTURE; never claiming live footprint
-            const footprintStatus = page.getByTestId('flow-footprint-status');
-            await expect(footprintStatus).toBeVisible();
-            await expect(footprintStatus).toHaveText(/NOT_CONNECTED|READY/);
+            await expect(flowContainer.getByTestId('flow-footprint-status')).toHaveCount(0);
+            await expect(flowContainer.getByTestId('flow-trade-tape')).toContainText('No captured trades available.');
 
             // Capture screenshots across viewports
             const artifactDir = path.resolve(process.cwd(), '.artifacts', 'ui-overhaul');
@@ -124,6 +122,7 @@ test.describe('UX16.2 deterministic worker integration', () => {
             });
 
             await page.addInitScript((fixture) => {
+                localStorage.setItem('btc-terminal.footprint.experimental-enabled', 'true');
                 localStorage.setItem('btc-terminal-ui-v1', JSON.stringify({
                     state: { dataMode: 'LIVE', activeWorkspace: 'MARKET STRUCTURE', workspaceMode: 'FLOW' },
                     version: 1,

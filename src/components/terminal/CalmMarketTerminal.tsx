@@ -55,6 +55,11 @@ import { useBinanceAggregateTradeCapture } from '../../lib/orderflow/use-aggrega
 import type { BinanceInterval } from '../../lib/binance/types';
 import MarketStructureChart from './MarketStructureChart';
 import type { ChartTimeframe, ChartTool } from './types';
+import type { AggregateTradeCaptureSnapshotV1 } from '../../lib/orderflow/contracts';
+import type { TrueFlowInterval } from '../../lib/orderflow/true-flow-contracts';
+import { useFootprintHistory, useFootprintInstrument } from '../../lib/binance/use-footprint-history';
+import type { FootprintDisplayMode } from './footprint-workspace-renderer';
+import { DEFAULT_FOOTPRINT_LAYOUT, FOOTPRINT_PRESET_MODES, isFootprintDisplayMode, isFootprintInterval, isFootprintLayout, readFootprintPreference, writeFootprintPreference } from './footprint-preferences';
 import {
     DEFAULT_RISK_SETTINGS,
     type PositionRiskSettings,
@@ -211,9 +216,12 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
     const setActiveWorkspacePreset = useTerminalStore((state) => state.setWorkspacePreset);
     const activeWorkspacePreset = savedWorkspacePreset && Object.hasOwn(BUILTIN_WORKSPACE_PRESETS, savedWorkspacePreset) ? savedWorkspacePreset : 'TRADE_EXECUTION';
     const [overlayDensity, setOverlayDensity] = useState<OverlayDensityMode>('STANDARD');
-    const [splitLayoutMode, setSplitLayoutMode] = useState<ChartSplitLayoutMode>('MODE_B_CANDLE_AND_FOOTPRINT');
+    const [experimentalFootprint, setExperimentalFootprint] = useState(false);
+    const [splitLayoutMode, setSplitLayoutMode] = useState<ChartSplitLayoutMode>(DEFAULT_FOOTPRINT_LAYOUT);
+    const [footprintInterval, setFootprintInterval] = useState<TrueFlowInterval | null>(null);
     const [priceScaleFit, setPriceScaleFit] = useState<PriceScaleFitMode>('CANDLE_FIT');
-    const [footprintPreset, setFootprintPreset] = useState<FootprintPresetId>('DELTA_IMBALANCE');
+    const [footprintPreset, setFootprintPreset] = useState<FootprintPresetId>('BID_ASK');
+    const [footprintDisplayMode, setFootprintDisplayMode] = useState<FootprintDisplayMode>('BID_ASK');
     const [showSessionHighLowLines, setShowSessionHighLowLines] = useState(false);
     const [showSessionOpeningRange, setShowSessionOpeningRange] = useState(false);
     const selectedExpiryOverride = useTerminalStore((state) => state.optionsExpiryFilter);
@@ -261,8 +269,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         setWorkspaceMode(mode);
         openDock('DECISION');
         if (mode === 'FLOW') {
-            if (chartLayers.leftExecutionPane === false) toggleChartLayer('leftExecutionPane');
-            if (chartLayers.liquidityHeatmap === false) toggleChartLayer('liquidityHeatmap');
+            if (activeOrderFlowStudy !== 'DELTA') setActiveOrderFlowStudy('CVD');
+            setStudyPaneOpen(true);
         }
     }
 
@@ -293,13 +301,66 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         maxClientFrames: 1_800,
     });
     const paperDesk = usePaperDesk(liquidityFeed, dataMode === 'LIVE' && !replayActive);
+    const footprintPaneActive = experimentalFootprint && splitLayoutMode !== 'MODE_A_CANDLE_ONLY';
+    const independentFootprint = !replayActive && footprintPaneActive ? footprintInterval : null;
+    const footprintInstrument = useFootprintInstrument(dataMode === 'LIVE' && footprintPaneActive);
+    const footprintHistory = useFootprintHistory(footprintInterval ?? BINANCE_INTERVALS[timeframe],
+        dataMode === 'LIVE' && independentFootprint !== null && independentFootprint !== BINANCE_INTERVALS[timeframe]);
     const aggregateTradeFeed = useBinanceAggregateTradeCapture(dataMode === 'LIVE', {
         trueFlowInterval: BINANCE_INTERVALS[timeframe],
-    });
+    }, independentFootprint);
     const activeTrueFlow = trueFlowSnapshot
         ?? (dataMode === 'LIVE' && aggregateTradeFeed.capability === 'ENABLED'
             ? aggregateTradeFeed.trueFlow
             : null);
+
+    const footprintFlow = independentFootprint && independentFootprint !== BINANCE_INTERVALS[timeframe]
+        ? aggregateTradeFeed.footprintFlow
+        : activeTrueFlow;
+
+    function exportFootprintTape() {
+        const { trades, boundaries, coverage, stats, lastAggregateTradeId } = aggregateTradeFeed;
+        if (!trades.length) return;
+        const capture: AggregateTradeCaptureSnapshotV1 = { schemaVersion: 1, trades, boundaries, coverage, stats, lastAggregateTradeId };
+        const url = URL.createObjectURL(new Blob([JSON.stringify(capture)], { type: 'application/json' }));
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = 'btcusdt-spot-capture.json';
+        link.click();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    }
+
+    const changeExperimentalFootprint = useCallback((enabled: boolean) => {
+        setExperimentalFootprint(enabled);
+        writeFootprintPreference('experimental-enabled', enabled);
+    }, []);
+
+    const changeFootprintLayout = useCallback((mode: ChartSplitLayoutMode) => {
+        setSplitLayoutMode(mode);
+        writeFootprintPreference('layout', mode);
+    }, []);
+    const changeFootprintMode = useCallback((mode: FootprintDisplayMode) => {
+        setFootprintDisplayMode(mode);
+        writeFootprintPreference('mode', mode);
+    }, []);
+
+    const changeFootprintPreset = useCallback((preset: FootprintPresetId) => {
+        setFootprintPreset(preset);
+        changeFootprintMode(FOOTPRINT_PRESET_MODES[preset]);
+    }, [changeFootprintMode]);
+
+    useEffect(() => {
+        const frame = requestAnimationFrame(() => {
+            setExperimentalFootprint(readFootprintPreference('experimental-enabled') === true);
+            const mode = readFootprintPreference('mode');
+            if (isFootprintDisplayMode(mode)) setFootprintDisplayMode(mode);
+            const interval = readFootprintPreference('interval');
+            const layout = readFootprintPreference('layout');
+            if (isFootprintInterval(interval)) setFootprintInterval(interval);
+            if (isFootprintLayout(layout)) setSplitLayoutMode(layout);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, []);
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
@@ -379,18 +440,18 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
         setActiveWorkspacePreset(presetId);
         const preset = BUILTIN_WORKSPACE_PRESETS[presetId];
         setOverlayDensity(preset.overlayDensity);
-        setSplitLayoutMode(preset.splitLayoutMode);
+        changeFootprintLayout(preset.splitLayoutMode);
         setPriceScaleFit(preset.priceScaleFit);
-        setFootprintPreset(preset.footprintPreset);
+        changeFootprintPreset(preset.footprintPreset);
         setStudyPaneOpen(preset.indicators.showLowerStudy);
-    }, [setActiveWorkspacePreset, setStudyPaneOpen]);
+    }, [changeFootprintLayout, changeFootprintPreset, setActiveWorkspacePreset, setStudyPaneOpen]);
 
     useEffect(() => {
         if (!savedWorkspacePreset || !Object.hasOwn(BUILTIN_WORKSPACE_PRESETS, savedWorkspacePreset)) return;
         const preset = BUILTIN_WORKSPACE_PRESETS[savedWorkspacePreset];
         const frame = requestAnimationFrame(() => {
             setOverlayDensity(preset.overlayDensity);
-            setSplitLayoutMode(preset.splitLayoutMode);
+            if (!isFootprintLayout(readFootprintPreference('layout'))) setSplitLayoutMode(preset.splitLayoutMode);
             setPriceScaleFit(preset.priceScaleFit);
             setFootprintPreset(preset.footprintPreset);
         });
@@ -786,9 +847,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 <LayerToggle label="Gamma regime" checked={chartLayers.gammaRegime} onCheckedChange={() => toggleChartLayer('gammaRegime')} />
                                 <LayerToggle label="Gamma Flip" checked={chartLayers.gammaFlip} onCheckedChange={() => toggleChartLayer('gammaFlip')} />
                                 <LayerToggle label="Max Pain" checked={chartLayers.maxPain} onCheckedChange={() => toggleChartLayer('maxPain')} />
-                                <LayerToggle label="Left Skeleton Footprint Pane" checked={chartLayers.leftExecutionPane !== false} onCheckedChange={() => toggleChartLayer('leftExecutionPane')} />
                                 <LayerToggle label="Liquidity heatmap" checked={chartLayers.liquidityHeatmap !== false} onCheckedChange={() => toggleChartLayer('liquidityHeatmap')} />
-                                <LayerToggle label="Footprint clusters" checked={Boolean(chartLayers.footprint)} onCheckedChange={() => toggleChartLayer('footprint')} />
+                                {experimentalFootprint && <LayerToggle label="Experimental Footprint clusters" checked={Boolean(chartLayers.footprint)} onCheckedChange={() => toggleChartLayer('footprint')} />}
                                 <LayerToggle label="Fixed Range VP" checked={chartLayers.volumeProfile} onCheckedChange={() => toggleChartLayer('volumeProfile')} />
                                 <LayerToggle label="Anchored VWAP" checked={chartLayers.avwap} onCheckedChange={() => toggleChartLayer('avwap')} />
                             </Popover.Content>
@@ -884,7 +944,6 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 {/* Minimalist Active Studies Bar (Collapsible) */}
                                 {showStudyChipsStrip && (
                                 <div className="flex h-8 shrink-0 items-center gap-1.5 overflow-x-auto border-b border-[#18212C] bg-[#090D14] px-2" data-testid="study-chips-strip">
-                                    <StudyChip label="Left Footprint Pane" visible={chartLayers.leftExecutionPane !== false} onToggle={() => toggleChartLayer('leftExecutionPane')} description="Synchronized left execution pane with Skeleton Candles, Bid×Ask Footprint, Colored Delta Ladder, and Heatmap + Imbalance." />
                                     <StudyChip label={chartLayers.volumeProfile ? `Fixed Range VP (${vpApproachMode === 'PREV_SESSION' ? 'PREV' : vpApproachMode === 'FREE_HOLD' ? 'FREE' : vpApproachMode})` : 'Fixed Range VP'} visible={chartLayers.volumeProfile} onToggle={() => toggleChartLayer('volumeProfile')} description="Multi-approach volume profile (Daily, Weekly, Prev Session, Free Hold) with POC, VAH, VAL, opacity slider, and Left/Right placement." />
                                       {chartLayers.volumeProfile && (
                                           <div className="flex items-center gap-0.5 rounded border border-[#18212C] bg-[#0C1118] p-0.5" data-testid="header-vp-approach-buttons">
@@ -910,7 +969,6 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                     <StudyChip label="Gamma Regime" visible={chartLayers.gammaRegime} onToggle={() => toggleChartLayer('gammaRegime')} description="Positive and negative gamma behavior zones separated by the Gamma Flip." />
                                     <StudyChip label="Walls" visible={chartLayers.walls} onToggle={() => toggleChartLayer('walls')} description="Primary call and put walls plus optional secondary GEX levels." />
                                     <StudyChip label="Liquidity Heatmap" visible={chartLayers.liquidityHeatmap !== false} onToggle={() => toggleChartLayer('liquidityHeatmap')} description="Sequence-validated Binance Spot depth history. Session-local only; no synthetic liquidity." />
-                                    <StudyChip label="On-Candle Footprint" visible={Boolean(chartLayers.footprint)} onToggle={() => toggleChartLayer('footprint')} description="Optional ATAS/NinjaTrader-style bid/ask cluster cells rendered directly on the right candlestick chart." />
                                 </div>
                                 )}
 
@@ -1026,14 +1084,12 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             overlayDensity={overlayDensity}
                                             onChangeOverlayDensity={setOverlayDensity}
                                             splitLayoutMode={splitLayoutMode}
-                                            onChangeSplitLayoutMode={(mode) => {
-                                                setSplitLayoutMode(mode);
-                                                if (mode === 'MODE_A_CANDLE_ONLY' && chartLayers.leftExecutionPane !== false) {
-                                                    toggleChartLayer('leftExecutionPane');
-                                                } else if (mode !== 'MODE_A_CANDLE_ONLY' && chartLayers.leftExecutionPane === false) {
-                                                    toggleChartLayer('leftExecutionPane');
-                                                }
+                                            experimentalFootprint={experimentalFootprint}
+                                            onExperimentalFootprintChange={(enabled) => {
+                                                if (enabled && splitLayoutMode === 'MODE_A_CANDLE_ONLY') changeFootprintLayout(DEFAULT_FOOTPRINT_LAYOUT);
+                                                changeExperimentalFootprint(enabled);
                                             }}
+                                            onChangeSplitLayoutMode={changeFootprintLayout}
                                             priceScaleFit={priceScaleFit}
                                             onChangePriceScaleFit={setPriceScaleFit}
                                             showVolumeProfile={chartLayers.volumeProfile}
@@ -1047,7 +1103,7 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             onStartTwoClickFreeVp={() => setVpApproachMode('FREE_HOLD')}
                                             isSelectingFreeVpRange={false}
                                             footprintPreset={footprintPreset}
-                                            onSelectFootprintPreset={setFootprintPreset}
+                                            onSelectFootprintPreset={changeFootprintPreset}
                                             showLowerStudy={studyPaneOpen}
                                             onToggleLowerStudy={() => setStudyPaneOpen(!studyPaneOpen)}
                                             showGammaRegime={chartLayers.gammaRegime}
@@ -1070,7 +1126,10 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             onToggleSessionOpeningRange={() => setShowSessionOpeningRange((v) => !v)}
                                             onSelectDrawingTool={(tool) => setActiveTool(tool as ChartTool)}
                                             onClearDrawings={() => setActiveTool('cursor')}
-                                            onResetAllDefaults={resetWorkspaceUi}
+                                            onResetAllDefaults={() => {
+                                                changeExperimentalFootprint(false);
+                                                resetWorkspaceUi();
+                                            }}
                                         />
                                         <MarketStructureChart
                                             data={effectiveOptionsData}
@@ -1086,6 +1145,22 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                             onRegisterPositionUpdater={handleRegisterPositionUpdater}
                                             riskSettings={riskSettings}
                                             trueFlowSnapshot={activeTrueFlow}
+                                            footprintSnapshot={footprintFlow?.interval === (independentFootprint ?? BINANCE_INTERVALS[timeframe]) ? footprintFlow : null}
+                                            footprintInterval={footprintInterval}
+                                            footprintDisplayMode={footprintDisplayMode}
+                                            onFootprintDisplayModeChange={changeFootprintMode}
+                                            onFootprintIntervalChange={(interval) => {
+                                                setFootprintInterval(interval);
+                                                writeFootprintPreference('interval', interval);
+                                            }}
+                                            footprintHistory={footprintHistory.data}
+                                            footprintTickSize={footprintInstrument.data?.tickSize}
+                                            footprintHistoryState={footprintHistory.fetchStatus === 'fetching' && !footprintHistory.data ? 'loading' : footprintHistory.isError ? 'error' : null}
+                                            footprintLayout={splitLayoutMode}
+                                            experimentalFootprint={experimentalFootprint}
+                                            onCloseFootprint={() => changeExperimentalFootprint(false)}
+                                            asOfMs={utcNowMs}
+                                            onExportFootprintTape={aggregateTradeFeed.trades.length > 0 ? exportFootprintTape : undefined}
                                             priceScaleFit={priceScaleFit}
                                             overlayDensity={overlayDensity}
                                             showSessionHighLowLines={showSessionHighLowLines}
@@ -1125,6 +1200,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                         onSettingsChange={handleRiskSettingsChange}
                                         optionsContent={<OptionsContent metrics={metrics} data={data} isError={isError} />}
                                         trueFlowSnapshot={activeTrueFlow}
+                                        experimentalFootprint={experimentalFootprint}
+                                        tradeTape={dataMode === 'LIVE' ? aggregateTradeFeed : undefined}
                                     />
                                 </Panel>
                             </>
@@ -1246,6 +1323,8 @@ export default function MarketTerminal({ data, isError, trueFlowSnapshot }: Mark
                                 onSettingsChange={handleRiskSettingsChange}
                                 optionsContent={<OptionsContent metrics={metrics} data={data} isError={isError} />}
                                 trueFlowSnapshot={activeTrueFlow}
+                                experimentalFootprint={experimentalFootprint}
+                                tradeTape={dataMode === 'LIVE' ? aggregateTradeFeed : undefined}
                             />
                         </Dialog.Content>
                     </Dialog.Portal>

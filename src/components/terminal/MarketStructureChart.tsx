@@ -20,7 +20,9 @@ import type { TerrainDataContractV2 } from '../../lib/terrain/types';
 import { buildCvdBars, buildDeltaHistogram, selectLiquidityLevels, type CvdAnchor } from '../../lib/binance/analytics';
 import type { BinanceMarketFeed } from '../../lib/binance/use-market-feed';
 import type { BinanceLiquidityHeatmapFeed } from '../../lib/binance/use-liquidity-heatmap';
-import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
+import { useFootprintReplay } from './use-footprint-replay';
+import { buildFootprintWorkspace } from '../../lib/orderflow/footprint-workspace';
+import type { TrueFlowInterval, TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
 import { isCvdBar, projectCapturedCvdToChartTimes, type FlowCvdPoint } from './true-cvd-chart-data';
 import { useBinanceVolumeProfile } from '../../lib/binance/use-volume-profile';
 import { useTerminalStore } from '../../lib/dashboard/store';
@@ -60,11 +62,13 @@ import CandleFootprintCanvasOverlay, {
     type ProjectedCandleFootprintBar,
     type ProjectedTradeVpLayout,
 } from './CandleFootprintCanvasOverlay';
+import type { FootprintDisplayMode } from './footprint-workspace-renderer';
 import LeftFootprintExecutionPane from './LeftFootprintExecutionPane';
-import FootprintCandleInspector from './FootprintCandleInspector';
-import { aggregateFootprintBarWithConservation, selectAdaptiveFootprintStep, type AggregatedFootprintBar } from '../../lib/chart-coordination/coordinator';
+import { DEFAULT_FOOTPRINT_LAYOUT, FOOTPRINT_INTERVALS, readFootprintPreference, writeFootprintPreference } from './footprint-preferences';
+import { findFootprintCandleIndex, type FootprintTimeRange } from '../../lib/chart-coordination/footprint-viewport';
+import type { BinanceMarketBar } from '../../lib/binance/types';
 import { resolveRightEdgeLabels } from '../../lib/market-structure/label-layout';
-import type { OverlayDensityMode, PriceScaleFitMode } from '../../lib/ui/design-tokens';
+import type { ChartSplitLayoutMode, OverlayDensityMode, PriceScaleFitMode } from '../../lib/ui/design-tokens';
 import FixedRangeVolumeProfileCanvas from './FixedRangeVolumeProfileCanvas';
 import TradingSessionsOverlay from './TradingSessionsOverlay';
 import { calculateTradingSessions } from '../../lib/orderflow/trading-sessions';
@@ -142,6 +146,19 @@ interface MarketStructureChartProps {
     onRegisterPositionUpdater?: (updater: ((prices: PositionPrices) => void) | null) => void;
     riskSettings?: PositionRiskSettings;
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
+    footprintSnapshot?: TrueFlowSnapshotV1 | null;
+    footprintInterval?: TrueFlowInterval | null;
+    footprintDisplayMode?: FootprintDisplayMode;
+    onFootprintDisplayModeChange?: (mode: FootprintDisplayMode) => void;
+    onFootprintIntervalChange?: (interval: TrueFlowInterval | null) => void;
+    footprintHistory?: BinanceMarketBar[];
+    footprintTickSize?: number;
+    footprintHistoryState?: 'loading' | 'error' | null;
+    footprintLayout?: ChartSplitLayoutMode;
+    experimentalFootprint?: boolean;
+    onCloseFootprint?: () => void;
+    asOfMs?: number | null;
+    onExportFootprintTape?: () => void;
     priceScaleFit?: PriceScaleFitMode;
     overlayDensity?: OverlayDensityMode;
     showSessionHighLowLines?: boolean;
@@ -267,14 +284,29 @@ export default function MarketStructureChart({
     onRegisterPositionUpdater,
     riskSettings: propRiskSettings,
     trueFlowSnapshot: incomingFlow,
+    footprintSnapshot,
+    footprintInterval,
+    footprintDisplayMode,
+    onFootprintDisplayModeChange,
+    onFootprintIntervalChange,
+    footprintHistory,
+    footprintTickSize,
+    footprintHistoryState,
+    footprintLayout = DEFAULT_FOOTPRINT_LAYOUT,
+    experimentalFootprint = false,
+    onCloseFootprint,
+    asOfMs,
+    onExportFootprintTape,
     priceScaleFit = 'CANDLE_FIT',
     overlayDensity = 'STANDARD',
     showSessionHighLowLines = false,
     showSessionOpeningRange = false,
 }: MarketStructureChartProps) {
     const liquidityFeed = useMemo(() => replayActive ? { ...incomingLiquidity, frames: [], snapshot: null } : incomingLiquidity, [incomingLiquidity, replayActive]);
-    const trueFlowSnapshot = replayActive ? null : incomingFlow;
-    const [inspectedFootprintBar, setInspectedFootprintBar] = useState<AggregatedFootprintBar | null>(null);
+    const mainFlowInterval = timeframe.toLowerCase() as TrueFlowInterval;
+    const replay = useFootprintReplay(replayActive, mainFlowInterval, experimentalFootprint ? footprintInterval ?? mainFlowInterval : mainFlowInterval);
+    const recordedView = replay.view;
+    const trueFlowSnapshot = replayActive ? recordedView?.main ?? null : incomingFlow;
     const workspaceContainerRef = useRef<HTMLDivElement>(null);
     const chartHostRef = useRef<HTMLDivElement>(null);
     const chartSurfaceRef = useRef<HTMLDivElement>(null);
@@ -337,8 +369,16 @@ export default function MarketStructureChart({
     const [onChartFlowOpacity, setOnChartFlowOpacity] = useState(85);
     const [syncedHoverPrice, setSyncedHoverPrice] = useState<number | null>(null);
     const [syncedHoverTime, setSyncedHoverTime] = useState<number | null>(null);
+    const [linkedSelectionTime, setLinkedSelectionTime] = useState<number | null>(null);
     const [visibleLogicalRangeState, setVisibleLogicalRangeState] = useState<{ from: number; to: number } | null>(null);
-    const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState<number>(42);
+    const [leftPaneWidthPercent, setLeftPaneWidthPercent] = useState(48);
+    useEffect(() => {
+        const frame = requestAnimationFrame(() => {
+            const width = readFootprintPreference('width');
+            if (typeof width === 'number' && width >= 24 && width <= 70) setLeftPaneWidthPercent(width);
+        });
+        return () => cancelAnimationFrame(frame);
+    }, []);
     const [isResizingLeftPane, setIsResizingLeftPane] = useState<boolean>(false);
     const [cvdAnchor, setCvdAnchor] = useState<CvdAnchorOption>('AUTO');
     const [cvdSourceMode, setCvdSourceMode] = useState<CvdSourceMode>('HISTORICAL');
@@ -482,25 +522,56 @@ export default function MarketStructureChart({
     const demoBars = useMemo(() => createDemoMarketBars(spot, 1_200, TIMEFRAME_SECONDS[timeframe]), [spot, timeframe]);
     const liveBars = useMemo<DemoMarketBar[]>(() => marketFeed.candles.map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] })), [marketFeed.candles]);
     const allBars = dataMode === 'DEMO' ? demoBars : liveBars;
-    const bars = useMemo(() => replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, replayActive]);
+    const recordedBars = useMemo<DemoMarketBar[] | null>(() => {
+        if (!recordedView) return null;
+        return buildFootprintWorkspace(recordedView.main, recordedView.main.priceBucket, recordedView.cursorMs).flatMap((bar) =>
+            bar.open === null || bar.high === null || bar.low === null || bar.close === null ? [] : [{
+                time: (bar.openTime / 1000) as DemoMarketBar['time'],
+                open: bar.open, high: bar.high, low: bar.low, close: bar.close,
+                volume: bar.totalVolumeBtc, takerBuyVolume: bar.askVolumeBtc, delta: bar.deltaBtc,
+            }]);
+    }, [recordedView]);
+    const bars = useMemo(() => recordedBars?.length ? recordedBars
+        : replayActive ? allBars.slice(0, Math.max(1, allBars.length - 32)) : allBars, [allBars, recordedBars, replayActive]);
     const barTimes = useMemo(() => bars.map((b) => Number(b.time)), [bars]);
+    const mainInterval = TIMEFRAME_SECONDS[timeframe];
+    const footprintSeconds = experimentalFootprint && footprintLayout !== 'MODE_A_CANDLE_ONLY' && (!replayActive || recordedView) && footprintInterval ? FOOTPRINT_INTERVALS[footprintInterval] : mainInterval;
+    const footprintBars = useMemo<DemoMarketBar[]>(() => {
+        if (footprintSeconds === mainInterval) return bars;
+        if (recordedView) return [];
+        if (dataMode === 'DEMO') return createDemoMarketBars(spot, 1_200, footprintSeconds);
+        return (footprintHistory ?? []).map((bar) => ({ ...bar, time: bar.time as DemoMarketBar['time'] }));
+    }, [bars, dataMode, footprintHistory, footprintSeconds, mainInterval, recordedView, spot]);
+    const linkedFootprintRange = useMemo<FootprintTimeRange | null>(() => {
+        if (!visibleLogicalRangeState || !barTimes.length) return null;
+        const logicalTime = (value: number) => {
+            const index = Math.max(0, Math.min(barTimes.length - 1, Math.floor(value)));
+            const base = barTimes[index];
+            const step = barTimes[index + 1] === undefined ? mainInterval : barTimes[index + 1] - base;
+            return base + (value - index) * step;
+        };
+        return {
+            from: logicalTime(visibleLogicalRangeState.from - 0.5) + mainInterval / 2,
+            to: logicalTime(visibleLogicalRangeState.to + 0.5) + mainInterval / 2,
+        };
+    }, [barTimes, mainInterval, visibleLogicalRangeState]);
     const resolvedCvdAnchor = useMemo<CvdAnchor>(() => {
         if (cvdAnchor !== 'AUTO') return cvdAnchor;
         if (timeframe === '1D') return 'UTC_MONTH';
         if (timeframe === '4H') return 'UTC_WEEK';
         return 'UTC_DAY';
     }, [cvdAnchor, timeframe]);
-    const hasTrueCvd = dataMode === 'LIVE'
+    const hasTrueCvd = (dataMode === 'LIVE' || recordedView !== null)
         && trueFlowSnapshot !== null
         && trueFlowSnapshot !== undefined
         && trueFlowSnapshot.interval === timeframe.toLowerCase()
         && trueFlowSnapshot.cvdSegments.length > 0;
-    const useCapturedCvdInPane = hasTrueCvd && cvdSourceMode === 'CAPTURED';
+    const useCapturedCvdInPane = hasTrueCvd && (cvdSourceMode === 'CAPTURED' || recordedView !== null);
     const cvdBars = useMemo<FlowCvdPoint[]>(() => {
-        if (dataMode === 'DEMO') return createDemoCvd(bars).map((bar, index) => ({ ...bar, reset: index === 0 }));
         if (useCapturedCvdInPane && trueFlowSnapshot) {
             return projectCapturedCvdToChartTimes(bars.map((bar) => bar.time), trueFlowSnapshot);
         }
+        if (dataMode === 'DEMO') return createDemoCvd(bars).map((bar, index) => ({ ...bar, reset: index === 0 }));
         return buildCvdBars(bars.map((bar) => ({
             ...bar,
             closeTime: 0,
@@ -512,9 +583,9 @@ export default function MarketStructureChart({
             time: Number(bar.time),
         })), resolvedCvdAnchor);
     }, [bars, dataMode, resolvedCvdAnchor, trueFlowSnapshot, useCapturedCvdInPane]);
-    const deltaBars = useMemo(() => dataMode === 'DEMO'
+    const deltaBars = useMemo(() => dataMode === 'DEMO' && !recordedView
         ? cvdBars.filter(isCvdBar).map((bar) => ({ time: bar.time, value: bar.close - bar.open, color: bar.close >= bar.open ? 'rgba(39, 211, 170, 0.8)' : 'rgba(239, 93, 115, 0.8)' }))
-        : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode]);
+        : buildDeltaHistogram(bars.map((bar) => ({ ...bar, closeTime: 0, quoteVolume: 0, trades: 0, takerBuyVolume: bar.takerBuyVolume ?? 0, takerSellVolume: Math.max(0, bar.volume - (bar.takerBuyVolume ?? 0)), delta: bar.delta ?? 0, time: Number(bar.time) }))), [bars, cvdBars, dataMode, recordedView]);
     const liquidityLevels = useMemo(() => selectLiquidityLevels(marketFeed.book), [marketFeed.book]);
     const rangeStartIndex = range ? nearestBarIndex(bars, range.startTime) : 0;
     const rangeEndIndex = range ? nearestBarIndex(bars, range.endTime) : Math.max(0, bars.length - 1);
@@ -646,8 +717,8 @@ export default function MarketStructureChart({
     const profileSourceLabel = dataMode === 'LIVE'
         ? intrabarProfile.state === 'LIVE' && intrabarProfile.interval ? `${intrabarProfile.interval} INTRABARS` : `${timeframe} CHART BARS`
         : `${timeframe} DEMO BARS`;
-    const chartContextKey = `${dataMode}:${timeframe}:${replayActive ? 'REPLAY' : 'LIVE'}`;
-    const hasChartData = bars.length >= 2;
+    const chartContextKey = `${dataMode}:${timeframe}:${recordedView ? 'TAPE_REPLAY' : replayActive ? 'OHLC_PREVIEW' : 'LIVE'}`;
+    const hasChartData = bars.length > 0;
 
     useEffect(() => {
         barsRef.current = bars;
@@ -770,6 +841,7 @@ export default function MarketStructureChart({
             }
         };
         const handleCrosshairMove: Parameters<IChartApi['subscribeCrosshairMove']>[0] = (param) => {
+            if (crosshairSyncRef.current) return;
             const point = param.seriesData.get(candles) as DemoMarketBar | undefined;
             setHoverBar(point ?? null);
             if (param.point && priceSeriesRef.current) {
@@ -782,7 +854,6 @@ export default function MarketStructureChart({
             setSyncedHoverTime(activeTime);
             if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = activeTime ? String(activeTime) : '';
             if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = activeTime ? String(activeTime) : '';
-            if (crosshairSyncRef.current) return;
             if (!param.time) {
                 cvdChartRef.current?.clearCrosshairPosition();
                 deltaChartRef.current?.clearCrosshairPosition();
@@ -955,7 +1026,7 @@ export default function MarketStructureChart({
                         densityMode: liquidityDensityMode,
                     })
                     : [],
-                footprintBars: chartLayers.footprint && trueFlowSnapshot
+                footprintBars: experimentalFootprint && chartLayers.footprint && trueFlowSnapshot
                     ? projectFootprintBarsToChart(trueFlowSnapshot.footprintBars, {
                         width: hostWidth,
                         height: hostHeight,
@@ -975,7 +1046,7 @@ export default function MarketStructureChart({
         return () => {
             cancelAnimationFrame(frame);
         };
-    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
+    }, [anchorIndex, bars, callWall, chartLayers.footprint, chartLayers.liquidityHeatmap, chartLayers.tradeVolumeProfile, experimentalFootprint, gammaFlip, liquidityDensityMode, liquidityFeed.frames, maxPain, profile, profileEndIndex, profileLevels, profileStartIndex, putWall, secondaryLevels, timeframe, trueFlowSnapshot]);
 
     useEffect(() => {
         const chart = priceChartRef.current;
@@ -1315,66 +1386,43 @@ export default function MarketStructureChart({
         return { time: resolvedTime, price };
     }, [bars, timeframe]);
 
-    const handleLeftPaneCrosshair = useCallback((point: { price: number | null; time: number | null }) => {
-        setSyncedHoverPrice(point.price);
-        setSyncedHoverTime(point.time);
-
+    const handleLeftPaneCrosshair = useCallback(({ price, time }: { price: number | null; time: number | null }) => {
         const main = priceChartRef.current;
         const candles = priceSeriesRef.current;
-        if (!main || !candles) return;
-
-        if (point.price === null && point.time === null) {
+        if (!main || !candles || crosshairSyncRef.current) return;
+        const index = time === null ? -1 : findFootprintCandleIndex(barTimes, time, mainInterval);
+        const candle = bars[index];
+        const candleTime = candle ? Number(candle.time) : null;
+        crosshairSyncRef.current = true;
+        if (candle && candleTime !== null) {
+            main.setCrosshairPosition(price ?? candle.close, candle.time, candles);
+            const cvdPoint = cvdBarsRef.current.find((bar) => Number(bar.time) === candleTime);
+            if (cvdPoint && isCvdBar(cvdPoint) && cvdSeriesRef.current && cvdChartRef.current) {
+                cvdChartRef.current.setCrosshairPosition(cvdPoint.close, candle.time, cvdSeriesRef.current);
+            }
+            const deltaPoint = deltaBarsRef.current.find((bar) => Number(bar.time) === candleTime);
+            if (deltaPoint && deltaSeriesRef.current && deltaChartRef.current) {
+                deltaChartRef.current.setCrosshairPosition(deltaPoint.value, candle.time, deltaSeriesRef.current);
+            }
+        } else {
             main.clearCrosshairPosition();
             cvdChartRef.current?.clearCrosshairPosition();
             deltaChartRef.current?.clearCrosshairPosition();
-            if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = '';
-            if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = '';
-            return;
         }
-
-        crosshairSyncRef.current = true;
-        if (point.price !== null && point.time !== null) {
-            main.setCrosshairPosition(point.price, point.time as any, candles);
-            if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = String(point.time);
-            if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = String(point.time);
-
-            const cvdPoint = cvdBarsRef.current.find((bar) => Number(bar.time) === Number(point.time));
-            if (cvdPoint && isCvdBar(cvdPoint) && cvdSeriesRef.current && cvdChartRef.current) {
-                cvdChartRef.current.setCrosshairPosition(cvdPoint.close, point.time as any, cvdSeriesRef.current);
-            }
-            const deltaPoint = deltaBarsRef.current.find((bar) => Number(bar.time) === Number(point.time));
-            if (deltaPoint && deltaSeriesRef.current && deltaChartRef.current) {
-                deltaChartRef.current.setCrosshairPosition(deltaPoint.value, point.time as any, deltaSeriesRef.current);
-            }
-        }
+        const crosshairTime = candleTime === null ? '' : String(candleTime);
+        if (chartSurfaceRef.current) chartSurfaceRef.current.dataset.crosshairTime = crosshairTime;
+        if (orderFlowPaneRef.current) orderFlowPaneRef.current.dataset.crosshairTime = crosshairTime;
         queueMicrotask(() => { crosshairSyncRef.current = false; });
-    }, []);
+    }, [barTimes, bars, mainInterval]);
 
-    const handlePanRangeFromLeftPane = useCallback((deltaBars: number) => {
-        const main = priceChartRef.current;
-        if (!main) return;
-        const currentRange = main.timeScale().getVisibleLogicalRange();
-        if (!currentRange) return;
-        main.timeScale().setVisibleLogicalRange({
-            from: currentRange.from + deltaBars,
-            to: currentRange.to + deltaBars,
-        });
-    }, []);
-
-    const handleZoomBarsFromLeftPane = useCallback((deltaZoom: number) => {
-        const main = priceChartRef.current;
-        if (!main) return;
-        const currentRange = main.timeScale().getVisibleLogicalRange();
-        if (!currentRange) return;
-        const span = currentRange.to - currentRange.from;
-        const zoomStep = Math.max(1, Math.round(span * 0.15));
-        const change = deltaZoom > 0 ? zoomStep : -zoomStep;
-        const newFrom = currentRange.from - change;
-        const newTo = currentRange.to + change;
-        if (newTo - newFrom >= 4) {
-            main.timeScale().setVisibleLogicalRange({ from: newFrom, to: newTo });
-        }
-    }, []);
+    const handleFootprintRange = useCallback((range: FootprintTimeRange) => {
+        const from = timeToLogicalIndex(barTimes, range.from - mainInterval / 2, mainInterval);
+        const to = timeToLogicalIndex(barTimes, range.to - mainInterval / 2, mainInterval);
+        if (from === null || to === null || to <= from) return;
+        const center = (from + to) / 2;
+        const half = Math.max(0.01, (to - from - 1) / 2);
+        priceChartRef.current?.timeScale().setVisibleLogicalRange({ from: center - half, to: center + half });
+    }, [barTimes, mainInterval]);
 
     const sessions = useMemo(() => calculateTradingSessions(bars), [bars]);
 
@@ -1660,7 +1708,7 @@ export default function MarketStructureChart({
     const selectedDrawing = drawings.find((drawing) => drawing.id === selectedDrawingId) ?? null;
     const selectedDrawingView = drawingViews.find((view) => view.drawing.id === selectedDrawingId && !view.preview) ?? null;
 
-    if (!bars.length) {
+    if (!bars.length && !replayActive && !footprintSnapshot?.footprintBars.length && !footprintBars.length) {
         return (
             <TerminalChartLoader
                 feedState={marketFeed.state}
@@ -1696,52 +1744,76 @@ export default function MarketStructureChart({
     const toolbarPosition = selectedDrawingAnchor
         ? constrainToolbarPosition(selectedDrawingAnchor, overlayLayout)
         : { left: 0, top: 0 };
-    const showLeftExecutionPane = chartLayers.leftExecutionPane !== false;
+    const showLeftExecutionPane = experimentalFootprint && footprintLayout !== 'MODE_A_CANDLE_ONLY';
 
     return (
         <div ref={workspaceContainerRef} className="flex h-full min-h-0 flex-col bg-[#080d14]">
+            {replayActive && <div aria-label="Footprint recorded trade replay" className="flex shrink-0 flex-wrap items-center gap-2 border-b border-slate-800 p-1.5 text-xs text-slate-300">
+                <label className="flex cursor-pointer items-center gap-1 rounded border border-slate-700 px-2 py-1">
+                    Load BTCUSDT Spot tape
+                    <input type="file" accept=".json,application/json" className="sr-only" aria-label="Load BTCUSDT Spot tape"
+                        onChange={(event) => { replay.load(event.target.files?.[0] ?? null); event.target.value = ''; }} />
+                </label>
+                {replay.tape && <>
+                    <button type="button" disabled={replay.index === 0} className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40" onClick={() => replay.setIndex(replay.index - 1)}>Previous print</button>
+                    <input type="range" min={0} max={replay.tape.times.length - 1} value={replay.index} aria-label="Replay event position"
+                        onChange={(event) => replay.setIndex(Number(event.target.value))} />
+                    <button type="button" disabled={replay.index >= replay.tape.times.length - 1} className="rounded border border-slate-700 px-2 py-1 disabled:opacity-40" onClick={() => replay.setIndex(replay.index + 1)}>Next print</button>
+                    <button type="button" className="rounded border border-slate-700 px-2 py-1" onClick={() => replay.load(null)}>Clear tape</button>
+                </>}
+                <span role="status">{replay.error ?? (replay.loading || replay.pending ? 'Building replay view…'
+                    : recordedView ? `Recorded tape · ${recordedView.main.coverage.source} · ${new Date(recordedView.cursorMs).toISOString()}` : 'OHLC preview · Upload a capture snapshot to replay trades.')}</span>
+            </div>}
             <div
-                className="relative flex min-h-[240px] flex-1 overflow-hidden"
+                className={cn('relative flex min-h-[240px] flex-1 flex-col overflow-x-hidden overflow-y-auto md:flex-row md:overflow-hidden',
+                    replayActive && replay.tape && replay.pending && 'invisible')}
                 onPointerMove={(event) => {
                     if (!isResizingLeftPane || !workspaceContainerRef.current) return;
                     const rect = workspaceContainerRef.current.getBoundingClientRect();
                     const nextPct = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 100;
-                    setLeftPaneWidthPercent(Math.max(24, Math.min(62, Math.round(nextPct))));
+                    setLeftPaneWidthPercent(Math.max(24, Math.min(70, Math.round(nextPct))));
                 }}
-                onPointerUp={() => { if (isResizingLeftPane) setIsResizingLeftPane(false); }}
+                onPointerUp={() => {
+                    if (isResizingLeftPane) {
+                        setIsResizingLeftPane(false);
+                        writeFootprintPreference('width', leftPaneWidthPercent);
+                    }
+                }}
+                onPointerCancel={() => setIsResizingLeftPane(false)}
             >
                 {showLeftExecutionPane && (
                     <>
                         <div
-                            style={{ width: `${leftPaneWidthPercent}%` }}
-                            className="h-full shrink-0 overflow-hidden"
+                            style={{ '--footprint-width': `${leftPaneWidthPercent}%` } as React.CSSProperties}
+                            className="h-[55%] min-h-[340px] w-full shrink-0 overflow-hidden border-b border-slate-800 md:h-full md:min-h-0 md:w-[var(--footprint-width)] md:border-b-0"
                             data-testid="left-execution-pane-wrapper"
                         >
                             <LeftFootprintExecutionPane
-                                bars={bars}
-                                timeframeSeconds={TIMEFRAME_SECONDS[timeframe]}
-                                trueFlowSnapshot={trueFlowSnapshot}
-                                liquidityFrames={liquidityFeed.frames}
-                                visibleLogicalRange={visibleLogicalRangeState}
-                                mainChartPriceRange={(() => {
-                                    const hostH = chartHostRef.current?.clientHeight || overlayLayout.height || 460;
-                                    const candles = priceSeriesRef.current;
-                                    if (!candles) return null;
-                                    const pBottom = candles.coordinateToPrice(hostH as any);
-                                    const pTop = candles.coordinateToPrice(0 as any);
-                                    if (pBottom === null || pTop === null || !Number.isFinite(pBottom) || !Number.isFinite(pTop)) return null;
-                                    return {
-                                        min: Math.min(Number(pBottom), Number(pTop)),
-                                        max: Math.max(Number(pBottom), Number(pTop)),
-                                    };
-                                })()}
+                                key={`${footprintSeconds}:${dataMode}:${replayActive}`}
+                                bars={footprintBars}
+                                timeframeSeconds={footprintSeconds}
+                                interval={footprintInterval}
+                                displayMode={footprintDisplayMode}
+                                onDisplayModeChange={onFootprintDisplayModeChange}
+                                onIntervalChange={onFootprintIntervalChange}
+                                trueFlowSnapshot={replayActive ? recordedView?.footprint ?? recordedView?.main ?? null
+                                    : footprintSnapshot === undefined ? trueFlowSnapshot : footprintSnapshot}
+                                linkedRange={linkedFootprintRange}
                                 hoveredPrice={syncedHoverPrice}
                                 hoveredTime={syncedHoverTime}
+                                linkedSelectionTime={linkedSelectionTime}
+                                onSelectTime={setLinkedSelectionTime}
                                 onHoverCrosshair={handleLeftPaneCrosshair}
-                                onPanRange={handlePanRangeFromLeftPane}
-                                onZoomBars={handleZoomBarsFromLeftPane}
-                                onInspectCandle={(barTime) => { const bar = bars.find((b) => Number(b.time) === barTime); if (bar) { const step = selectAdaptiveFootprintStep([bar], 'AUTO'); const buyVol = bar.takerBuyVolume ?? bar.volume * 0.5; setInspectedFootprintBar(aggregateFootprintBarWithConservation({ bar, rawCells: [{ price: bar.close, buyVolume: buyVol, sellVolume: Math.max(0, bar.volume - buyVol) }], bucketStep: step, provenance: 'INTRABAR_KLINES' })); } }}
-                                onClosePane={() => toggleChartLayer('leftExecutionPane')}
+                                onTimeRangeChange={handleFootprintRange}
+                                onClosePane={onCloseFootprint}
+                                showStudies={footprintLayout === 'MODE_C_DUAL_SYNC_CVD'}
+                                replayActive={replayActive}
+                                replayCursorMs={recordedView?.cursorMs}
+                                dataMode={dataMode}
+                                historyState={footprintHistoryState}
+                                tickSize={footprintTickSize}
+                                asOfMs={asOfMs}
+                                onExportTape={replayActive ? undefined : onExportFootprintTape}
                             />
                         </div>
                         <div
@@ -1751,9 +1823,21 @@ export default function MarketStructureChart({
                             data-testid="left-execution-pane-resizer"
                             onPointerDown={(event) => {
                                 event.preventDefault();
+                                event.currentTarget.setPointerCapture(event.pointerId);
                                 setIsResizingLeftPane(true);
                             }}
-                            className="group relative z-50 w-1.5 shrink-0 cursor-col-resize bg-[#18212C] transition-colors hover:bg-[#39A9F5]/60"
+                            tabIndex={0}
+                            aria-valuemin={24}
+                            aria-valuemax={70}
+                            aria-valuenow={leftPaneWidthPercent}
+                            onKeyDown={(event) => {
+                                if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+                                event.preventDefault();
+                                const width = Math.max(24, Math.min(70, leftPaneWidthPercent + (event.key === 'ArrowRight' ? 2 : -2)));
+                                setLeftPaneWidthPercent(width);
+                                writeFootprintPreference('width', width);
+                            }}
+                            className="group relative z-50 hidden w-1.5 shrink-0 md:block cursor-col-resize bg-[#18212C] transition-colors hover:bg-[#39A9F5]/60"
                         >
                             <span className="absolute inset-y-0 -left-1 -right-1" />
                         </div>
@@ -1773,7 +1857,13 @@ export default function MarketStructureChart({
                     ref={chartHostRef}
                     className="absolute inset-0"
                     onPointerDown={handleBlankChartPointerDown}
+                    onClick={() => {
+                        if (activeTool === 'cursor' && syncedHoverTime !== null) setLinkedSelectionTime(syncedHoverTime);
+                    }}
                 />
+                {!bars.length && !replayActive && <div className="absolute inset-0 grid place-items-center p-3 text-center text-xs text-slate-400">
+                    Candlestick history is unavailable. The Footprint has its own trade feed.
+                </div>}
                 {lastBar && <div className="pointer-events-none absolute left-3 top-2 z-40 flex items-center gap-2 rounded bg-[#070c13]/90 px-2 py-1 font-mono text-[10px] tabular-nums text-zinc-400">
                     <span>O <b className="text-zinc-200">{lastBar.open.toFixed(1)}</b></span><span>H <b className="text-emerald-300">{lastBar.high.toFixed(1)}</b></span><span>L <b className="text-rose-300">{lastBar.low.toFixed(1)}</b></span><span>C <b className="text-cyan-200">{lastBar.close.toFixed(1)}</b></span><span className={lastBar.close >= lastBar.open ? 'text-emerald-300' : 'text-rose-300'}>{lastBar.close >= lastBar.open ? '+' : ''}{(lastBar.close - lastBar.open).toFixed(1)}</span>
                 </div>}
@@ -1827,7 +1917,7 @@ export default function MarketStructureChart({
                     />
                 )}
 
-                {chartLayers.footprint && (
+                {experimentalFootprint && chartLayers.footprint && (
                     <CandleFootprintCanvasOverlay
                         projectedBars={overlayLayout.footprintBars}
                         projectedTradeVp={null}
@@ -2358,12 +2448,12 @@ export default function MarketStructureChart({
                     aria-hidden={activeTool === 'cursor'}
                 />
                 <span className="sr-only" aria-live="polite">{drawingStatus}</span>
-                <FootprintCandleInspector bar={inspectedFootprintBar} onClose={() => setInspectedFootprintBar(null)} />
-                {replayActive && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">HISTORICAL PREVIEW · CANDLES ONLY</div>}
+                {replayActive && !recordedView && <div className="absolute bottom-10 left-3 z-40 rounded border border-amber-400/35 bg-[#181307]/90 px-2 py-1 text-[9px] font-bold text-amber-300">HISTORICAL PREVIEW · CANDLES ONLY</div>}
             </div>
             </div>
 
             {studyPaneOpen && (
+                <div className={cn('contents', replayActive && (!recordedView || replay.pending || activeOrderFlowStudy === 'BOOK' || activeOrderFlowStudy === 'LIQUIDITY') && 'invisible')}>
                 <LowerStudyPane
                     orderFlowPaneRef={orderFlowPaneRef}
                     cvdHostRef={cvdHostRef}
@@ -2380,12 +2470,13 @@ export default function MarketStructureChart({
                     paneHeight={studyPaneHeight}
                     maxPaneHeight={STUDY_PANE_MAX_HEIGHT}
                     onCvdAnchorChange={setCvdAnchor}
-                    cvdSourceMode={cvdSourceMode}
+                    cvdSourceMode={recordedView ? 'CAPTURED' : cvdSourceMode}
                     onCvdSourceModeChange={setCvdSourceMode}
                     onResizeHeight={handleResizeStudyPane}
                     onResetChartAndObjects={resetChartViewAndObjects}
                     trueFlowSnapshot={hasTrueCvd ? trueFlowSnapshot : null}
                 />
+                </div>
             )}
 
             <LowerStudyDock

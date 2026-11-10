@@ -2,6 +2,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { ProjectControlResponseV1Schema, type ProjectControlResponseV1 } from '../../lib/project-control/contracts';
+import { buildProjectProgressSnapshotV1 } from '../../lib/project-control/progress-calculator';
 import { cn } from '../../lib/ui/cn';
 import ProjectMilestoneCard from './ProjectMilestoneCard';
 import ProjectTaskTable from './ProjectTaskTable';
@@ -10,11 +11,13 @@ import ProjectControlFilters from './ProjectControlFilters';
 
 export interface ProjectControlDashboardProps {
     initialData?: ProjectControlResponseV1 | null;
+    initiative?: string;
     className?: string;
 }
 
 export default function ProjectControlDashboard({
     initialData = null,
+    initiative,
     className,
 }: ProjectControlDashboardProps) {
     const [data, setData] = useState<ProjectControlResponseV1 | null>(initialData);
@@ -25,7 +28,7 @@ export default function ProjectControlDashboard({
 
     const [activeTab, setActiveTab] = useState<'MILESTONES' | 'SPEND'>('MILESTONES');
     const [expandedMilestoneIds, setExpandedMilestoneIds] = useState<Record<string, boolean>>({
-        'UX16.2': true,
+        [initiative ? `${initiative}.0` : 'UX16.2']: true,
     });
 
     const [selectedAgent, setSelectedAgent] = useState<string>('ALL');
@@ -134,7 +137,16 @@ export default function ProjectControlDashboard({
 
     if (!data) return null;
 
-    const { progress, usage } = data;
+    const { usage } = data;
+    const initiativeMilestones = initiative
+        ? data.progress.milestones.filter(({ id }) => id.startsWith(`${initiative}.`))
+        : data.progress.milestones;
+    if (initiativeMilestones.length === 0) {
+        return <p role="status">No checkpoint tasks found for {initiative} in this revision.</p>;
+    }
+    const progress = initiative
+        ? buildProjectProgressSnapshotV1({ ...data.progress, milestones: initiativeMilestones })
+        : data.progress;
     const { totals } = progress;
 
     return (
@@ -159,7 +171,7 @@ export default function ProjectControlDashboard({
                                 {progress.projectId}
                             </span>
                             <span className="rounded border border-[#39A9F5]/30 bg-[#39A9F5]/10 px-1.5 py-0.5 font-mono text-[8px] font-bold text-[#39A9F5]">
-                                UX17 ACTIVE INITIATIVE
+                                {initiative ? `${initiative} INITIATIVE` : 'ALL INITIATIVES'}
                             </span>
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 font-mono text-[9px] text-[#5C697A]">
@@ -293,7 +305,7 @@ export default function ProjectControlDashboard({
                     )}
                     data-testid="tab-spend"
                 >
-                    SPEND &amp; TELEMETRY (known ${usage.totals.knownSpendUsd.toFixed(2)} · {usage.totals.runsWithUnreportedUsage + usage.totals.runsWithUnknownCost} unreported)
+                    {initiative ? 'PROJECT ' : ''}SPEND &amp; TELEMETRY (known ${usage.totals.knownSpendUsd.toFixed(2)} · {usage.totals.runsWithUnreportedUsage + usage.totals.runsWithUnknownCost} unreported)
                 </button>
             </div>
 

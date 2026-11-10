@@ -10,7 +10,7 @@ export default function ProjectControlPage() {
         <div className="min-h-screen bg-[#070A0F] text-[#D8DEE8]">
             {/* Top Navigation Bar */}
             <header className="border-b border-[#18212C] bg-[#0C1118]/80 backdrop-blur px-4 py-2.5">
-                <div className="mx-auto flex max-w-7xl items-center justify-between">
+                <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2">
                     <div className="flex items-center gap-3">
                         <Link
                             href="/"
@@ -29,13 +29,20 @@ export default function ProjectControlPage() {
                         </div>
                     </div>
 
-                    <div className="flex items-center gap-2 font-mono text-[8px] text-[#5C697A]">
+                    <div className="flex flex-wrap items-center gap-2 font-mono text-[8px] text-[#5C697A]">
                         <Link
                             href="/project-control/ux20"
                             className="rounded border border-[#39A9F5]/40 bg-[#39A9F5]/15 px-2 py-0.5 font-bold text-[#39A9F5] hover:bg-[#39A9F5]/25"
                             data-testid="open-ux20-dashboard-link"
                         >
                             UX20 MASTER PLAN DASHBOARD →
+                        </Link>
+                        <Link
+                            href="/project-control/ux21"
+                            className="rounded border border-[#39A9F5]/40 bg-[#39A9F5]/15 px-2 py-0.5 font-bold text-[#39A9F5] hover:bg-[#39A9F5]/25"
+                            data-testid="open-ux21-dashboard-link"
+                        >
+                            UX21 FOOTPRINT DASHBOARD →
                         </Link>
                         <span>·</span>
                         <span>READ-ONLY OBSERVABILITY</span>
