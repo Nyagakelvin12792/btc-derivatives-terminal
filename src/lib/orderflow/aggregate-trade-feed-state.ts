@@ -30,6 +30,7 @@ export interface AggregateTradeFeedState {
     maxClientBoundaries: number;
     error: AggregateTradeFeedError | null;
     trueFlow: TrueFlowSnapshotV1 | null;
+    footprintFlow: TrueFlowSnapshotV1 | null;
 }
 
 function offlineCoverage(): CaptureCoverageV1 {
@@ -67,6 +68,33 @@ export function createInitialAggregateTradeFeedState(
         maxClientBoundaries,
         error: null,
         trueFlow: null,
+        footprintFlow: null,
+    };
+}
+
+/**
+ * Structured-clone worker messages replace every object. Keep the validated
+ * cells for unchanged candle fragments while accepting fresh coverage metadata.
+ */
+function reuseUnchangedCells(
+    previous: TrueFlowSnapshotV1 | null,
+    next: TrueFlowSnapshotV1 | null,
+): TrueFlowSnapshotV1 | null {
+    if (!previous || !next || previous.interval !== next.interval || previous.priceBucket !== next.priceBucket) {
+        return next;
+    }
+    const previousBars = new Map(previous.footprintBars.map((bar) =>
+        [`${bar.segmentId}:${bar.footprint.openTime}`, bar.footprint]));
+    return {
+        ...next,
+        footprintBars: next.footprintBars.map((bar) => {
+            const old = previousBars.get(`${bar.segmentId}:${bar.footprint.openTime}`);
+            const current = bar.footprint;
+            if (!old || old.firstAggregateTradeId === undefined || old.lastAggregateTradeId === undefined
+                || old.firstAggregateTradeId !== current.firstAggregateTradeId
+                || old.lastAggregateTradeId !== current.lastAggregateTradeId) return bar;
+            return { ...bar, footprint: { ...current, cells: old.cells } };
+        }),
     };
 }
 
@@ -88,8 +116,10 @@ export function reduceAggregateTradeFeedEvent(
         case 'TRUE_FLOW_SNAPSHOT':
             return {
                 ...state,
-                trueFlow: event.snapshot,
+                trueFlow: reuseUnchangedCells(state.trueFlow, event.snapshot),
             };
+        case 'FOOTPRINT_SNAPSHOT':
+            return { ...state, footprintFlow: reuseUnchangedCells(state.footprintFlow, event.snapshot) };
         case 'STATUS':
             return {
                 ...state,

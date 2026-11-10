@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "execution-checkpoint-v1",
+  "initiativeId": "UX21-FOOTPRINT",
+  "activeMilestoneId": null,
+  "activeTaskId": null,
+  "assignedAgent": null,
+  "taskStartedAt": null,
+  "lastCheckpointAt": "2026-11-10T08:44:00.000Z",
+  "codeRevision": null,
+  "maxRetries": 3,
+  "overrides": {}
+}

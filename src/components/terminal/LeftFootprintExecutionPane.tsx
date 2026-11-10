@@ -1,1074 +1,484 @@
 'use client';
 
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { BarChart3, Columns2, Eye, Flame, Layers, Lock, RefreshCw, Unlock, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent, type MouseEvent as ReactMouseEvent } from 'react';
 import type { DemoMarketBar } from '../../lib/ui/market-fixtures';
-import type { TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
-import type { LiquidityHeatmapFrame } from '../../lib/binance/types';
-import { computeNicePriceTicks } from '../../lib/market-structure/label-layout';
-import { cn } from '../../lib/ui/cn';
+import type { TrueFlowInterval, TrueFlowSnapshotV1 } from '../../lib/orderflow/true-flow-contracts';
+import { buildFootprintWorkspace, resolveFootprintDisplayStep } from '../../lib/orderflow/footprint-workspace';
+import {
+    clampFootprintTime, findFootprintCandleIndex, fitFootprintPrice, fitFootprintTime,
+    panFootprintPrice, panFootprintTime, visibleFootprintIndices, zoomFootprintPrice, zoomFootprintTime,
+    type FootprintPriceRange, type FootprintTimeRange,
+} from '../../lib/chart-coordination/footprint-viewport';
+import { FOOTPRINT_INTERVALS, FOOTPRINT_MODES, FOOTPRINT_STATS, readFootprintPreference, writeFootprintPreference } from './footprint-preferences';
+import { createFootprintLayout, renderFootprintCursor, renderFootprintWorkspace, type FootprintDisplayMode, type FootprintRenderBar, type FootprintStat } from './footprint-workspace-renderer';
+import FootprintCandleInspector from './FootprintCandleInspector';
 
-export type LeftExecutionViewMode = 'FOOTPRINT' | 'DELTA_LADDER' | 'CANDLE_VP' | 'HEATMAP_IMBALANCE';
+const control = 'min-h-7 rounded border border-[#263544] bg-[#101822] px-1.5 text-xs text-slate-200 hover:border-sky-600 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40';
+const EMPTY_ROWS: readonly FootprintStat[] = [];
+const NO_CURSOR = { time: null, price: null };
+const groupingChoices = [1, 5, 10, 25, 50, 100, 250, 500, 1000];
 
-export interface SkeletonExecutionCell {
-    price: number;
-    buyVolume: number;
-    sellVolume: number;
-    totalVolume: number;
-    delta: number;
-    buyImbalance: boolean;
-    sellImbalance: boolean;
-    isPoc: boolean;
-    heatIntensity: number; // 0..1 resting liquidity intensity
+interface Preferences {
+    mode: FootprintDisplayMode;
+    linked: boolean;
+    grouping: number;
+    ratio: number;
+    minVolume: number;
+    rows: FootprintStat[];
+    statsHeight: number;
+    cvd: boolean;
+    precision: number;
+    showImbalances: boolean;
+    levels: number[];
 }
 
-export interface SkeletonExecutionBar {
-    time: number;
-    open: number;
-    high: number;
-    low: number;
-    close: number;
-    volume: number;
-    delta: number;
-    pocPrice: number;
-    vahPrice: number;
-    valPrice: number;
-    maxLevelVolume: number;
-    source: 'LIVE_TAPE' | 'INTRABAR_PROFILE';
-    cells: SkeletonExecutionCell[];
+const defaultPreferences: Preferences = {
+    mode: 'BID_ASK', linked: false, grouping: 0, ratio: 3, minVolume: 5000,
+    rows: [...FOOTPRINT_STATS], statsHeight: 125, cvd: false, precision: 0, showImbalances: true, levels: [],
+};
+
+function readPreferences(): Preferences {
+    const saved = readFootprintPreference('display') as Partial<Preferences> | null;
+    if (!saved || typeof saved !== 'object') return defaultPreferences;
+    const rows = Array.isArray(saved.rows)
+        ? [...new Set(saved.rows.filter((row) => FOOTPRINT_STATS.includes(row)))]
+        : defaultPreferences.rows;
+    return {
+        mode: typeof saved.mode === 'string' && Object.hasOwn(FOOTPRINT_MODES, saved.mode) ? saved.mode : 'BID_ASK',
+        linked: saved.linked === true,
+        grouping: typeof saved.grouping === 'number' && groupingChoices.includes(saved.grouping) ? saved.grouping : 0,
+        ratio: typeof saved.ratio === 'number' && saved.ratio >= 1 && saved.ratio <= 20 ? saved.ratio : 3,
+        minVolume: typeof saved.minVolume === 'number' && saved.minVolume >= 0 && saved.minVolume <= 1000000 ? saved.minVolume : 5000,
+        rows,
+        statsHeight: typeof saved.statsHeight === 'number' && saved.statsHeight >= 75 && saved.statsHeight <= 230 ? saved.statsHeight : 125,
+        cvd: saved.cvd === true,
+        showImbalances: saved.showImbalances !== false,
+        precision: saved.precision === 1 || saved.precision === 2 ? saved.precision : 0,
+        levels: Array.isArray(saved.levels) ? saved.levels.filter((price) => Number.isFinite(price) && price > 0).slice(0, 20) : [],
+    };
 }
 
 export interface LeftFootprintExecutionPaneProps {
     bars: DemoMarketBar[];
     timeframeSeconds: number;
+    interval?: TrueFlowInterval | null;
+    displayMode?: FootprintDisplayMode;
+    onDisplayModeChange?: (mode: FootprintDisplayMode) => void;
+    onIntervalChange?: (interval: TrueFlowInterval | null) => void;
     trueFlowSnapshot?: TrueFlowSnapshotV1 | null;
-    liquidityFrames?: LiquidityHeatmapFrame[];
-    visibleLogicalRange?: { from: number; to: number } | null;
-    mainChartPriceRange?: { min: number; max: number } | null;
-    hoveredPrice: number | null;
+    linkedRange?: FootprintTimeRange | null;
+    hoveredPrice?: number | null;
     hoveredTime?: number | null;
+    linkedSelectionTime?: number | null;
+    onSelectTime?: (time: number) => void;
     onHoverCrosshair?: (point: { price: number | null; time: number | null }) => void;
-    onPanRange?: (deltaBars: number) => void;
-    onZoomBars?: (deltaZoom: number) => void;
-    onInspectCandle?: (barTime: number) => void;
+    onTimeRangeChange?: (range: FootprintTimeRange) => void;
     onClosePane?: () => void;
-    className?: string;
+    showStudies?: boolean;
+    replayActive?: boolean;
+    replayCursorMs?: number;
+    dataMode?: 'LIVE' | 'DEMO' | 'DEGRADED';
+    historyState?: 'loading' | 'error' | null;
+    asOfMs?: number | null;
+    onExportTape?: () => void;
 }
 
-function choosePriceBucketStep(bars: DemoMarketBar[], ladderRowsTarget = 14): number {
-    if (!bars.length) return 10;
-    const recent = bars.slice(-24);
-    const avgRange = recent.reduce((sum, b) => sum + Math.max(1, b.high - b.low), 0) / recent.length;
-    const rawStep = avgRange / Math.max(6, ladderRowsTarget);
-    const niceSteps = [1, 2, 5, 10, 15, 20, 25, 50, 100, 200, 250, 500];
-    return niceSteps.find((s) => s >= rawStep) ?? 500;
-}
-
-export function buildSkeletonExecutionBars(
-    bars: DemoMarketBar[],
-    visibleBarCount: number,
-    timeframeSeconds: number,
-    trueFlowSnapshot?: TrueFlowSnapshotV1 | null,
-    liquidityFrames?: LiquidityHeatmapFrame[],
-    ladderRowsTarget = 14,
-    visibleLogicalRange?: { from: number; to: number } | null,
-    syncWithMain = true,
-    mainChartPriceRange?: { min: number; max: number } | null,
-    syncPriceScale = true,
-    priceScaleZoom = 1.0,
-    priceScaleOffset = 0,
-): { executionBars: SkeletonExecutionBar[]; bucketStep: number; minPrice: number; maxPrice: number } {
-    if (!bars.length) {
-        return { executionBars: [], bucketStep: 10, minPrice: 0, maxPrice: 0 };
-    }
-
-    let slice: DemoMarketBar[];
-    if (syncWithMain && visibleLogicalRange && Number.isFinite(visibleLogicalRange.from) && Number.isFinite(visibleLogicalRange.to)) {
-        const rawFrom = Math.max(0, Math.floor(visibleLogicalRange.from));
-        const rawTo = Math.min(bars.length - 1, Math.ceil(visibleLogicalRange.to));
-        const count = rawTo - rawFrom + 1;
-        if (count <= visibleBarCount) {
-            slice = bars.slice(rawFrom, rawTo + 1);
-        } else {
-            // Main chart is zoomed out to many bars: show the focus window at the visible edge
-            const end = rawTo + 1;
-            const start = Math.max(0, end - visibleBarCount);
-            slice = bars.slice(start, end);
-        }
-    } else {
-        slice = bars.slice(-Math.max(4, visibleBarCount));
-    }
-
-    if (!slice.length) {
-        slice = bars.slice(-Math.max(4, visibleBarCount));
-    }
-
-    const bucketStep = choosePriceBucketStep(slice, ladderRowsTarget);
-    let minPrice: number;
-    let maxPrice: number;
-
-    const rawLow = Math.min(...slice.map((b) => b.low));
-    const rawHigh = Math.max(...slice.map((b) => b.high));
-    const sliceSpan = Math.max(bucketStep * 4, rawHigh - rawLow);
-
-    if (
-        syncPriceScale &&
-        mainChartPriceRange &&
-        Number.isFinite(mainChartPriceRange.min) &&
-        Number.isFinite(mainChartPriceRange.max) &&
-        mainChartPriceRange.max > mainChartPriceRange.min &&
-        mainChartPriceRange.max - mainChartPriceRange.min <= Math.max(8_000, sliceSpan * 4.5)
-    ) {
-        minPrice = Math.floor(mainChartPriceRange.min / bucketStep) * bucketStep;
-        maxPrice = Math.ceil(mainChartPriceRange.max / bucketStep) * bucketStep;
-    } else {
-        const center = (rawHigh + rawLow) / 2 + priceScaleOffset;
-        const halfSpan = (sliceSpan * 0.58) * priceScaleZoom;
-        minPrice = Math.floor((center - halfSpan) / bucketStep) * bucketStep;
-        maxPrice = Math.ceil((center + halfSpan) / bucketStep) * bucketStep;
-    }
-
-    // Index captured footprint bars by openTime in seconds
-    const capturedByTime = new Map<number, TrueFlowSnapshotV1['footprintBars'][number]>();
-    if (trueFlowSnapshot?.footprintBars) {
-        for (const fb of trueFlowSnapshot.footprintBars) {
-            const sec = Math.floor(fb.footprint.openTime / 1_000);
-            capturedByTime.set(sec, fb);
-        }
-    }
-
-    // Build resting liquidity lookup map by bucketed price
-    const latestDepthByBucket = new Map<number, number>();
-    let maxDepthQty = 1e-6;
-    if (liquidityFrames && liquidityFrames.length > 0) {
-        const latestFrame = liquidityFrames[liquidityFrames.length - 1];
-        for (const lvl of latestFrame.levels ?? []) {
-            const bucket = Math.round(lvl.price / bucketStep) * bucketStep;
-            const totalQty = lvl.quantity ?? 0;
-            const nextQty = (latestDepthByBucket.get(bucket) ?? 0) + totalQty;
-            latestDepthByBucket.set(bucket, nextQty);
-            if (nextQty > maxDepthQty) maxDepthQty = nextQty;
-        }
-    }
-
-    const executionBars: SkeletonExecutionBar[] = slice.map((bar) => {
-        const timeSec = Number(bar.time);
-        const captured = capturedByTime.get(timeSec);
-
-        const barLowBucket = Math.floor(bar.low / bucketStep) * bucketStep;
-        const barHighBucket = Math.ceil(bar.high / bucketStep) * bucketStep;
-
-        const cellMap = new Map<number, { buy: number; sell: number; buyImb: boolean; sellImb: boolean }>();
-        for (let p = barLowBucket; p <= barHighBucket; p += bucketStep) {
-            cellMap.set(p, { buy: 0, sell: 0, buyImb: false, sellImb: false });
-        }
-
-        let source: 'LIVE_TAPE' | 'INTRABAR_PROFILE' = 'INTRABAR_PROFILE';
-        if (captured && captured.footprint.cells.length > 0) {
-            source = 'LIVE_TAPE';
-            for (const c of captured.footprint.cells) {
-                const bucket = Math.round(c.priceMid / bucketStep) * bucketStep;
-                const existing = cellMap.get(bucket) ?? { buy: 0, sell: 0, buyImb: false, sellImb: false };
-                existing.buy += c.buyVolumeBtc;
-                existing.sell += c.sellVolumeBtc;
-                existing.buyImb = existing.buyImb || c.buyImbalance;
-                existing.sellImb = existing.sellImb || c.sellImbalance;
-                cellMap.set(bucket, existing);
-            }
-        } else {
-            // Deterministic high-resolution intrabar price ladder distribution from candle anatomy
-            const prices = Array.from(cellMap.keys()).sort((a, b) => a - b);
-            const isBull = bar.close >= bar.open;
-            const bodyLow = Math.min(bar.open, bar.close);
-            const bodyHigh = Math.max(bar.open, bar.close);
-            const typicalPrice = (bar.high + bar.low + bar.close) / 3;
-            const totalBuy = bar.takerBuyVolume ?? bar.volume * (isBull ? 0.56 : 0.44);
-            const totalSell = Math.max(0, bar.volume - totalBuy);
-
-            const weights = prices.map((p) => {
-                const distFromTypical = Math.abs(p - typicalPrice) / Math.max(bucketStep, bar.high - bar.low);
-                const inBody = p >= bodyLow - bucketStep * 0.5 && p <= bodyHigh + bucketStep * 0.5;
-                return (inBody ? 1.65 : 0.65) * Math.exp(-distFromTypical * 1.9);
-            });
-            const weightSum = weights.reduce((s, w) => s + w, 0) || 1;
-
-            prices.forEach((p, idx) => {
-                const share = weights[idx] / weightSum;
-                const relPos = prices.length > 1 ? idx / (prices.length - 1) : 0.5;
-                const buyBias = isBull ? 0.38 + relPos * 0.32 : 0.62 - relPos * 0.32;
-                const levelVol = bar.volume * share;
-                const buy = levelVol * Math.max(0.12, Math.min(0.88, buyBias + (totalBuy / Math.max(bar.volume, 1e-6) - 0.5)));
-                const sell = Math.max(0, levelVol - buy);
-                cellMap.set(p, { buy, sell, buyImb: false, sellImb: false });
-            });
-        }
-
-        const sortedPrices = Array.from(cellMap.keys()).sort((a, b) => b - a); // High to low
-        let pocPrice = sortedPrices[0] ?? bar.close;
-        let maxCellVol = -1;
-
-        for (const p of sortedPrices) {
-            const entry = cellMap.get(p)!;
-            const total = entry.buy + entry.sell;
-            if (total > maxCellVol) {
-                maxCellVol = total;
-                pocPrice = p;
-            }
-        }
-
-        // Compute diagonal imbalances (ATAS standard: Ask[p] >= 2.8 * Bid[p - step])
-        const cells: SkeletonExecutionCell[] = sortedPrices.map((p) => {
-            const curr = cellMap.get(p)!;
-            const lower = cellMap.get(p - bucketStep);
-            const upper = cellMap.get(p + bucketStep);
-            const totalVolume = curr.buy + curr.sell;
-            const minImbalanceThreshold = Math.max(0.15, bar.volume * 0.045);
-
-            const diagBuyImb = curr.buyImb || (
-                lower !== undefined
-                && curr.buy >= minImbalanceThreshold
-                && curr.buy >= Math.max(0.05, lower.sell) * 2.8
-            );
-            const diagSellImb = curr.sellImb || (
-                upper !== undefined
-                && curr.sell >= minImbalanceThreshold
-                && curr.sell >= Math.max(0.05, upper.buy) * 2.8
-            );
-
-            const depthQty = latestDepthByBucket.get(p) ?? 0;
-            const heatIntensity = depthQty > 0
-                ? Math.min(1, depthQty / maxDepthQty)
-                : Math.min(0.85, totalVolume / Math.max(maxCellVol, 1e-6));
-
-            return {
-                price: p,
-                buyVolume: curr.buy,
-                sellVolume: curr.sell,
-                totalVolume,
-                delta: curr.buy - curr.sell,
-                buyImbalance: diagBuyImb,
-                sellImbalance: diagSellImb,
-                isPoc: p === pocPrice,
-                heatIntensity,
-            };
-        });
-
-        // Compute Value Area (70% volume) for this individual candle
-        let barTotalVol = 0;
-        let barMaxVol = 1e-6;
-        for (const c of cells) {
-            barTotalVol += c.totalVolume;
-            if (c.totalVolume > barMaxVol) barMaxVol = c.totalVolume;
-        }
-
-        const sortedByPriceAsc = [...cells].sort((a, b) => a.price - b.price);
-        const pocAscIdx = sortedByPriceAsc.findIndex((c) => c.price === pocPrice);
-        let includedVol = sortedByPriceAsc[pocAscIdx]?.totalVolume ?? 0;
-        let lowVaIdx = pocAscIdx >= 0 ? pocAscIdx : 0;
-        let highVaIdx = pocAscIdx >= 0 ? pocAscIdx : 0;
-        const targetVa = barTotalVol * 0.7;
-
-        while (includedVol < targetVa && (lowVaIdx > 0 || highVaIdx < sortedByPriceAsc.length - 1)) {
-            const prevVol = lowVaIdx > 0 ? sortedByPriceAsc[lowVaIdx - 1].totalVolume : -1;
-            const nextVol = highVaIdx < sortedByPriceAsc.length - 1 ? sortedByPriceAsc[highVaIdx + 1].totalVolume : -1;
-            if (nextVol >= prevVol && highVaIdx < sortedByPriceAsc.length - 1) {
-                highVaIdx++;
-                includedVol += sortedByPriceAsc[highVaIdx].totalVolume;
-            } else if (lowVaIdx > 0) {
-                lowVaIdx--;
-                includedVol += sortedByPriceAsc[lowVaIdx].totalVolume;
-            } else {
-                break;
-            }
-        }
-        const valPrice = sortedByPriceAsc[lowVaIdx]?.price ?? bar.low;
-        const vahPrice = sortedByPriceAsc[highVaIdx]?.price ?? bar.high;
-        const totalDelta = cells.reduce((sum, c) => sum + c.delta, 0);
-
-        return {
-            time: timeSec,
-            open: bar.open,
-            high: bar.high,
-            low: bar.low,
-            close: bar.close,
-            volume: bar.volume,
-            delta: totalDelta,
-            pocPrice,
-            vahPrice,
-            valPrice,
-            maxLevelVolume: barMaxVol,
-            source,
-            cells,
-        };
-    });
-
-    return { executionBars, bucketStep, minPrice, maxPrice };
-}
-
-function formatQty(v: number): string {
-    if (v >= 100) return v.toFixed(0);
-    if (v >= 10) return v.toFixed(1);
-    return v.toFixed(2);
-}
-
-function formatSignedDelta(v: number): string {
-    const sign = v > 0 ? '+' : v < 0 ? '−' : '';
-    const abs = Math.abs(v);
-    if (abs >= 100) return `${sign}${abs.toFixed(0)}`;
-    if (abs >= 10) return `${sign}${abs.toFixed(1)}`;
-    return `${sign}${abs.toFixed(2)}`;
-}
-
-function formatTimeHHMM(seconds: number): string {
-    const d = new Date(seconds * 1_000);
-    const hh = String(d.getUTCHours()).padStart(2, '0');
-    const mm = String(d.getUTCMinutes()).padStart(2, '0');
-    return `${hh}:${mm}`;
-}
+type Drag = {
+    x: number; y: number; kind: 'plot' | 'price' | 'time' | 'level'; moved: boolean; levelIndex: number;
+    time: FootprintTimeRange; price: FootprintPriceRange;
+};
 
 export default function LeftFootprintExecutionPane({
-    bars,
-    timeframeSeconds,
-    trueFlowSnapshot,
-    liquidityFrames,
-    visibleLogicalRange,
-    mainChartPriceRange,
-    hoveredPrice,
-    hoveredTime,
-    onHoverCrosshair,
-    onPanRange,
-    onZoomBars,
-    onInspectCandle,
-    onClosePane,
-    className,
+    bars, timeframeSeconds, interval = null, displayMode, onDisplayModeChange, onIntervalChange, trueFlowSnapshot, linkedRange,
+    hoveredPrice, hoveredTime, linkedSelectionTime, onSelectTime, onHoverCrosshair, onTimeRangeChange, onClosePane,
+    showStudies = true, replayActive = false, replayCursorMs, dataMode = 'LIVE', historyState, asOfMs, onExportTape,
 }: LeftFootprintExecutionPaneProps) {
-    const canvasRef = useRef<HTMLCanvasElement | null>(null);
-    const overlayCanvasRef = useRef<HTMLCanvasElement | null>(null);
-    const hostRef = useRef<HTMLDivElement | null>(null);
-    const yToPriceRef = useRef<((y: number) => number) | null>(null);
-    const [viewMode, setViewMode] = useState<LeftExecutionViewMode>('FOOTPRINT');
-    const [visibleBarsCount, setVisibleBarsCount] = useState<number>(10);
-    const [syncWithMain, setSyncWithMain] = useState<boolean>(true);
-    const [syncPriceScale, setSyncPriceScale] = useState<boolean>(true);
-    const [priceScaleZoom, setPriceScaleZoom] = useState<number>(1.0);
-    const [priceScaleOffset, setPriceScaleOffset] = useState<number>(0);
-    const isDraggingPriceAxisRef = useRef<boolean>(false);
-    const dragStartYRef = useRef<number>(0);
-    const dragStartZoomRef = useRef<number>(1.0);
-    const [dimensions, setDimensions] = useState<{ width: number; height: number }>({ width: 520, height: 460 });
-    const [localHover, setLocalHover] = useState<{ x: number; y: number; price: number; barTime: number | null } | null>(null);
-
-    // Drag-to-pan tracking state
-    const isDraggingRef = useRef<boolean>(false);
-    const dragStartXRef = useRef<number>(0);
-    const dragAccumulatedBarsRef = useRef<number>(0);
+    const host = useRef<HTMLDivElement>(null);
+    const chartCanvas = useRef<HTMLCanvasElement>(null);
+    const cursorCanvas = useRef<HTMLCanvasElement>(null);
+    const drag = useRef<Drag | null>(null);
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    const [settings, setSettings] = useState(defaultPreferences);
+    const [showSettings, setShowSettings] = useState(false);
+    const [timeOverride, setTimeOverride] = useState<FootprintTimeRange | null>(null);
+    const [priceOverride, setPriceOverride] = useState<FootprintPriceRange | null>(null);
+    const [selection, setSelection] = useState<number | null>(null);
+    const [inspectorOpen, setInspectorOpen] = useState(false);
+    const [drawLevel, setDrawLevel] = useState(false);
+    const [selectedLevel, setSelectedLevel] = useState<number | null>(null);
+    const levelDraft = useRef<number | null>(null);
+    const localCursor = useRef<typeof NO_CURSOR | { time: number | null; price: number | null } | null>(null);
+    const cursorFrame = useRef(0);
 
     useEffect(() => {
-        const el = hostRef.current;
-        if (!el || typeof ResizeObserver === 'undefined') return;
-        const observer = new ResizeObserver((entries) => {
-            const rect = entries[0]?.contentRect;
-            if (rect && rect.width > 10 && rect.height > 10) {
-                setDimensions({ width: Math.floor(rect.width), height: Math.floor(rect.height) });
-            }
+        const frame = requestAnimationFrame(() => setSettings(readPreferences()));
+        return () => cancelAnimationFrame(frame);
+    }, []);
+
+    const activeMode = displayMode ?? settings.mode;
+
+    function changeSettings(patch: Partial<Preferences>) {
+        if (patch.mode) onDisplayModeChange?.(patch.mode);
+        const next = { ...settings, ...patch };
+        setSettings(next);
+        writeFootprintPreference('display', next);
+    }
+
+    useEffect(() => {
+        if (!host.current) return;
+        const observer = new ResizeObserver(([entry]) => {
+            const { width, height } = entry.contentRect;
+            setSize({ width: Math.floor(width), height: Math.floor(height) });
         });
-        observer.observe(el);
+        observer.observe(host.current);
         return () => observer.disconnect();
     }, []);
 
-    const { executionBars, bucketStep, minPrice, maxPrice } = useMemo(
-        () => buildSkeletonExecutionBars(
-            bars,
-            visibleBarsCount,
-            timeframeSeconds,
-            trueFlowSnapshot,
-            liquidityFrames,
-            14,
-            visibleLogicalRange,
-            syncWithMain,
-            mainChartPriceRange,
-            syncPriceScale,
-            priceScaleZoom,
-            priceScaleOffset,
-        ),
-        [bars, liquidityFrames, mainChartPriceRange, priceScaleOffset, priceScaleZoom, syncPriceScale, syncWithMain, timeframeSeconds, trueFlowSnapshot, visibleBarsCount, visibleLogicalRange],
-    );
+    const sourceBucket = trueFlowSnapshot?.priceBucket ?? 1;
+    const roughStep = useMemo(() => {
+        const recent = bars.slice(-20);
+        return recent.length ? recent.reduce((sum, bar) => sum + bar.high - bar.low, 0) / (recent.length * 14) : 25;
+    }, [bars]);
+    const targetStep = settings.grouping || groupingChoices.find((step) => step >= roughStep) || groupingChoices.at(-1)!;
+    const displayStep = resolveFootprintDisplayStep(sourceBucket, targetStep);
+    const asOfBucket = asOfMs == null ? 0 : Math.floor(asOfMs / (timeframeSeconds * 1000)) * timeframeSeconds * 1000;
+    const captureAsOf = replayCursorMs ?? Math.max(asOfBucket, trueFlowSnapshot?.coverage.capturedAt ?? 0, trueFlowSnapshot?.coverage.coverageEnd ?? 0);
 
-    const imbalanceCount = useMemo(
-        () => executionBars.reduce((sum, b) => sum + b.cells.filter((c) => c.buyImbalance || c.sellImbalance).length, 0),
-        [executionBars],
-    );
+    const renderBars = useMemo<FootprintRenderBar[]>(() => {
+        const byTime = new Map<number, FootprintRenderBar>();
+        for (const bar of bars) byTime.set(Number(bar.time), { ...bar, time: Number(bar.time) });
+        if (trueFlowSnapshot && (replayCursorMs !== undefined || !replayActive && dataMode === 'LIVE')) {
+            const captured = buildFootprintWorkspace(trueFlowSnapshot, displayStep, captureAsOf, {
+                ratioThreshold: settings.ratio, minDominantNotionalUsd: settings.minVolume,
+            });
+            for (const footprint of captured) {
+                const time = footprint.openTime / 1000;
+                const priceBar = byTime.get(time);
+                const { open, high, low, close } = footprint;
+                if (priceBar) {
+                    byTime.set(time, footprint.developing && close !== null && high !== null && low !== null
+                        ? { ...priceBar, high: Math.max(high, priceBar.high), low: Math.min(low, priceBar.low), close, footprint }
+                        : { ...priceBar, footprint });
+                } else if (open !== null && high !== null && low !== null && close !== null) {
+                    byTime.set(time, { time, open, high, low, close, footprint });
+                }
+            }
+        }
+        return [...byTime.values()].sort((a, b) => a.time - b.time);
+    }, [bars, trueFlowSnapshot, replayActive, replayCursorMs, dataMode, displayStep, captureAsOf, settings.ratio, settings.minVolume]);
+
+    const times = useMemo(() => renderBars.map((bar) => bar.time), [renderBars]);
+    const linkedSelectionIndex = settings.linked && linkedSelectionTime != null
+        ? findFootprintCandleIndex(times, linkedSelectionTime, timeframeSeconds) : -1;
+    const selectedColumn = linkedSelectionIndex >= 0 ? times[linkedSelectionIndex] : selection;
+    const tradeCandles = useMemo(() => renderBars.filter((bar) => bar.footprint).length, [renderBars]);
+    const timeRange = useMemo(() => {
+        if (settings.linked && linkedRange && linkedRange.to > linkedRange.from) return linkedRange;
+        if (timeOverride) return clampFootprintTime(timeOverride, times, timeframeSeconds);
+        return fitFootprintTime(times, timeframeSeconds, 10);
+    }, [linkedRange, settings.linked, timeOverride, timeframeSeconds, times]);
+    const visible = useMemo(() => visibleFootprintIndices(times, timeRange, timeframeSeconds), [timeRange, timeframeSeconds, times]);
+    const autoPrice = useMemo(() => fitFootprintPrice(renderBars.slice(visible.start, visible.end), displayStep * 4),
+        [renderBars, visible, displayStep]);
+    const priceRange = priceOverride ?? autoPrice;
+    const viewport = useMemo(() => ({ ...timeRange, minPrice: priceRange.min, maxPrice: priceRange.max }), [priceRange, timeRange]);
+    const statsRows = showStudies ? settings.rows : EMPTY_ROWS;
+    const statsHeight = Math.min(settings.statsHeight, Math.floor(size.height * 0.43));
+    const cvdHeight = showStudies && settings.cvd ? Math.min(78, Math.floor(size.height * 0.22)) : 0;
+    const layout = useMemo(() => createFootprintLayout({ ...size, viewport, timeframeSeconds, statsRows, statsHeight, cvdHeight }),
+        [size, viewport, timeframeSeconds, statsRows, statsHeight, cvdHeight]);
 
     useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const { width, height } = dimensions;
-        if (width <= 0 || height <= 0) return;
-
-        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-        canvas.width = Math.floor(width * dpr);
-        canvas.height = Math.floor(height * dpr);
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) return;
-        ctx.save();
-        ctx.scale(dpr, dpr);
-        ctx.clearRect(0, 0, width, height);
-
-        // Background
-        ctx.fillStyle = '#060A10';
-        ctx.fillRect(0, 0, width, height);
-
-        const topPad = 36;
-        const bottomFooterH = 44;
-        const rightAxisW = 58;
-        const plotW = Math.max(60, width - rightAxisW);
-        const plotH = Math.max(60, height - topPad - bottomFooterH);
-
-        if (!executionBars.length || maxPrice <= minPrice) {
-            ctx.restore();
-            return;
-        }
-
-        const priceSpan = Math.max(bucketStep, maxPrice - minPrice);
-        const priceToY = (p: number) => topPad + ((maxPrice - p) / priceSpan) * plotH;
-        const yToPrice = (y: number) => maxPrice - ((y - topPad) / plotH) * priceSpan;
-
-        const cellHeight = Math.max(10, Math.min(28, (bucketStep / priceSpan) * plotH));
-        const colW = plotW / executionBars.length;
-
-        // Horizontal price grid lines & collision-free nice price axis ticks
-        ctx.strokeStyle = 'rgba(24, 33, 44, 0.45)';
-        ctx.lineWidth = 1;
-        ctx.font = '10px "JetBrains Mono", monospace';
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'middle';
-
-        const niceTicks = computeNicePriceTicks(minPrice, maxPrice, Math.max(6, Math.floor(plotH / 34)));
-        for (const p of niceTicks) {
-            const y = priceToY(p);
-            if (y < topPad + 6 || y > topPad + plotH - 6) continue;
-            ctx.beginPath();
-            ctx.moveTo(0, y);
-            ctx.lineTo(plotW, y);
-            ctx.stroke();
-
-            ctx.fillStyle = '#8390A0';
-            ctx.fillText(p.toFixed(0), plotW + 6, y);
-        }
-
-        // Global max cell volume & delta across visible bars
-        let globalMaxVol = 1e-6;
-        let globalMaxAbsDelta = 1e-6;
-        for (const bar of executionBars) {
-            for (const c of bar.cells) {
-                if (c.totalVolume > globalMaxVol) globalMaxVol = c.totalVolume;
-                if (Math.abs(c.delta) > globalMaxAbsDelta) globalMaxAbsDelta = Math.abs(c.delta);
-            }
-        }
-
-        // Render each Skeleton Candle + View Mode
-        executionBars.forEach((bar, idx) => {
-            const centerX = (idx + 0.5) * colW;
-            const colLeft = idx * colW + 3;
-            const colRight = (idx + 1) * colW - 3;
-            const innerW = Math.max(16, colRight - colLeft);
-            const halfW = (innerW - 8) / 2;
-
-            const isBull = bar.close >= bar.open;
-            const spineColor = isBull ? '#27d3aa' : '#ef5d73';
-            const highY = priceToY(bar.high);
-            const lowY = priceToY(bar.low);
-            const openY = priceToY(bar.open);
-            const closeY = priceToY(bar.close);
-            const bodyTop = Math.min(openY, closeY);
-            const bodyH = Math.max(2, Math.abs(closeY - openY));
-
-            // Vertical column separator
-            ctx.strokeStyle = 'rgba(24, 33, 44, 0.7)';
-            ctx.beginPath();
-            ctx.moveTo((idx + 1) * colW, topPad);
-            ctx.lineTo((idx + 1) * colW, topPad + plotH + bottomFooterH);
-            ctx.stroke();
-
-            // 1. Render cells per price level
-            for (const cell of bar.cells) {
-                const cy = priceToY(cell.price);
-                const top = cy - cellHeight * 0.46;
-                const h = Math.max(8, cellHeight * 0.92);
-
-                if (viewMode === 'FOOTPRINT') {
-                    // Left = Bid (Sell), Right = Ask (Buy) around the central skeleton spine
-                    const sellFrac = Math.min(1, cell.sellVolume / globalMaxVol);
-                    const buyFrac = Math.min(1, cell.buyVolume / globalMaxVol);
-                    const sellBarW = Math.max(2, sellFrac * halfW);
-                    const buyBarW = Math.max(2, buyFrac * halfW);
-
-                    // Row background
-                    ctx.fillStyle = 'rgba(13, 20, 30, 0.78)';
-                    ctx.fillRect(colLeft, top, innerW, h);
-
-                    // Left Sell bar
-                    ctx.fillStyle = cell.sellImbalance ? 'rgba(240, 97, 82, 0.55)' : 'rgba(239, 93, 115, 0.28)';
-                    ctx.fillRect(centerX - 4 - sellBarW, top + 1, sellBarW, h - 2);
-
-                    // Right Buy bar
-                    ctx.fillStyle = cell.buyImbalance ? 'rgba(44, 199, 160, 0.55)' : 'rgba(39, 211, 170, 0.28)';
-                    ctx.fillRect(centerX + 4, top + 1, buyBarW, h - 2);
-
-                    // Numbers (Bid x Ask)
-                    if (innerW >= 42 && h >= 10) {
-                        ctx.font = `${cell.sellImbalance ? 'bold ' : ''}9.5px "JetBrains Mono", monospace`;
-                        ctx.textAlign = 'right';
-                        ctx.fillStyle = cell.sellImbalance ? '#FF8A80' : '#E2959E';
-                        ctx.fillText(formatQty(cell.sellVolume), centerX - 6, cy + 0.5);
-
-                        ctx.font = `${cell.buyImbalance ? 'bold ' : ''}9.5px "JetBrains Mono", monospace`;
-                        ctx.textAlign = 'left';
-                        ctx.fillStyle = cell.buyImbalance ? '#69F0AE' : '#8CE5CE';
-                        ctx.fillText(formatQty(cell.buyVolume), centerX + 6, cy + 0.5);
-                    }
-                } else if (viewMode === 'DELTA_LADDER') {
-                    // Colored Delta Ladder
-                    const deltaFrac = Math.min(1, Math.abs(cell.delta) / globalMaxAbsDelta);
-                    const alpha = 0.16 + deltaFrac * 0.62;
-                    ctx.fillStyle = cell.delta >= 0
-                        ? `rgba(39, 211, 170, ${alpha.toFixed(2)})`
-                        : `rgba(239, 93, 115, ${alpha.toFixed(2)})`;
-                    ctx.fillRect(colLeft, top + 0.5, innerW, h - 1);
-
-                    const barFillW = deltaFrac * halfW;
-                    ctx.fillStyle = cell.delta >= 0 ? 'rgba(44, 199, 160, 0.45)' : 'rgba(240, 97, 82, 0.45)';
-                    if (cell.delta >= 0) {
-                        ctx.fillRect(centerX + 3, top + 1, barFillW, h - 2);
-                    } else {
-                        ctx.fillRect(centerX - 3 - barFillW, top + 1, barFillW, h - 2);
-                    }
-
-                    if (innerW >= 38 && h >= 10) {
-                        ctx.font = `${cell.isPoc || cell.buyImbalance || cell.sellImbalance ? 'bold ' : ''}9.5px "JetBrains Mono", monospace`;
-                        ctx.textAlign = 'center';
-                        ctx.fillStyle = cell.delta >= 0 ? '#D4FFF2' : '#FFD9DE';
-                        ctx.fillText(formatSignedDelta(cell.delta), centerX, cy + 0.5);
-                    }
-                } else if (viewMode === 'CANDLE_VP') {
-                    // CANDLE_VP: Intra-bar Volume Profile Histogram inside this individual candle
-                    const volFrac = Math.min(1, cell.totalVolume / Math.max(bar.maxLevelVolume, 1e-6));
-                    const vpBarW = Math.max(2, volFrac * (innerW - 4));
-                    const inVa = cell.price >= bar.valPrice && cell.price <= bar.vahPrice;
-
-                    // Row background
-                    ctx.fillStyle = inVa ? 'rgba(57, 169, 245, 0.12)' : 'rgba(13, 20, 30, 0.72)';
-                    ctx.fillRect(colLeft, top, innerW, h);
-
-                    // Intra-bar profile histogram: two-tone buy/sell
-                    const upShare = cell.totalVolume > 0 ? cell.buyVolume / cell.totalVolume : 0.5;
-                    const buyW = vpBarW * upShare;
-                    const sellW = vpBarW * (1 - upShare);
-
-                    // Buy portion (emerald)
-                    ctx.fillStyle = inVa ? 'rgba(44, 199, 160, 0.72)' : 'rgba(39, 211, 170, 0.42)';
-                    ctx.fillRect(colLeft + 2, top + 1, buyW, h - 2);
-
-                    // Sell portion (rose)
-                    ctx.fillStyle = inVa ? 'rgba(240, 97, 82, 0.72)' : 'rgba(239, 93, 115, 0.42)';
-                    ctx.fillRect(colLeft + 2 + buyW, top + 1, sellW, h - 2);
-
-                    if (innerW >= 40 && h >= 10) {
-                        ctx.font = `${cell.isPoc ? 'bold ' : ''}9.5px "JetBrains Mono", monospace`;
-                        ctx.textAlign = 'right';
-                        ctx.fillStyle = inVa ? '#FFFFFF' : '#A0AEC0';
-                        ctx.fillText(formatQty(cell.totalVolume), colRight - 4, cy + 0.5);
-                    }
-                } else {
-                    // HEATMAP_IMBALANCE mode: Resting Liquidity Heatmap + Stacked Imbalances
-                    const heatAlpha = 0.08 + cell.heatIntensity * 0.58;
-                    ctx.fillStyle = `rgba(229, 168, 59, ${heatAlpha.toFixed(2)})`;
-                    ctx.fillRect(colLeft, top + 0.5, innerW, h - 1);
-
-                    if (cell.buyImbalance) {
-                        ctx.fillStyle = 'rgba(44, 199, 160, 0.48)';
-                        ctx.fillRect(centerX + 3, top + 1, halfW, h - 2);
-                    }
-                    if (cell.sellImbalance) {
-                        ctx.fillStyle = 'rgba(240, 97, 82, 0.48)';
-                        ctx.fillRect(colLeft + 1, top + 1, halfW, h - 2);
-                    }
-
-                    if (innerW >= 42 && h >= 10) {
-                        ctx.font = '9px "JetBrains Mono", monospace';
-                        ctx.textAlign = 'right';
-                        ctx.fillStyle = cell.sellImbalance ? '#FF8A80' : '#D8DEE8';
-                        ctx.fillText(formatQty(cell.sellVolume), centerX - 6, cy + 0.5);
-
-                        ctx.textAlign = 'left';
-                        ctx.fillStyle = cell.buyImbalance ? '#69F0AE' : '#D8DEE8';
-                        ctx.fillText(formatQty(cell.buyVolume), centerX + 6, cy + 0.5);
-                    }
-                }
-
-                // Golden POC Box around highest-volume cell in this candle
-                if (cell.isPoc) {
-                    ctx.strokeStyle = '#E5A83B';
-                    ctx.lineWidth = 1.5;
-                    ctx.strokeRect(colLeft + 0.5, top + 0.5, innerW - 1, h - 1);
-                }
-            }
-
-            // 2. Render the ATAS-style "Skeleton Candle" down the central spine of the bar
-            ctx.strokeStyle = spineColor;
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            ctx.moveTo(centerX, highY);
-            ctx.lineTo(centerX, lowY);
-            ctx.stroke();
-
-            // Hollow 6px Skeleton Candle Body between Open and Close
-            const skeletonBodyW = 6;
-            ctx.fillStyle = isBull ? 'rgba(39, 211, 170, 0.28)' : 'rgba(239, 93, 115, 0.28)';
-            ctx.fillRect(centerX - skeletonBodyW / 2, bodyTop, skeletonBodyW, bodyH);
-            ctx.strokeStyle = spineColor;
-            ctx.lineWidth = 1.4;
-            ctx.strokeRect(centerX - skeletonBodyW / 2, bodyTop, skeletonBodyW, bodyH);
-
-            // 3. Per-Bar Delta & Volume Summary Footer Row
-            const footerTop = topPad + plotH;
-            ctx.fillStyle = bar.delta >= 0 ? 'rgba(39, 211, 170, 0.14)' : 'rgba(239, 93, 115, 0.14)';
-            ctx.fillRect(colLeft, footerTop + 2, innerW, 20);
-
-            ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
-            ctx.textAlign = 'center';
-            ctx.fillStyle = bar.delta >= 0 ? '#2CC7A0' : '#F06152';
-            ctx.fillText(`Δ ${formatSignedDelta(bar.delta)}`, centerX, footerTop + 12);
-
-            ctx.font = '8.5px "JetBrains Mono", monospace';
-            ctx.fillStyle = '#7E8B9B';
-            ctx.fillText(formatTimeHHMM(bar.time), centerX, footerTop + 32);
+        if (!chartCanvas.current || !size.width || !size.height) return;
+        const frame = requestAnimationFrame(() => {
+            if (!chartCanvas.current) return;
+            renderFootprintWorkspace(chartCanvas.current, {
+                ...size, viewport, bars: renderBars, mode: activeMode, statsRows, statsHeight, cvdHeight,
+                selectedTime: selectedColumn, timeframeSeconds, pricePrecision: settings.precision, showImbalances: settings.showImbalances,
+            });
         });
+        return () => cancelAnimationFrame(frame);
+    }, [size, viewport, renderBars, activeMode, settings.precision, settings.showImbalances, statsRows, statsHeight, cvdHeight, selectedColumn, timeframeSeconds]);
 
-        // Footer divider line
-        ctx.strokeStyle = '#18212C';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.moveTo(0, topPad + plotH);
-        ctx.lineTo(width, topPad + plotH);
-        ctx.stroke();
-
-        yToPriceRef.current = yToPrice;
-        (canvas as HTMLCanvasElement & { __yToPrice?: (y: number) => number }).__yToPrice = yToPrice;
-
-        ctx.restore();
-    }, [
-        bucketStep,
-        dimensions,
-        executionBars,
-        maxPrice,
-        minPrice,
-        viewMode,
-    ]);
-
-    // Fast-path Layer 1: Dedicated crosshair and hover overlay canvas (Zero cell redraw on hover)
     useEffect(() => {
-        const overlay = overlayCanvasRef.current;
-        if (!overlay) return;
-        const { width, height } = dimensions;
-        if (width <= 0 || height <= 0) return;
+        const frame = requestAnimationFrame(() => {
+            if (!cursorCanvas.current || !size.width || !size.height) return;
+            const linkedIndex = settings.linked && hoveredTime != null
+                ? findFootprintCandleIndex(times, hoveredTime, timeframeSeconds) : -1;
+            const linkedCursor = linkedIndex < 0 ? NO_CURSOR : {
+                time: times[linkedIndex] + timeframeSeconds / 2, price: hoveredPrice ?? null,
+            };
+            renderFootprintCursor(cursorCanvas.current, { ...size, layout, cursor: localCursor.current ?? linkedCursor, levels: settings.levels });
+        });
+        return () => cancelAnimationFrame(frame);
+    }, [hoveredPrice, hoveredTime, layout, settings.levels, settings.linked, size, timeframeSeconds, times]);
 
-        const dpr = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
-        if (overlay.width !== Math.floor(width * dpr) || overlay.height !== Math.floor(height * dpr)) {
-            overlay.width = Math.floor(width * dpr);
-            overlay.height = Math.floor(height * dpr);
-        }
+    useEffect(() => () => cancelAnimationFrame(cursorFrame.current), []);
 
-        const ctx = overlay.getContext('2d');
-        if (!ctx) return;
-        ctx.save();
-        ctx.scale(dpr, dpr);
-        ctx.clearRect(0, 0, width, height);
-
-        const topPad = 36;
-        const bottomFooterH = 44;
-        const rightAxisW = 58;
-        const plotW = Math.max(60, width - rightAxisW);
-        const plotH = Math.max(60, height - topPad - bottomFooterH);
-
-        if (!executionBars.length || maxPrice <= minPrice) {
-            ctx.restore();
-            return;
-        }
-
-        const priceSpan = Math.max(bucketStep, maxPrice - minPrice);
-        const priceToY = (p: number) => topPad + ((maxPrice - p) / priceSpan) * plotH;
-        const colW = plotW / executionBars.length;
-
-        // 1. Synchronized Horizontal Crosshair (Price Line & Axis Tag)
-        const activePrice = localHover?.price ?? (syncWithMain ? hoveredPrice : null);
-        if (activePrice !== null && activePrice >= minPrice && activePrice <= maxPrice) {
-            const cy = priceToY(activePrice);
-            ctx.save();
-            ctx.strokeStyle = 'rgba(57, 169, 245, 0.85)';
-            ctx.lineWidth = 1;
-            ctx.setLineDash([4, 3]);
-            ctx.beginPath();
-            ctx.moveTo(0, cy);
-            ctx.lineTo(plotW, cy);
-            ctx.stroke();
-
-            // Price pill on right axis
-            ctx.fillStyle = '#39A9F5';
-            ctx.fillRect(plotW, cy - 9, rightAxisW, 18);
-            ctx.font = 'bold 9.5px "JetBrains Mono", monospace';
-            ctx.fillStyle = '#060A10';
-            ctx.textAlign = 'left';
-            ctx.fillText(activePrice.toFixed(0), plotW + 5, cy + 0.5);
-            ctx.restore();
-        }
-
-        // 2. Synchronized Vertical Crosshair (Time Line on Matching Bar)
-        const activeTime = localHover?.barTime ?? (syncWithMain ? (hoveredTime ?? null) : null);
-        if (typeof activeTime === 'number') {
-            const matchIdx = executionBars.findIndex((b) => Math.abs(b.time - activeTime) <= timeframeSeconds * 0.7);
-            if (matchIdx >= 0) {
-                const cx = (matchIdx + 0.5) * colW;
-                ctx.save();
-                ctx.strokeStyle = 'rgba(57, 169, 245, 0.65)';
-                ctx.lineWidth = 1;
-                ctx.setLineDash([3, 3]);
-                ctx.beginPath();
-                ctx.moveTo(cx, topPad);
-                ctx.lineTo(cx, topPad + plotH + bottomFooterH);
-                ctx.stroke();
-                ctx.restore();
-            }
-        }
-
-        ctx.restore();
-    }, [
-        bucketStep,
-        dimensions,
-        executionBars,
-        hoveredPrice,
-        hoveredTime,
-        localHover,
-        maxPrice,
-        minPrice,
-        syncWithMain,
-        timeframeSeconds,
-    ]);
-
-    function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
-        const rect = event.currentTarget.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const plotW = Math.max(60, dimensions.width - 58);
-
-        if (x >= plotW) {
-            isDraggingPriceAxisRef.current = true;
-            dragStartYRef.current = event.clientY;
-            dragStartZoomRef.current = priceScaleZoom;
-            setSyncPriceScale(false);
-            event.currentTarget.setPointerCapture(event.pointerId);
-            return;
-        }
-
-        isDraggingRef.current = true;
-        dragStartXRef.current = event.clientX;
-        dragAccumulatedBarsRef.current = 0;
-        event.currentTarget.setPointerCapture(event.pointerId);
+    function applyTime(next: FootprintTimeRange) {
+        setTimeOverride(next);
+        if (settings.linked) onTimeRangeChange?.(next);
     }
 
-    function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
-        const overlay = overlayCanvasRef.current;
-        if (!overlay || !yToPriceRef.current) return;
-        const rect = overlay.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-        const y = event.clientY - rect.top;
-        const plotW = Math.max(60, dimensions.width - 58);
-
-        if (x >= plotW) {
-            overlay.style.cursor = 'ns-resize';
-        } else {
-            overlay.style.cursor = 'crosshair';
-        }
-
-        if (isDraggingPriceAxisRef.current) {
-            const dy = event.clientY - dragStartYRef.current;
-            const newZoom = Math.max(0.15, Math.min(8.0, dragStartZoomRef.current * (1 + dy * 0.008)));
-            setPriceScaleZoom(newZoom);
-            return;
-        }
-
-        if (isDraggingRef.current) {
-            const dx = event.clientX - dragStartXRef.current;
-            const colW = plotW / Math.max(1, executionBars.length);
-            const barShift = -Math.round(dx / Math.max(12, colW));
-
-            if (barShift !== 0 && barShift !== dragAccumulatedBarsRef.current) {
-                const delta = barShift - dragAccumulatedBarsRef.current;
-                dragAccumulatedBarsRef.current = barShift;
-                onPanRange?.(delta);
-            }
-            return;
-        }
-
-        const rawPrice = yToPriceRef.current(y);
-        const snappedPrice = Math.round(rawPrice / bucketStep) * bucketStep;
-        const colIdx = Math.min(executionBars.length - 1, Math.max(0, Math.floor((x / plotW) * executionBars.length)));
-        const barTime = executionBars[colIdx]?.time ?? null;
-
-        setLocalHover({ x, y, price: snappedPrice, barTime });
-        if (syncWithMain) {
-            onHoverCrosshair?.({ price: snappedPrice, time: barTime });
-        }
+    function zoomTime(factor: number, anchor = (timeRange.from + timeRange.to) / 2) {
+        applyTime(zoomFootprintTime(timeRange, factor, anchor, times, timeframeSeconds));
     }
 
-    function handlePointerUp(event: React.PointerEvent<HTMLCanvasElement>) {
-        const wasClick =
-            isDraggingRef.current &&
-            Math.abs(event.clientX - dragStartXRef.current) < 5 &&
-            dragAccumulatedBarsRef.current === 0;
-        if (wasClick && onInspectCandle && executionBars.length > 0) {
-            const rect = event.currentTarget.getBoundingClientRect();
-            const x = event.clientX - rect.left;
-            const plotW = Math.max(60, dimensions.width - 58);
-            if (x >= 0 && x < plotW) {
-                const colIdx = Math.min(
-                    executionBars.length - 1,
-                    Math.max(0, Math.floor((x / plotW) * executionBars.length)),
-                );
-                const clickedTime = executionBars[colIdx]?.time;
-                if (typeof clickedTime === 'number') {
-                    onInspectCandle(clickedTime);
-                }
-            }
-        }
-        isDraggingRef.current = false;
-        isDraggingPriceAxisRef.current = false;
-        try {
-            event.currentTarget.releasePointerCapture(event.pointerId);
-        } catch {
-            // ignore
-        }
-    }
-
-    function handlePointerLeave() {
-        if (isDraggingRef.current || isDraggingPriceAxisRef.current) return;
-        setLocalHover(null);
-        if (syncWithMain) {
-            onHoverCrosshair?.({ price: null, time: null });
-        }
-    }
-
-    function handleWheel(event: React.WheelEvent<HTMLCanvasElement>) {
-        const plotW = Math.max(60, dimensions.width - 58);
-        const rect = event.currentTarget.getBoundingClientRect();
-        const x = event.clientX - rect.left;
-
-        if (x >= plotW) {
+    useEffect(() => {
+        const surface = host.current;
+        if (!surface) return;
+        const wheel = (event: WheelEvent) => {
+            if (!times.length) return;
             event.preventDefault();
-            const zoomDelta = event.deltaY < 0 ? 0.9 : 1.1;
-            setSyncPriceScale(false);
-            setPriceScaleZoom((z) => Math.max(0.15, Math.min(8.0, z * zoomDelta)));
-            return;
-        }
+            const box = surface.getBoundingClientRect();
+            const x = event.clientX - box.left;
+            const y = event.clientY - box.top;
+            const deltaY = event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? size.height : 1);
+            const factor = Math.exp(Math.max(-0.55, Math.min(0.55, deltaY * 0.0025)));
+            if (x >= layout.plotRight || event.altKey) {
+                setPriceOverride(zoomFootprintPrice(priceRange, factor, layout.priceForY(y), displayStep));
+                return;
+            }
+            const next = event.shiftKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)
+                ? panFootprintTime(timeRange, (event.deltaX || deltaY) * (timeRange.to - timeRange.from) / Math.max(1, layout.plotRight - layout.plotLeft), times, timeframeSeconds)
+                : zoomFootprintTime(timeRange, factor, layout.timeForX(x), times, timeframeSeconds);
+            setTimeOverride(next);
+            if (settings.linked) onTimeRangeChange?.(next);
+        };
+        surface.addEventListener('wheel', wheel, { passive: false });
+        return () => surface.removeEventListener('wheel', wheel);
+    }, [displayStep, layout, onTimeRangeChange, priceRange, settings.linked, size.height, timeRange, timeframeSeconds, times]);
 
-        event.preventDefault();
-        const zoomDelta = event.deltaY < 0 ? -1 : 1;
-        setVisibleBarsCount((c) => Math.max(4, Math.min(30, c + zoomDelta)));
-        if (syncWithMain && onZoomBars) {
-            onZoomBars(zoomDelta);
+    function pointerPosition(event: ReactMouseEvent<HTMLDivElement>) {
+        const box = event.currentTarget.getBoundingClientRect();
+        return { x: event.clientX - box.left, y: event.clientY - box.top };
+    }
+
+    function showCursor(x: number, y: number) {
+        const index = x >= layout.plotLeft && x < layout.plotRight
+            ? findFootprintCandleIndex(times, layout.timeForX(x), timeframeSeconds) : -1;
+        const price = y >= layout.plotTop && y <= layout.plotBottom ? layout.priceForY(y) : null;
+        const time = index >= 0 ? times[index] + timeframeSeconds / 2 : null;
+        localCursor.current = { time, price };
+        cancelAnimationFrame(cursorFrame.current);
+        cursorFrame.current = requestAnimationFrame(() => {
+            if (cursorCanvas.current) renderFootprintCursor(cursorCanvas.current, { ...size, layout, cursor: { time, price }, levels: settings.levels });
+            if (settings.linked) onHoverCrosshair?.({ time: index >= 0 ? layout.timeForX(x) : null, price });
+        });
+    }
+
+    function alignedPrice(y: number) {
+        return Math.round(layout.priceForY(y) / sourceBucket) * sourceBucket;
+    }
+
+    function handlePointerMove(event: ReactPointerEvent<HTMLDivElement>) {
+        const { x, y } = pointerPosition(event);
+        const start = drag.current;
+        if (!start) { showCursor(x, y); return; }
+        const dx = x - start.x;
+        const dy = y - start.y;
+        if (Math.abs(dx) + Math.abs(dy) < 4 && !start.moved) return;
+        start.moved = true;
+        if (start.kind === 'level') {
+            levelDraft.current = Math.max(sourceBucket, alignedPrice(y));
+            if (cursorCanvas.current) {
+                const levels = settings.levels.map((price, index) => index === start.levelIndex ? levelDraft.current! : price);
+                renderFootprintCursor(cursorCanvas.current, { ...size, layout, cursor: NO_CURSOR, levels });
+            }
+        } else if (start.kind === 'price') {
+            const center = (start.price.min + start.price.max) / 2;
+            setPriceOverride(zoomFootprintPrice(start.price, Math.exp(Math.max(-3, Math.min(3, dy / 150))), center, displayStep));
+        } else if (start.kind === 'time') {
+            applyTime(zoomFootprintTime(start.time, Math.exp(Math.max(-3, Math.min(3, dx / 150))), start.time.to, times, timeframeSeconds));
+        } else {
+            applyTime(panFootprintTime(start.time, -dx * (start.time.to - start.time.from) / Math.max(1, layout.plotRight - layout.plotLeft), times, timeframeSeconds));
+            if (Math.abs(dy) >= 4) setPriceOverride(panFootprintPrice(start.price, dy * (start.price.max - start.price.min) / Math.max(1, layout.plotBottom - layout.plotTop)));
         }
     }
 
-    const liveTapeCount = executionBars.filter((b) => b.source === 'LIVE_TAPE').length;
+    function finishPointer(event: ReactPointerEvent<HTMLDivElement>) {
+        const start = drag.current;
+        drag.current = null;
+        if (!start) return;
+        if (start.kind === 'level') {
+            setSelectedLevel(start.levelIndex);
+            if (levelDraft.current !== null) {
+                const price = levelDraft.current;
+                changeSettings({ levels: settings.levels.map((level, index) => index === start.levelIndex ? price : level) });
+            }
+            levelDraft.current = null;
+            return;
+        }
+        if (start.moved || start.kind !== 'plot') return;
+        const { x, y } = pointerPosition(event);
+        if (drawLevel && y < layout.plotBottom) {
+            const price = alignedPrice(y);
+            if (price > 0) changeSettings({ levels: [...settings.levels, price].slice(-20) });
+            setDrawLevel(false);
+            return;
+        }
+        const index = findFootprintCandleIndex(times, layout.timeForX(x), timeframeSeconds);
+        if (index >= 0) {
+            setSelectedLevel(null);
+            setSelection(times[index]);
+            if (settings.linked) onSelectTime?.(layout.timeForX(x));
+            setInspectorOpen(true);
+            showCursor(x, y);
+        }
+    }
+
+    const selected = selection === null ? null : renderBars[findFootprintCandleIndex(times, selection, timeframeSeconds)] ?? null;
+    const coverageTimes = renderBars.find((bar) => bar.footprint)?.footprint;
+    const lastCoverage = renderBars.findLast((bar) => bar.footprint)?.footprint;
+    const fit = () => { setPriceOverride(null); applyTime(fitFootprintTime(times, timeframeSeconds)); };
+    const latest = () => { setPriceOverride(null); setTimeOverride(null); if (settings.linked) onTimeRangeChange?.(fitFootprintTime(times, timeframeSeconds, 10)); };
 
     return (
-        <div
-            ref={hostRef}
-            className={cn('relative flex h-full min-h-[240px] w-full flex-col overflow-hidden border-r border-[#18212C] bg-[#060A10]', className)}
-            data-testid="left-footprint-execution-pane"
-            data-view-mode={viewMode}
-            data-visible-bars={visibleBarsCount}
-            data-bucket-step={bucketStep}
-            data-sync-with-main={syncWithMain}
-        >
-            {/* Layer 0: Heavy Footprint Cells & ATAS Skeleton Candles (Redraws only on data change) */}
-            <canvas
-                ref={canvasRef}
-                className="absolute inset-0 size-full pointer-events-none"
-            />
-            {/* Layer 1: High-Performance Crosshair & Hover Overlay (Zero cell redraw on hover) */}
-            <canvas
-                ref={overlayCanvasRef}
-                className="absolute inset-0 size-full cursor-crosshair select-none"
-                onPointerDown={handlePointerDown}
-                onPointerMove={handlePointerMove}
-                onPointerUp={handlePointerUp}
-                onPointerLeave={handlePointerLeave}
-                onWheel={handleWheel}
-                onDoubleClick={() => {
-                    setSyncPriceScale(true);
-                    setPriceScaleZoom(1.0);
-                    setPriceScaleOffset(0);
-                }}
-            />
-
-            {/* Top Execution Controls Bar */}
-            <div className="pointer-events-auto relative z-10 flex h-9 shrink-0 items-center justify-between gap-1.5 border-b border-[#18212C] bg-[#080D14]/95 px-2.5 font-mono text-[9px]">
-                <div className="flex items-center gap-1" role="tablist" aria-label="Execution view mode">
-                    <button
-                        type="button"
-                        data-testid="exec-mode-footprint"
-                        onClick={() => setViewMode('FOOTPRINT')}
-                        title="ATAS Bid x Ask Footprint Clusters"
-                        className={cn(
-                            'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
-                            viewMode === 'FOOTPRINT'
-                                ? 'bg-[#39A9F5]/20 text-[#39A9F5] ring-1 ring-[#39A9F5]/40'
-                                : 'text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]',
-                        )}
-                    >
-                        <Columns2 className="size-3" />
-                        <span>FOOTPRINT</span>
-                    </button>
-                    <button
-                        type="button"
-                        data-testid="exec-mode-delta-ladder"
-                        onClick={() => setViewMode('DELTA_LADDER')}
-                        title="Colored Net Delta Ladder per Price Level"
-                        className={cn(
-                            'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
-                            viewMode === 'DELTA_LADDER'
-                                ? 'bg-[#2CC7A0]/20 text-[#2CC7A0] ring-1 ring-[#2CC7A0]/40'
-                                : 'text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]',
-                        )}
-                    >
-                        <Layers className="size-3" />
-                        <span>DELTA LADDER</span>
-                    </button>
-                    <button
-                        type="button"
-                        data-testid="exec-mode-candle-vp"
-                        onClick={() => setViewMode('CANDLE_VP')}
-                        title="Intra-Bar Volume Profile Histogram per Candle with POC & Value Area"
-                        className={cn(
-                            'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
-                            viewMode === 'CANDLE_VP'
-                                ? 'bg-[#A855F7]/20 text-[#C084FC] ring-1 ring-[#A855F7]/40'
-                                : 'text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]',
-                        )}
-                    >
-                        <BarChart3 className="size-3" />
-                        <span>CANDLE VP</span>
-                    </button>
-                    <button
-                        type="button"
-                        data-testid="exec-mode-heatmap-imbalance"
-                        onClick={() => setViewMode('HEATMAP_IMBALANCE')}
-                        title="Resting Liquidity Depth Heatmap + Stacked Imbalances"
-                        className={cn(
-                            'flex items-center gap-1 rounded px-2 py-1 font-bold transition-colors',
-                            viewMode === 'HEATMAP_IMBALANCE'
-                                ? 'bg-[#E5A83B]/20 text-[#E5A83B] ring-1 ring-[#E5A83B]/40'
-                                : 'text-[#8390A0] hover:bg-white/5 hover:text-[#D8DEE8]',
-                        )}
-                    >
-                        <Flame className="size-3" />
-                        <span>HEATMAP + IMB</span>
-                    </button>
-                </div>
-
-                <div className="flex items-center gap-1.5 text-[8.5px] text-[#8390A0]">
-                    <span className="hidden rounded border border-[#18212C] bg-[#0B111A] px-1.5 py-0.5 text-[#D8DEE8] sm:inline">
-                        STEP ${bucketStep}
-                    </span>
-                    {imbalanceCount > 0 && (
-                        <span className="hidden rounded border border-[#E5A83B]/35 bg-[#E5A83B]/10 px-1.5 py-0.5 font-bold text-[#E5A83B] lg:inline">
-                            {imbalanceCount} IMB
-                        </span>
-                    )}
-                    <span className="hidden rounded border border-[#2CC7A0]/30 bg-[#2CC7A0]/10 px-1.5 py-0.5 text-[#2CC7A0] xl:inline">
-                        {liveTapeCount > 0 ? `LIVE TAPE (${liveTapeCount}b)` : 'SKELETON LADDER'}
-                    </span>
-
-                    <div className="flex items-center rounded border border-[#18212C] bg-[#0B111A]">
-                        <button
-                            type="button"
-                            title="Zoom in (fewer, wider skeleton candles)"
-                            data-testid="exec-zoom-in"
-                            onClick={() => {
-                                setVisibleBarsCount((c) => Math.max(4, c - 2));
-                                if (syncWithMain && onZoomBars) onZoomBars(-1);
-                            }}
-                            className="p-1 text-[#8390A0] hover:text-white"
-                        >
-                            <ZoomIn className="size-3" />
-                        </button>
-                        <span className="px-1 font-bold text-[#D8DEE8]">{visibleBarsCount}B</span>
-                        <button
-                            type="button"
-                            title="Zoom out (more skeleton candles)"
-                            data-testid="exec-zoom-out"
-                            onClick={() => {
-                                setVisibleBarsCount((c) => Math.min(30, c + 2));
-                                if (syncWithMain && onZoomBars) onZoomBars(1);
-                            }}
-                            className="p-1 text-[#8390A0] hover:text-white"
-                        >
-                            <ZoomOut className="size-3" />
-                        </button>
-                    </div>
-
-                    <button
-                        type="button"
-                        data-testid="exec-sync-toggle"
-                        title={syncWithMain ? 'Synced with main candlestick chart (Click to decouple)' : 'Independent navigation (Click to sync with main)'}
-                        onClick={() => setSyncWithMain((v) => !v)}
-                        className={cn(
-                            'flex items-center gap-1 rounded border px-1.5 py-1',
-                            syncWithMain
-                                ? 'border-[#39A9F5]/40 bg-[#39A9F5]/15 text-[#39A9F5]'
-                                : 'border-[#18212C] text-[#8390A0]',
-                        )}
-                    >
-                        <RefreshCw className={cn('size-2.5', syncWithMain && 'text-[#39A9F5]')} />
-                        <span className="text-[8px] font-bold">{syncWithMain ? 'SYNCED' : 'UNSYNC'}</span>
-                    </button>
-
-                    <button
-                        type="button"
-                        data-testid="exec-price-sync-toggle"
-                        title={syncPriceScale ? 'Price scale locked 1:1 to candlestick chart. Drag axis or click to scale freely.' : 'Price scale free. Click or double-click price axis to re-sync 1:1 with main chart.'}
-                        onClick={() => {
-                            setSyncPriceScale((v) => {
-                                if (!v) {
-                                    setPriceScaleZoom(1.0);
-                                    setPriceScaleOffset(0);
-                                }
-                                return !v;
-                            });
-                        }}
-                        className={cn(
-                            'flex items-center gap-1 rounded border px-1.5 py-1',
-                            syncPriceScale
-                                ? 'border-[#39A9F5]/40 bg-[#39A9F5]/15 text-[#39A9F5]'
-                                : 'border-amber-500/40 bg-amber-500/15 text-amber-300',
-                        )}
-                    >
-                        <span className="text-[8px] font-bold">{syncPriceScale ? 'PRICE SYNC' : 'FREE SCALE'}</span>
-                    </button>
-
-                    {onClosePane && (
-                        <button
-                            type="button"
-                            title="Hide Left Execution Footprint Pane"
-                            onClick={onClosePane}
-                            className="rounded border border-[#18212C] p-1 text-[#8390A0] hover:bg-white/5 hover:text-white"
-                        >
-                            <Eye className="size-3" />
-                        </button>
-                    )}
-                </div>
+        <section data-testid="left-footprint-execution-pane" aria-label="Footprint chart" className="relative flex h-full min-h-0 flex-col bg-[#080d14]">
+            <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[#263544] p-1.5">
+                <select aria-label="Footprint mode" data-testid="exec-mode" className={control} value={activeMode} onChange={(event) => changeSettings({ mode: event.target.value as FootprintDisplayMode })}>
+                    {Object.entries(FOOTPRINT_MODES).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </select>
+                <select aria-label="Footprint timeframe" data-testid="exec-timeframe" className={control} disabled={replayActive && replayCursorMs === undefined} value={replayActive && replayCursorMs === undefined ? 'FOLLOW' : interval ?? 'FOLLOW'}
+                    onChange={(event) => onIntervalChange?.(event.target.value === 'FOLLOW' ? null : event.target.value as TrueFlowInterval)}>
+                    <option value="FOLLOW">Follow chart</option>
+                    {Object.keys(FOOTPRINT_INTERVALS).map((value) => <option key={value} value={value}>{value.toUpperCase()}</option>)}
+                </select>
+                <button type="button" data-testid="exec-zoom-in" className={control} aria-label="Zoom in Footprint" onClick={() => zoomTime(0.78)}>+</button>
+                <button type="button" data-testid="exec-zoom-out" className={control} aria-label="Zoom out Footprint" onClick={() => zoomTime(1.28)}>−</button>
+                <button type="button" data-testid="exec-sync-toggle" className={control} aria-pressed={settings.linked} onClick={() => {
+                    setTimeOverride(clampFootprintTime(timeRange, times, timeframeSeconds));
+                    changeSettings({ linked: !settings.linked });
+                    if (settings.linked) onHoverCrosshair?.(NO_CURSOR);
+                }}>{settings.linked ? 'Linked' : 'Link'}</button>
+                <button type="button" className={control} aria-expanded={showSettings} onClick={() => setShowSettings(!showSettings)}>Settings</button>
+                <button type="button" className={control} aria-label="Hide Footprint" onClick={onClosePane}>×</button>
             </div>
-        </div>
+            <div data-testid="footprint-coverage" className="shrink-0 border-b border-slate-800 px-2 py-1 text-[10px] leading-tight text-slate-400">
+                {replayCursorMs !== undefined ? 'Recorded BTCUSDT Spot tape · values shown as of the replay cursor.'
+                    : replayActive ? 'Historical Preview · OHLC only. Load a tape for trade replay.'
+                    : dataMode === 'DEMO' ? 'Demo OHLC · No captured trades.'
+                    : tradeCandles ? `Binance BTCUSDT Spot · ${tradeCandles} captured candle${tradeCandles === 1 ? '' : 's'} · ${displayStep.toLocaleString()} USDT grouping`
+                    : 'Binance BTCUSDT Spot · No captured trades. Blank cells indicate unavailable trade data.'}
+                {historyState === 'loading' ? ' · Loading OHLC' : historyState === 'error' ? ' · OHLC history unavailable' : ''}
+            </div>
+            {showSettings && <div className="absolute right-1 top-10 z-50 grid max-h-[85%] w-[min(310px,98%)] gap-2 overflow-auto rounded border border-slate-700 bg-[#101822] p-2 text-xs text-slate-200 shadow-xl">
+                <div className="flex flex-wrap gap-1">
+                    <button type="button" data-testid="exec-fit" className={control} onClick={fit}>Fit data</button>
+                    <button type="button" data-testid="exec-latest" className={control} onClick={latest}>Latest / reset</button>
+                    <button type="button" className={control} onClick={() => setPriceOverride(null)}>Auto price</button>
+                    {onExportTape && <button type="button" className={control} onClick={onExportTape}>Save captured tape</button>}
+                    <button type="button" className={control} aria-pressed={drawLevel} onClick={() => { setDrawLevel(!drawLevel); setShowSettings(false); }}>Draw price level</button>
+                    {settings.levels.length > 0 && <button type="button" className={control} onClick={() => {
+                        changeSettings({ levels: settings.levels.filter((_, index) => index !== (selectedLevel ?? settings.levels.length - 1)) });
+                        setSelectedLevel(null);
+                    }}>{selectedLevel === null ? 'Remove last level' : 'Remove selected level'}</button>}
+                </div>
+                <div className="flex flex-wrap items-center gap-1" aria-label="Footprint presets">
+                    <span className="text-slate-400">Presets</span>
+                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'BID_ASK', showImbalances: true })}>Bid × Ask</button>
+                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'DELTA_PROFILE', showImbalances: true })}>Delta analysis</button>
+                    <button type="button" className={control} onClick={() => changeSettings({ mode: 'VOLUME_PROFILE', showImbalances: false })}>Volume analysis</button>
+                </div>
+                <label><input type="checkbox" checked={settings.showImbalances} onChange={(event) => changeSettings({ showImbalances: event.target.checked })} /> Highlight imbalances</label>
+                <div className="grid grid-cols-2 gap-2">
+                    <label>Price grouping
+                        <select className={`${control} w-full`} value={settings.grouping} onChange={(event) => changeSettings({ grouping: Number(event.target.value) })}>
+                            <option value={0}>Auto</option>{groupingChoices.map((step) => <option key={step} value={step}>{step} USDT</option>)}
+                        </select>
+                    </label>
+                    <label>Price decimals
+                        <select className={`${control} w-full`} value={settings.precision} onChange={(event) => changeSettings({ precision: Number(event.target.value) })}>
+                            {[0, 1, 2].map((value) => <option key={value}>{value}</option>)}
+                        </select>
+                    </label>
+                    <label>Imbalance ratio
+                        <input className={`${control} w-full`} type="number" min={1} max={20} step={0.5} value={settings.ratio}
+                            onChange={(event) => changeSettings({ ratio: Math.max(1, Math.min(20, Number(event.target.value))) })} />
+                    </label>
+                    <label>Min. imbalance USDT
+                        <input className={`${control} w-full`} type="number" min={0} max={1000000} step={100} value={settings.minVolume}
+                            onChange={(event) => changeSettings({ minVolume: Math.max(0, Math.min(1000000, Number(event.target.value))) })} />
+                    </label>
+                </div>
+                {showStudies && <details>
+                    <summary className="cursor-pointer">Delta statistics and CVD</summary>
+                    <label className="mt-2 block"><input type="checkbox" checked={settings.cvd} onChange={(event) => changeSettings({ cvd: event.target.checked })} /> Captured CVD</label>
+                    <label className="mt-2 block">Table height
+                        <input aria-label="Statistics table height" className="ml-2 align-middle" type="range" min={75} max={230} value={settings.statsHeight}
+                            onChange={(event) => changeSettings({ statsHeight: Number(event.target.value) })} />
+                    </label>
+                    <div className="mt-2 flex gap-1">
+                        <button type="button" className={control} onClick={() => changeSettings({ rows: [] })}>Collapse</button>
+                        <button type="button" className={control} onClick={() => changeSettings({ rows: [...FOOTPRINT_STATS] })}>Reset rows</button>
+                    </div>
+                    <div className="mt-1 grid gap-1">{[...settings.rows, ...FOOTPRINT_STATS.filter((row) => !settings.rows.includes(row))].map((row, index) => (
+                        <div key={row} className="flex items-center justify-between gap-2">
+                            <label><input type="checkbox" checked={settings.rows.includes(row)} onChange={(event) => changeSettings({ rows: event.target.checked ? [...settings.rows, row] : settings.rows.filter((id) => id !== row) })} /> {row.replaceAll('_', ' ')}</label>
+                            {index > 0 && index < settings.rows.length && <button type="button" className={control} aria-label={`Move ${row} up`} onClick={() => {
+                                const rows = [...settings.rows];
+                                [rows[index - 1], rows[index]] = [rows[index], rows[index - 1]];
+                                changeSettings({ rows });
+                            }}>↑</button>}
+                        </div>
+                    ))}</div>
+                </details>}
+                {coverageTimes?.coverageStart != null && lastCoverage?.coverageEnd != null && <p className="text-slate-400">
+                    Observed range {new Date(coverageTimes.coverageStart).toISOString()} to {new Date(lastCoverage.coverageEnd).toISOString()}. Individual candles may have gaps.
+                </p>}
+                <p className="text-slate-400">Wheel zooms around the cursor. Drag the plot to pan. Drag either axis to scale. Click a candle for exact values.</p>
+            </div>}
+            <div ref={host} data-testid="footprint-chart-surface" className={`relative min-h-0 flex-1 touch-none overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-sky-400 ${drawLevel ? 'cursor-crosshair' : ''}`}
+                tabIndex={0} role="region" aria-label="Footprint plot. Use arrows to pan, plus or minus to zoom, Home to fit, End for latest."
+                data-time-from={timeRange.from} data-time-to={timeRange.to} data-price-min={priceRange.min} data-price-max={priceRange.max}
+                data-trade-candles={tradeCandles} data-stats-rows={statsRows.length}
+                onPointerDown={(event) => {
+                    if (event.button !== 0 || !times.length) return;
+                    const { x, y } = pointerPosition(event);
+                    if (x < layout.plotLeft) return;
+                    const levelIndex = !drawLevel && x < layout.plotRight && y < layout.plotBottom
+                        ? settings.levels.findIndex((price) => Math.abs(layout.yForPrice(price) - y) < 6) : -1;
+                    const kind = levelIndex >= 0 ? 'level'
+                        : x >= layout.plotRight ? 'price' : y >= layout.plotBottom && y < layout.axisBottom ? 'time' : 'plot';
+                    drag.current = { x, y, kind, levelIndex, moved: false, time: timeRange, price: priceRange };
+                    event.currentTarget.setPointerCapture(event.pointerId);
+                }}
+                onPointerMove={handlePointerMove} onPointerUp={finishPointer}
+                onPointerCancel={() => { drag.current = null; levelDraft.current = null; }}
+                onPointerLeave={() => {
+                    localCursor.current = null;
+                    cancelAnimationFrame(cursorFrame.current);
+                    if (cursorCanvas.current) renderFootprintCursor(cursorCanvas.current, { ...size, layout, cursor: NO_CURSOR, levels: settings.levels });
+                    if (settings.linked) onHoverCrosshair?.(NO_CURSOR);
+                }}
+                onDoubleClick={(event) => {
+                    const { x, y } = pointerPosition(event);
+                    if (x >= layout.plotRight) setPriceOverride(null);
+                    else if (y >= layout.plotBottom && y < layout.axisBottom) latest();
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === '+' || event.key === '=') zoomTime(0.78);
+                    else if (event.key === '-') zoomTime(1.28);
+                    else if (event.key === 'Home') fit();
+                    else if (event.key === 'End') latest();
+                    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') applyTime(panFootprintTime(timeRange, timeframeSeconds * (event.key === 'ArrowLeft' ? -1 : 1), times, timeframeSeconds));
+                    else if (event.key === 'Delete' && selectedLevel !== null) {
+                        changeSettings({ levels: settings.levels.filter((_, index) => index !== selectedLevel) });
+                        setSelectedLevel(null);
+                    }
+                    else if (event.key === 'Enter' && visible.end > visible.start) {
+                        setSelection(times[visible.end - 1]);
+                        if (settings.linked) onSelectTime?.(times[visible.end - 1]);
+                        setInspectorOpen(true);
+                    }
+                    else return;
+                    event.preventDefault();
+                }}>
+                <canvas ref={chartCanvas} className="pointer-events-none absolute inset-0 size-full" aria-hidden="true" />
+                <canvas ref={cursorCanvas} className="pointer-events-none absolute inset-0 size-full" aria-hidden="true" />
+            </div>
+            <FootprintCandleInspector key={selection} bar={inspectorOpen ? selected : null}
+                recordedSource={replayCursorMs !== undefined ? trueFlowSnapshot?.coverage.source : undefined} onClose={() => setInspectorOpen(false)} />
+        </section>
     );
 }

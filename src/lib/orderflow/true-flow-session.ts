@@ -1,3 +1,5 @@
+import { footprintPriceBucketIndex } from './price-bucket';
+import { addObservedTrade, candleObservation, type ObservedCandle } from './observed-candle';
 import {
     ClassifiedTradeV1Schema,
     FootprintBarV1Schema,
@@ -6,6 +8,7 @@ import {
     TradeCaptureBoundaryV1Schema,
     type CaptureCoverageV1,
     type ClassifiedTradeV1,
+    type FootprintCellV1,
     type TradeCaptureBoundaryV1,
 } from './contracts';
 import {
@@ -14,6 +17,7 @@ import {
     SegmentedFootprintBarV1Schema,
     TradeVolumeProfileRowV1Schema,
     TradeVolumeProfileV1Schema,
+    TRUE_FLOW_INTERVAL_MS,
     TrueFlowIntervalSchema,
     TrueFlowSnapshotV1Schema,
     TrueFlowTotalsV1Schema,
@@ -21,15 +25,6 @@ import {
     type TrueFlowSnapshotV1,
     type TrueFlowTotalsV1,
 } from './true-flow-contracts';
-
-const INTERVAL_MS: Record<TrueFlowInterval, number> = {
-    '1m': 60_000,
-    '5m': 300_000,
-    '15m': 900_000,
-    '1h': 3_600_000,
-    '4h': 14_400_000,
-    '1d': 86_400_000,
-};
 
 export interface TrueFlowSessionOptions {
     interval: TrueFlowInterval;
@@ -56,6 +51,8 @@ interface MutableCell extends MutableTotals {
 interface MutableBar extends MutableTotals {
     openTime: number;
     cells: Map<number, MutableCell>;
+    observation?: ObservedCandle;
+    cellSnapshot?: FootprintCellV1[];
     runningDeltaUsd: number;
     minRunningDeltaUsd: number;
     maxRunningDeltaUsd: number;
@@ -139,10 +136,6 @@ function normalize(value: number): number {
     return Number(value.toFixed(12));
 }
 
-function bucketIndex(price: number, priceBucket: number): number {
-    return Math.floor(price / priceBucket + 1e-12);
-}
-
 function bucketLow(index: number, priceBucket: number): number {
     return normalize(index * priceBucket);
 }
@@ -193,9 +186,9 @@ export class TrueFlowSessionAccumulator {
         }
         const requiresNewSegment = this.currentSegment === null
             || this.pendingBoundaries.some((boundary) => boundary.reason !== 'CAPTURE_START');
-        const intervalMs = INTERVAL_MS[this.options.interval];
+        const intervalMs = TRUE_FLOW_INTERVAL_MS[this.options.interval];
         const openTime = Math.floor(trade.tradeTime / intervalMs) * intervalMs;
-        const index = bucketIndex(trade.price, this.options.priceBucket);
+        const index = footprintPriceBucketIndex(trade.price, this.options.priceBucket);
         const prospectiveSegment = requiresNewSegment ? null : this.currentSegment;
         const prospectiveBar = prospectiveSegment?.bars.get(openTime);
         const existingProfile = this.profileRows.get(index);
@@ -245,6 +238,8 @@ export class TrueFlowSessionAccumulator {
 
         addTrade(this.sessionTotals, trade);
         addTrade(bar, trade);
+        bar.observation = addObservedTrade(bar.observation, trade);
+        bar.cellSnapshot = undefined;
         addTrade(cell, trade);
         addTrade(profile, trade);
         bar.runningDeltaUsd += trade.aggressor === 'BUY' ? trade.notionalUsd : -trade.notionalUsd;
@@ -271,7 +266,7 @@ export class TrueFlowSessionAccumulator {
     }
 
     snapshot(baseCoverage: CaptureCoverageV1): TrueFlowSnapshotV1 {
-        const intervalMs = INTERVAL_MS[this.options.interval];
+        const intervalMs = TRUE_FLOW_INTERVAL_MS[this.options.interval];
         const cvdSegments = this.segments.map((segment) => {
             let cumulative = 0;
             const bars = [...segment.bars.values()]
@@ -303,7 +298,7 @@ export class TrueFlowSessionAccumulator {
             [...segment.bars.values()]
                 .sort((left, right) => left.openTime - right.openTime)
                 .map((bar, index) => {
-                    const cells = [...bar.cells.values()]
+                    const cells = bar.cellSnapshot ??= [...bar.cells.values()]
                         .sort((left, right) => left.bucketIndex - right.bucketIndex)
                         .map((cell) => {
                             const priceLow = bucketLow(cell.bucketIndex, this.options.priceBucket);
@@ -334,6 +329,7 @@ export class TrueFlowSessionAccumulator {
                             interval: this.options.interval,
                             priceBucket: this.options.priceBucket,
                             cells,
+                            ...(bar.observation ? candleObservation(bar.observation) : {}),
                             totalNotionalUsd: barTotals.totalNotionalUsd,
                             deltaNotionalUsd: barTotals.deltaNotionalUsd,
                             pocPrice: poc?.priceMid ?? null,

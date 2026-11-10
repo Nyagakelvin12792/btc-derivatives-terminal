@@ -99,6 +99,46 @@ describe('BinanceAggregateTradeRuntime', () => {
         }));
     });
 
+    it('switches independent projections on one socket and discloses retained-tape coverage', async () => {
+        const socket = new FakeSocket();
+        const createSocket = vi.fn(() => socket);
+        const events: AggregateTradeWorkerEvent[] = [];
+        const runtime = new BinanceAggregateTradeRuntime({
+            createSocket,
+            emit: (event) => events.push(event),
+            now: () => BASE_TIME + 1_000,
+            setTimeout,
+            clearTimeout,
+            setInterval,
+            clearInterval,
+        });
+        runtime.start(createAggregateTradeWorkerConfig({ trueFlowInterval: '1h', maxTrades: 2 }), '4h');
+        socket.open();
+        for (const id of [400, 401, 402]) socket.message(trade(id));
+        await vi.advanceTimersByTimeAsync(250);
+        const secondary = () => events.findLast((event) => event.type === 'FOOTPRINT_SNAPSHOT');
+        const primary = () => events.findLast((event) => event.type === 'TRUE_FLOW_SNAPSHOT');
+
+        expect(secondary()).toMatchObject({
+            snapshot: { interval: '4h', coverage: { coverageStart: BASE_TIME + 400 }, totals: { tradeCount: 3 } },
+        });
+        runtime.setIntervals('1h', '30m');
+        expect(secondary()).toMatchObject({
+            snapshot: { interval: '30m', coverage: { coverageStart: BASE_TIME + 401 }, totals: { tradeCount: 2 } },
+        });
+        expect(primary()).toMatchObject({
+            snapshot: { interval: '1h', coverage: { coverageStart: BASE_TIME + 400 }, totals: { tradeCount: 3 } },
+        });
+        socket.message(trade(403));
+        await vi.advanceTimersByTimeAsync(250);
+        expect(secondary()).toMatchObject({ snapshot: { totals: { tradeCount: 3 } } });
+        runtime.setIntervals('30m', '30m');
+        expect(secondary()).toMatchObject({ snapshot: null });
+        expect(primary()).toMatchObject({ snapshot: { interval: '30m', totals: { tradeCount: 3 } } });
+        expect(createSocket).toHaveBeenCalledTimes(1);
+        expect(socket.close).not.toHaveBeenCalled();
+    });
+
     it('ignores malformed, duplicate, and out-of-order messages without stopping capture', async () => {
         const socket = new FakeSocket();
         const events: AggregateTradeWorkerEvent[] = [];

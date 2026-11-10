@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AggregateTradeCapabilityV1Schema } from './contracts';
+import type { TrueFlowInterval } from './true-flow-contracts';
 import {
     createInitialAggregateTradeFeedState,
     reduceAggregateTradeFeedEvent,
@@ -22,10 +23,18 @@ export interface BinanceAggregateTradeFeed extends AggregateTradeFeedState {
 export function useBinanceAggregateTradeCapture(
     requested: boolean,
     overrides: AggregateTradeWorkerConfigOverrides = {},
+    footprintInterval: TrueFlowInterval | null = null,
 ): BinanceAggregateTradeFeed {
-    const configKey = JSON.stringify(createAggregateTradeWorkerConfig(overrides));
+    const { trueFlowInterval = '1m', ...transport } = overrides;
+    const configKey = JSON.stringify(createAggregateTradeWorkerConfig(transport));
     const config = useMemo(() => JSON.parse(configKey) as AggregateTradeWorkerConfig, [configKey]);
     const workerRef = useRef<Worker | null>(null);
+    const intervalsRef = useRef({ main: trueFlowInterval, footprint: footprintInterval });
+    useEffect(() => {
+        intervalsRef.current = { main: trueFlowInterval, footprint: footprintInterval };
+        const command: AggregateTradeWorkerCommand = { type: 'SET_INTERVALS', ...intervalsRef.current };
+        workerRef.current?.postMessage(command);
+    }, [trueFlowInterval, footprintInterval]);
     const [state, setState] = useState<AggregateTradeFeedState>(() => (
         createInitialAggregateTradeFeedState(config.maxTrades, config.maxBoundaries)
     ));
@@ -79,7 +88,10 @@ export function useBinanceAggregateTradeCapture(
                         },
                     }));
                 };
-                const command: AggregateTradeWorkerCommand = { type: 'START', config };
+                const { main, footprint } = intervalsRef.current;
+                const command: AggregateTradeWorkerCommand = {
+                    type: 'START', config: { ...config, trueFlowInterval: main }, footprintInterval: footprint,
+                };
                 worker.postMessage(command);
             } catch (error) {
                 if (disposed || (error instanceof DOMException && error.name === 'AbortError')) return;
@@ -114,5 +126,12 @@ export function useBinanceAggregateTradeCapture(
     }, []);
 
     const visibleState = requested ? state : inactiveState;
-    return useMemo(() => ({ ...visibleState, clear }), [clear, visibleState]);
+    return useMemo(() => {
+        const main = visibleState.trueFlow?.interval === trueFlowInterval ? visibleState.trueFlow : null;
+        const independent = footprintInterval && footprintInterval !== trueFlowInterval;
+        const footprintFlow = independent
+            ? visibleState.footprintFlow?.interval === footprintInterval ? visibleState.footprintFlow : null
+            : main;
+        return { ...visibleState, trueFlow: main, footprintFlow, clear };
+    }, [clear, footprintInterval, trueFlowInterval, visibleState]);
 }

@@ -4,6 +4,7 @@ import {
     CaptureCoverageV1Schema,
     FootprintBarV1Schema,
     ORDERFLOW_SCHEMA_VERSION,
+    TrueFlowIntervalSchema,
     TradeCaptureBoundaryReasonSchema,
 } from './contracts';
 
@@ -17,8 +18,13 @@ function approximatelyEqual(left: number, right: number): boolean {
     return Math.abs(left - right) <= tolerance;
 }
 
-export const TrueFlowIntervalSchema = z.enum(['1m', '5m', '15m', '1h', '4h', '1d']);
+export { TrueFlowIntervalSchema };
 export type TrueFlowInterval = z.infer<typeof TrueFlowIntervalSchema>;
+
+export const TRUE_FLOW_INTERVAL_MS: Readonly<Record<TrueFlowInterval, number>> = {
+    '1m': 60_000, '5m': 300_000, '15m': 900_000, '30m': 1_800_000,
+    '1h': 3_600_000, '4h': 14_400_000, '1d': 86_400_000,
+};
 
 export const TrueFlowTotalsV1Schema = z.object({
     tradeCount: safeInteger,

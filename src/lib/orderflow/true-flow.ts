@@ -1,3 +1,5 @@
+import { footprintPriceBucketIndex } from './price-bucket';
+import { addObservedTrade, candleObservation, type ObservedCandle } from './observed-candle';
 import { calculateDiagonalImbalance } from './microstructure';
 import type { ImbalanceConfigV1 } from './microstructure-contracts';
 import {
@@ -15,6 +17,7 @@ import {
     SegmentedFootprintBarV1Schema,
     TradeVolumeProfileRowV1Schema,
     TradeVolumeProfileV1Schema,
+    TRUE_FLOW_INTERVAL_MS,
     TrueFlowIntervalSchema,
     TrueFlowSnapshotV1Schema,
     TrueFlowTotalsV1Schema,
@@ -22,15 +25,6 @@ import {
     type TrueFlowSnapshotV1,
     type TrueFlowTotalsV1,
 } from './true-flow-contracts';
-
-const INTERVAL_MS: Record<TrueFlowInterval, number> = {
-    '1m': 60_000,
-    '5m': 300_000,
-    '15m': 900_000,
-    '1h': 3_600_000,
-    '4h': 14_400_000,
-    '1d': 86_400_000,
-};
 
 export interface TrueFlowOptions {
     interval: TrueFlowInterval;
@@ -86,10 +80,6 @@ function normalize(value: number): number {
     return Number(value.toFixed(12));
 }
 
-function priceBucketIndex(price: number, priceBucket: number): number {
-    return Math.floor(price / priceBucket + 1e-12);
-}
-
 function bucketLow(bucketIndex: number, priceBucket: number): number {
     return normalize(bucketIndex * priceBucket);
 }
@@ -115,10 +105,17 @@ function firstTradeAfter(
     aggregateTradeId: number | null,
 ): number | null {
     if (aggregateTradeId === null) return trades[0]?.aggregateTradeId ?? null;
-    return trades.find((trade) => trade.aggregateTradeId > aggregateTradeId)?.aggregateTradeId ?? null;
+    let start = 0;
+    let end = trades.length;
+    while (start < end) {
+        const middle = start + Math.floor((end - start) / 2);
+        if (trades[middle].aggregateTradeId <= aggregateTradeId) start = middle + 1;
+        else end = middle;
+    }
+    return trades[start]?.aggregateTradeId ?? null;
 }
 
-function partitionSegments(
+export function partitionTrueFlowSegments(
     trades: readonly ClassifiedTradeV1[],
     boundaries: readonly TradeCaptureBoundaryV1[],
 ): SegmentInput[] {
@@ -165,7 +162,7 @@ function buildCvdSegments(
     interval: TrueFlowInterval,
     baseCoverage: CaptureCoverageV1,
 ) {
-    const intervalMs = INTERVAL_MS[interval];
+    const intervalMs = TRUE_FLOW_INTERVAL_MS[interval];
     return segments.map((segment) => {
         const grouped = new Map<number, ClassifiedTradeV1[]>();
         for (const trade of segment.trades) {
@@ -210,7 +207,7 @@ function buildFootprintBars(
     baseCoverage: CaptureCoverageV1,
     imbalanceConfig?: Partial<ImbalanceConfigV1>,
 ) {
-    const intervalMs = INTERVAL_MS[interval];
+    const intervalMs = TRUE_FLOW_INTERVAL_MS[interval];
     return segments.flatMap((segment) => {
         const grouped = new Map<number, ClassifiedTradeV1[]>();
         for (const trade of segment.trades) {
@@ -223,11 +220,13 @@ function buildFootprintBars(
             .sort(([left], [right]) => left - right)
             .map(([openTime, trades], barIndex) => {
                 const cellGroups = new Map<number, ClassifiedTradeV1[]>();
+                let observation: ObservedCandle | undefined;
                 let runningDelta = 0;
                 let minRunningDelta = 0;
                 let maxRunningDelta = 0;
                 for (const trade of trades.sort((left, right) => left.aggregateTradeId - right.aggregateTradeId)) {
-                    const bucketIndex = priceBucketIndex(trade.price, priceBucket);
+                    observation = addObservedTrade(observation, trade);
+                    const bucketIndex = footprintPriceBucketIndex(trade.price, priceBucket);
                     const group = cellGroups.get(bucketIndex) ?? [];
                     group.push(trade);
                     cellGroups.set(bucketIndex, group);
@@ -267,6 +266,7 @@ function buildFootprintBars(
                     interval,
                     priceBucket,
                     cells,
+                    ...(observation ? candleObservation(observation) : {}),
                     totalNotionalUsd,
                     deltaNotionalUsd,
                     pocPrice: poc?.priceMid ?? null,
@@ -297,7 +297,7 @@ function buildTradeVolumeProfile(
     const totals = emptyTotals();
     for (const trade of trades) {
         addTrade(totals, trade);
-        const bucketIndex = priceBucketIndex(trade.price, priceBucket);
+        const bucketIndex = footprintPriceBucketIndex(trade.price, priceBucket);
         const group = groups.get(bucketIndex) ?? [];
         group.push(trade);
         groups.set(bucketIndex, group);
@@ -367,7 +367,7 @@ export function deriveTrueFlowSnapshotV1(
         throw new RangeError('valueAreaFraction must be between 0.5 and 0.99');
     }
     const trades = [...capture.trades].sort((left, right) => left.aggregateTradeId - right.aggregateTradeId);
-    const segments = partitionSegments(trades, capture.boundaries);
+    const segments = partitionTrueFlowSegments(trades, capture.boundaries);
     const totals = emptyTotals();
     for (const trade of trades) addTrade(totals, trade);
     const coverage = coverageForTrades(capture.coverage, trades);

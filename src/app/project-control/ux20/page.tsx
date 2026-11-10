@@ -25,7 +25,7 @@ export default function Ux20ProjectControlPage() {
                             data-testid="ux20-all-milestones-link"
                         >
                             <Layers className="size-3" />
-                            <span>ALL INITIATIVES (UX16–UX20)</span>
+                            <span>ALL INITIATIVES</span>
                         </Link>
                         <span className="text-[#364150]">|</span>
                         <div className="flex items-center gap-2">

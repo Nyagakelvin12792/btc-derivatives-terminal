@@ -4,7 +4,7 @@ import { createAggregateTradeWorkerConfig } from './aggregate-trade-worker-proto
 describe('aggregate-trade worker configuration', () => {
     it('creates the safe, bounded Binance Spot configuration', () => {
         expect(createAggregateTradeWorkerConfig()).toEqual(expect.objectContaining({
-            streamUrl: 'wss://stream.binance.com:9443/stream?streams=btcusdt@aggTrade',
+            streamUrl: 'wss://stream.binance.com/stream?streams=btcusdt@aggTrade',
             maxTrades: 50_000,
             maxBoundaries: 1_000,
             flushIntervalMs: 250,

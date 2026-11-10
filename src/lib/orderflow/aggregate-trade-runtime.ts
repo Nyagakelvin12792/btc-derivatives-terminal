@@ -4,8 +4,17 @@ import type {
     AggregateTradeWorkerErrorCode,
     AggregateTradeWorkerEvent,
 } from './aggregate-trade-worker-protocol';
-import type { ClassifiedTradeV1 } from './contracts';
+import type { CaptureCoverageV1, ClassifiedTradeV1, TradeCaptureBoundaryV1 } from './contracts';
 import { TrueFlowSessionAccumulator } from './true-flow-session';
+import { TrueFlowIntervalSchema, type TrueFlowInterval } from './true-flow-contracts';
+import { partitionTrueFlowSegments } from './true-flow';
+import { createCaptureCoverageV1 } from './provenance';
+
+interface Projection {
+    accumulator: TrueFlowSessionAccumulator;
+    coverageStart: number | null;
+    available: boolean;
+}
 
 type TimeoutHandle = ReturnType<typeof setTimeout>;
 type IntervalHandle = ReturnType<typeof setInterval>;
@@ -55,27 +64,20 @@ export class BinanceAggregateTradeRuntime {
     private connected = false;
     private reconnectAttempt = 0;
     private continuityBreakPending = false;
-    private trueFlow: TrueFlowSessionAccumulator | null = null;
-    private derivationAvailable = false;
+    private mainInterval: TrueFlowInterval = '1m';
+    private footprintInterval: TrueFlowInterval | null = null;
+    private readonly projections = new Map<TrueFlowInterval, Projection>();
 
     constructor(dependencies: AggregateTradeRuntimeDependencies) {
         this.dependencies = dependencies;
     }
 
-    start(config: AggregateTradeWorkerConfig): void {
+    start(config: AggregateTradeWorkerConfig, footprintInterval: TrueFlowInterval | null = null): void {
         this.stop(false);
         this.config = config;
         this.tape = new AggregateTradeTape(config);
-        this.trueFlow = new TrueFlowSessionAccumulator({
-            interval: config.trueFlowInterval,
-            priceBucket: config.trueFlowPriceBucket,
-            valueAreaFraction: config.trueFlowValueAreaFraction,
-            maxSegments: config.maxDerivedSegments,
-            maxBars: config.maxDerivedBars,
-            maxCellsPerBar: config.maxFootprintCellsPerBar,
-            maxProfileRows: config.maxTradeProfileRows,
-        });
-        this.derivationAvailable = true;
+        this.projections.clear();
+        this.setIntervals(config.trueFlowInterval, footprintInterval);
         this.running = true;
         this.connected = false;
         this.reconnectAttempt = 0;
@@ -90,8 +92,11 @@ export class BinanceAggregateTradeRuntime {
         if (!this.tape) return;
         this.pendingBatch = [];
         this.tape.clear();
-        this.trueFlow?.clear();
-        this.derivationAvailable = true;
+        for (const projection of this.projections.values()) {
+            projection.accumulator.clear();
+            projection.coverageStart = null;
+            projection.available = true;
+        }
         this.dependencies.emit({ type: 'RESET' });
         this.emitStatus();
     }
@@ -109,6 +114,90 @@ export class BinanceAggregateTradeRuntime {
         }
         this.tape?.markOffline();
         if (emitStatus) this.emitStatus();
+    }
+
+    /** Switches aggregation on the retained tape without tearing down the socket. */
+    setIntervals(main: TrueFlowInterval, footprint: TrueFlowInterval | null): void {
+        if (!this.config || !this.tape) return;
+        const checkedMain = TrueFlowIntervalSchema.parse(main);
+        const checkedFootprint = TrueFlowIntervalSchema.nullable().parse(footprint);
+        this.mainInterval = checkedMain;
+        this.footprintInterval = checkedFootprint;
+        const desired = new Set([this.mainInterval, this.footprintInterval].filter((value) => value !== null));
+        for (const interval of this.projections.keys()) {
+            if (!desired.has(interval)) this.projections.delete(interval);
+        }
+        const missing = [...desired].filter((interval) => !this.projections.has(interval));
+        if (missing.length) {
+            const retained = this.tape.snapshot(this.dependencies.now());
+            const segments = partitionTrueFlowSegments(retained.trades, retained.boundaries);
+            const pending = retained.boundaries.filter((boundary) => boundary.reason === 'RECONNECT'
+                && boundary.previousAggregateTradeId === retained.lastAggregateTradeId);
+            for (const interval of missing) {
+                const projection: Projection = {
+                    accumulator: new TrueFlowSessionAccumulator({
+                        interval,
+                        priceBucket: this.config.trueFlowPriceBucket,
+                        valueAreaFraction: this.config.trueFlowValueAreaFraction,
+                        maxSegments: this.config.maxDerivedSegments,
+                        maxBars: this.config.maxDerivedBars,
+                        maxCellsPerBar: this.config.maxFootprintCellsPerBar,
+                        maxProfileRows: this.config.maxTradeProfileRows,
+                    }),
+                    coverageStart: null,
+                    available: true,
+                };
+                this.projections.set(interval, projection);
+                try {
+                    for (const segment of segments) {
+                        for (const boundary of segment.startBoundaries) projection.accumulator.recordBoundary(boundary);
+                        for (const trade of segment.trades) {
+                            projection.accumulator.ingest(trade);
+                            projection.coverageStart = Math.min(projection.coverageStart ?? trade.tradeTime, trade.tradeTime);
+                        }
+                    }
+                    for (const boundary of pending) projection.accumulator.recordBoundary(boundary);
+                } catch {
+                    this.markProjectionUnavailable(projection);
+                }
+            }
+        }
+        if (this.running) this.emitProjections();
+    }
+
+    private markProjectionUnavailable(projection: Projection): void {
+        projection.available = false;
+        this.emitError('DERIVATION_LIMIT', 'True-flow derivation reached a configured safety limit.');
+    }
+
+    private recordProjectionBoundary(boundary: TradeCaptureBoundaryV1): void {
+        for (const projection of this.projections.values()) {
+            if (!projection.available) continue;
+            try {
+                projection.accumulator.recordBoundary(boundary);
+            } catch {
+                this.markProjectionUnavailable(projection);
+            }
+        }
+    }
+
+    private emitProjections(): void {
+        if (!this.tape) return;
+        const { coverage } = this.tape.telemetry(this.dependencies.now());
+        this.dependencies.emit({ type: 'TRUE_FLOW_SNAPSHOT', snapshot: this.project(this.mainInterval, coverage) });
+        const independentInterval = this.footprintInterval !== this.mainInterval ? this.footprintInterval : null;
+        this.dependencies.emit({
+            type: 'FOOTPRINT_SNAPSHOT',
+            snapshot: independentInterval ? this.project(independentInterval, coverage) : null,
+        });
+    }
+
+    private project(interval: TrueFlowInterval, coverage: CaptureCoverageV1) {
+        const projection = this.projections.get(interval);
+        if (!projection?.available || projection.coverageStart === null) return null;
+        return projection.accumulator.snapshot(createCaptureCoverageV1({
+            ...coverage, coverageStart: projection.coverageStart, quality: undefined,
+        }));
     }
 
     private connect(): void {
@@ -152,15 +241,16 @@ export class BinanceAggregateTradeRuntime {
             this.continuityBreakPending = false;
             this.pendingBatch.push(result.trade);
             if (result.boundary) {
-                this.trueFlow?.recordBoundary(result.boundary);
+                this.recordProjectionBoundary(result.boundary);
                 this.dependencies.emit({ type: 'BOUNDARY', boundary: result.boundary });
             }
-            if (this.trueFlow && this.derivationAvailable) {
+            for (const projection of this.projections.values()) {
+                if (!projection.available) continue;
                 try {
-                    this.trueFlow.ingest(result.trade);
+                    projection.accumulator.ingest(result.trade);
+                    projection.coverageStart = Math.min(projection.coverageStart ?? result.trade.tradeTime, result.trade.tradeTime);
                 } catch {
-                    this.derivationAvailable = false;
-                    this.emitError('DERIVATION_LIMIT', 'True-flow derivation reached a configured safety limit.');
+                    this.markProjectionUnavailable(projection);
                 }
             }
         };
@@ -175,7 +265,7 @@ export class BinanceAggregateTradeRuntime {
             this.connected = false;
             if (!this.continuityBreakPending) {
                 const boundary = this.tape.markReconnect(this.dependencies.now());
-                this.trueFlow?.recordBoundary(boundary);
+                this.recordProjectionBoundary(boundary);
                 this.dependencies.emit({ type: 'BOUNDARY', boundary });
                 this.continuityBreakPending = true;
             }
@@ -201,10 +291,7 @@ export class BinanceAggregateTradeRuntime {
         const trades = this.pendingBatch;
         this.pendingBatch = [];
         this.dependencies.emit({ type: 'TRADE_BATCH', trades });
-        if (this.trueFlow && this.tape && this.derivationAvailable) {
-            const telemetry = this.tape.telemetry(this.dependencies.now());
-            this.dependencies.emit({ type: 'TRUE_FLOW_SNAPSHOT', snapshot: this.trueFlow.snapshot(telemetry.coverage) });
-        }
+        this.emitProjections();
         this.emitStatus();
     }
 
