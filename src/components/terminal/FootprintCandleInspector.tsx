@@ -7,6 +7,11 @@ import {
     type FootprintRenderBar,
 } from './footprint-workspace-renderer';
 
+/** Keep measured precision while dropping arithmetic tails introduced by binary floating point. */
+function formatObservedNumber(value: number): string {
+    return Number(value.toPrecision(15)).toString();
+}
+
 export default function FootprintCandleInspector({ bar, recordedSource, onClose }: {
     bar: FootprintRenderBar | null;
     recordedSource?: string;
@@ -21,7 +26,7 @@ export default function FootprintCandleInspector({ bar, recordedSource, onClose 
         ['Low (USDT)', String(bar.low)], ['Close (USDT)', String(bar.close)],
         ...(footprint ? DEFAULT_FOOTPRINT_STAT_ROWS.map((row): [string, string] => {
             const value = getFootprintStat(footprint, row);
-            return [FOOTPRINT_STAT_LABELS[row], value === null ? 'Unavailable' : String(value)];
+            return [FOOTPRINT_STAT_LABELS[row], value === null ? 'Unavailable' : formatObservedNumber(value)];
         }) : []),
     ];
     if (footprint) rows.push(['Aggregate trade messages', String(footprint.aggregateTradeCount)]);
@@ -32,7 +37,7 @@ export default function FootprintCandleInspector({ bar, recordedSource, onClose 
     const exportRows = [
         ['Candle open (UTC)', date],
         ...rows,
-        ...sortedCells.map((cell) => [`${cell.priceLow}–${cell.priceHigh} USDT`, String(cell.sellVolumeBtc), String(cell.buyVolumeBtc)]),
+        ...sortedCells.map((cell) => [`${cell.priceLow}–${cell.priceHigh} USDT`, formatObservedNumber(cell.sellVolumeBtc), formatObservedNumber(cell.buyVolumeBtc)]),
     ];
 
     return <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
@@ -59,7 +64,7 @@ export default function FootprintCandleInspector({ bar, recordedSource, onClose 
                     </div>)}
                 </dl>
                 {footprint && <>
-                    {largest && <p className="text-xs text-slate-300">Largest cluster {largest.priceLow}–{largest.priceHigh} USDT · {largest.buyVolumeBtc + largest.sellVolumeBtc} BTC</p>}
+                    {largest && <p className="text-xs text-slate-300">Largest cluster {largest.priceLow}–{largest.priceHigh} USDT · {formatObservedNumber(largest.buyVolumeBtc + largest.sellVolumeBtc)} BTC</p>}
                     <p className="text-xs text-slate-300">Stacked imbalances {footprint.stackedImbalances.length}</p>
                     <details>
                         <summary className="cursor-pointer text-xs">Observed price levels ({sortedCells.length})</summary>
@@ -67,7 +72,7 @@ export default function FootprintCandleInspector({ bar, recordedSource, onClose 
                             <table className="w-full text-right text-xs tabular-nums">
                                 <thead><tr><th>Price bin</th><th>Bid (BTC)</th><th>Ask (BTC)</th></tr></thead>
                                 <tbody>{sortedCells.map((cell) => <tr key={cell.priceLow} className="border-b border-slate-800">
-                                    <td>{cell.priceLow}–{cell.priceHigh}</td><td>{cell.sellVolumeBtc}</td><td>{cell.buyVolumeBtc}</td>
+                                    <td>{cell.priceLow}–{cell.priceHigh}</td><td>{formatObservedNumber(cell.sellVolumeBtc)}</td><td>{formatObservedNumber(cell.buyVolumeBtc)}</td>
                                 </tr>)}</tbody>
                             </table>
                         </div>
